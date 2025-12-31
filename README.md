@@ -57,18 +57,24 @@ Catryna speaks fluent AI! Built-in **Model Context Protocol (MCP)** tools let Cl
 ## 🚀 Quick Start
 
 ### Prerequisites
-- [Bun](https://bun.sh) v1.0+ (or Node.js 20+)
+- [Bun](https://bun.sh) v1.0+
 - Git
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/catryna-wikinelli.git
-cd catryna-wikinelli
+git clone https://github.com/Davidb3l/Catryna-Wikinelli.git
+cd Catryna-Wikinelli
 
 # Install dependencies
 bun install
+
+# Copy environment config
+cp .env.example .env
+
+# Initialize the database (SQLite by default)
+bun run db:push
 
 # Start development servers
 bun run dev
@@ -77,6 +83,12 @@ bun run dev
 The app will be available at:
 - **Frontend**: http://localhost:8080
 - **GraphQL API**: http://localhost:4567/graphql
+
+### One-liner Install
+
+```bash
+git clone https://github.com/Davidb3l/Catryna-Wikinelli.git && cd Catryna-Wikinelli && bun install && cp .env.example .env && bun run dev
+```
 
 ### Configuration
 
@@ -126,7 +138,7 @@ Catryna exposes these tools for AI agents via the Model Context Protocol:
 
 ### Claude Code Integration
 
-Add to your `claude_code_config.json`:
+Add to your Claude Code MCP settings:
 
 ```json
 {
@@ -134,7 +146,7 @@ Add to your `claude_code_config.json`:
     "catryna": {
       "command": "bun",
       "args": ["run", "mcp"],
-      "cwd": "/path/to/catryna-wikinelli"
+      "cwd": "/path/to/Catryna-Wikinelli"
     }
   }
 }
