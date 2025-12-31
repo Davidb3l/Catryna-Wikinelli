@@ -1,0 +1,78 @@
+# Catryna Wikinelli Configuration
+# https://github.com/catryna-wikinelli
+
+# Project info
+project:
+  name: "Catryna Wikinelli"
+  description: "Living documentation platform for codebases"
+
+# Run mode: local (SQLite) or server (Postgres)
+mode: local
+
+# Database (server mode only)
+database:
+  postgres:
+    url: ${DATABASE_URL}
+  dragonfly:
+    url: ${DRAGONFLY_URL}
+
+# File watching configuration
+watch:
+  enabled: true
+  include:
+    - "src/**/*.{ts,tsx,js,jsx}"
+    - "lib/**/*.py"
+    - "apps/**/*.{ts,tsx,js,jsx}"
+    - "packages/**/*.ts"
+  exclude:
+    - "**/*.test.*"
+    - "**/*.spec.*"
+    - "**/node_modules/**"
+    - "**/__pycache__/**"
+    - "**/dist/**"
+    - "**/build/**"
+  debounce_ms: 2000
+
+# Automatic documentation regeneration
+regeneration:
+  trigger: auto           # auto | manual | hook-only
+  scope: affected         # affected | full
+  agent: claude-code
+  prompt_template: |
+    Analyze the following code changes and update the relevant documentation.
+    Focus on: architecture decisions, API changes, and data flow.
+    Use appropriate block types: text, heading, code-embed, mermaid, callout.
+
+# Code linking configuration
+code_links:
+  external:
+    provider: github      # github | gitlab | bitbucket
+    # repo: "owner/repo"  # Set this for your repository
+    branch: main
+  editor:
+    scheme: vscode        # vscode | cursor | idea
+
+# Git hooks (for CI/CD integration)
+hooks:
+  post_receive:
+    enabled: false        # Enable in server mode
+    regenerate: true
+    commit_docs: false    # Auto-commit doc changes
+
+# Search configuration
+search:
+  min_query_length: 2
+  max_results: 50
+  fuzzy_matching: true
+
+# Authentication (server mode, v2)
+auth:
+  enabled: false
+  providers:
+    github:
+      client_id: ${GITHUB_CLIENT_ID}
+      client_secret: ${GITHUB_CLIENT_SECRET}
+    google:
+      client_id: ${GOOGLE_CLIENT_ID}
+      client_secret: ${GOOGLE_CLIENT_SECRET}
+  default_role: viewer

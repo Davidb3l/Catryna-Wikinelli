@@ -1,0 +1,8 @@
+{
+  "name": "Catryna Wikinelli",
+  "description": "A local-first, AI-powered developer documentation platform featuring block-based editing, interactive diagrams, and whiteboards.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(ralph-wiggum:ralph-loop)",
+      "Bash(bun install:*)",
+      "Bash(bun run dev:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)"
+    ]
+  }
+}

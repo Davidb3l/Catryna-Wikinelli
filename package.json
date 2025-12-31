@@ -1,0 +1,22 @@
+{
+  "name": "catryna-wikinelli",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "db:generate": "turbo run db:generate --filter=@catryna/server",
+    "db:migrate": "turbo run db:migrate --filter=@catryna/server",
+    "db:push": "turbo run db:push --filter=@catryna/server"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "~5.8.2"
+  },
+  "packageManager": "bun@1.1.38"
+}
