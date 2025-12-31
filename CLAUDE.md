@@ -63,11 +63,53 @@ catryna-wikinelli/
 | Rich Text | TipTap | Block-based editing |
 | Charts | Mermaid | Code-defined diagrams |
 
-## MCP Tools for Claude Code
+## Claude Code MCP Integration
 
-The following tools are available for Claude Code integration:
+Catryna Wikinelli provides an MCP server that integrates directly with Claude Code, enabling AI-assisted documentation generation.
 
-### Document Operations
+### Installation
+
+1. Clone and install dependencies:
+```bash
+git clone https://github.com/your-username/catryna-wikinelli.git
+cd catryna-wikinelli
+bun install
+```
+
+2. Add to your Claude Code MCP settings (`~/.claude/claude_desktop_config.json` or project `.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "catryna": {
+      "command": "bun",
+      "args": ["run", "/path/to/catryna-wikinelli/apps/server/src/mcp/stdio.ts"],
+      "env": {
+        "CATRYNA_MODE": "local"
+      }
+    }
+  }
+}
+```
+
+Or use the workspace path:
+```json
+{
+  "mcpServers": {
+    "catryna": {
+      "command": "bun",
+      "args": ["run", "mcp"],
+      "cwd": "/path/to/catryna-wikinelli"
+    }
+  }
+}
+```
+
+3. Restart Claude Code to load the MCP server.
+
+### Available Tools
+
+#### Document Operations
 - `create_doc` - Create a new documentation page
 - `update_doc` - Update an existing page
 - `get_doc` - Retrieve a page by path
@@ -75,11 +117,11 @@ The following tools are available for Claude Code integration:
 - `search_docs` - Full-text search
 - `delete_doc` - Delete a page
 
-### Diagram Operations
+#### Diagram Operations
 - `create_diagram` - Create React Flow diagram
 - `create_whiteboard` - Create tldraw whiteboard
 
-### Introspection
+#### Introspection
 - `get_undocumented_modules` - List modules without docs
 - `get_doc_coverage` - Get coverage report
 

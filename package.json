@@ -10,6 +10,8 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
+    "mcp": "bun run --filter=@catryna/server mcp",
+    "setup": "bun run scripts/setup-mcp.ts",
     "db:generate": "turbo run db:generate --filter=@catryna/server",
     "db:migrate": "turbo run db:migrate --filter=@catryna/server",
     "db:push": "turbo run db:push --filter=@catryna/server"

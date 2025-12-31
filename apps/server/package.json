@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "catryna-mcp": "./src/mcp/stdio.ts"
+  },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "start": "bun run dist/index.js",
+    "mcp": "bun run src/mcp/stdio.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -14,14 +18,15 @@
   },
   "dependencies": {
     "@catryna/shared": "workspace:*",
-    "drizzle-orm": "^0.38.3",
-    "better-sqlite3": "^11.7.0",
-    "postgres": "^3.4.5",
-    "graphql": "^16.9.0",
-    "graphql-yoga": "^5.10.6",
     "@graphql-tools/schema": "^10.0.11",
-    "graphql-scalars": "^1.23.0",
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "better-sqlite3": "^11.7.0",
     "chokidar": "^4.0.3",
+    "drizzle-orm": "^0.38.3",
+    "graphql": "^16.9.0",
+    "graphql-scalars": "^1.23.0",
+    "graphql-yoga": "^5.10.6",
+    "postgres": "^3.4.5",
     "xxhash-wasm": "^1.0.2"
   },
   "devDependencies": {

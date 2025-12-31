@@ -3,6 +3,7 @@ import { updateDocHandler } from './handlers/updateDoc'
 import { searchDocsHandler } from './handlers/searchDocs'
 import { diagramHandlers } from './handlers/diagrams'
 import { coverageHandlers } from './handlers/coverage'
+import { getDocHandler, listDocsHandler, deleteDocHandler } from './handlers/docOperations'
 
 // MCP Tool definitions following Model Context Protocol
 export const mcpTools = {
@@ -164,7 +165,10 @@ export const mcpTools = {
 const toolHandlers: Record<string, (args: unknown) => Promise<unknown>> = {
   create_doc: createDocHandler,
   update_doc: updateDocHandler,
+  get_doc: getDocHandler,
+  list_docs: listDocsHandler,
   search_docs: searchDocsHandler,
+  delete_doc: deleteDocHandler,
   create_diagram: diagramHandlers.createDiagram,
   create_whiteboard: diagramHandlers.createWhiteboard,
   get_undocumented_modules: coverageHandlers.getUndocumented,
