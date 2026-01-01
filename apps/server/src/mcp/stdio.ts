@@ -16,6 +16,12 @@
  * }
  */
 
+// IMPORTANT: Set local mode BEFORE any imports that touch the database
+// This ensures SQLite is used instead of requiring PostgreSQL
+if (!process.env.CATRYNA_MODE) {
+  process.env.CATRYNA_MODE = 'local'
+}
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
