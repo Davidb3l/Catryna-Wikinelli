@@ -38,9 +38,6 @@ if (!existsSync(claudeDir)) {
 const mcpConfig = {
   command: 'bun',
   args: ['run', mcpServerPath],
-  env: {
-    CATRYNA_MODE: 'local'
-  }
 }
 
 // Read existing settings or create new

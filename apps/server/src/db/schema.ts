@@ -1,73 +1,54 @@
-import { pgTable, uuid, text, jsonb, timestamp, index, integer, boolean } from 'drizzle-orm/pg-core'
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core'
 import { relations } from 'drizzle-orm'
 import type { Block, DocMetadata } from '@catryna/shared'
 
 // Documents table - stores the current state of each doc
-export const docs = pgTable('docs', {
-  id: uuid('id').primaryKey().defaultRandom(),
+export const docs = sqliteTable('docs', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   path: text('path').notNull().unique(),
   title: text('title').notNull(),
-  blocks: jsonb('blocks').notNull().$type<Block[]>(),
-  metadata: jsonb('metadata').notNull().$type<DocMetadata>(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-}, (table) => ({
-  pathIdx: index('docs_path_idx').on(table.path),
-  updatedIdx: index('docs_updated_idx').on(table.updatedAt),
-}))
-
-// Document versions - stores historical versions
-export const docVersions = pgTable('doc_versions', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  docId: uuid('doc_id').notNull().references(() => docs.id, { onDelete: 'cascade' }),
-  content: jsonb('content').notNull().$type<Block[]>(),
-  contentHash: text('content_hash').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  createdBy: text('created_by'), // 'claude-code' | 'user:xxx'
-  commitSha: text('commit_sha'),
-  parentVersionId: uuid('parent_version_id'),
-  summary: text('summary'),
-}, (table) => ({
-  docIdIdx: index('versions_doc_id_idx').on(table.docId),
-  createdAtIdx: index('versions_created_at_idx').on(table.createdAt),
-}))
-
-// Full-text search index
-export const docSearch = pgTable('doc_search', {
-  docId: uuid('doc_id').primaryKey().references(() => docs.id, { onDelete: 'cascade' }),
-  searchVector: text('search_vector').notNull(), // tsvector stored as text
-  plainContent: text('plain_content').notNull(), // for highlighting
+  blocks: text('blocks', { mode: 'json' }).notNull().$type<Block[]>(),
+  metadata: text('metadata', { mode: 'json' }).notNull().$type<DocMetadata>(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
 
-// User preferences (server mode)
-export const userPreferences = pgTable('user_preferences', {
-  userId: text('user_id').primaryKey(),
-  theme: text('theme').default('system').$type<'light' | 'dark' | 'system'>(),
-  whiteboardStyle: text('whiteboard_style').default('clean').$type<'clean' | 'sketchy'>(),
-  fontSize: integer('font_size').default(14),
-  showLineNumbers: boolean('show_line_numbers').default(true),
-  autoExpandCodeEmbeds: boolean('auto_expand_code_embeds').default(false),
-  defaultDiffView: text('default_diff_view').default('side-by-side').$type<'side-by-side' | 'inline'>(),
+// Document versions - stores historical versions
+export const docVersions = sqliteTable('doc_versions', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  docId: text('doc_id').notNull().references(() => docs.id, { onDelete: 'cascade' }),
+  content: text('content', { mode: 'json' }).notNull().$type<Block[]>(),
+  contentHash: text('content_hash').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  createdBy: text('created_by'),
+  commitSha: text('commit_sha'),
+  parentVersionId: text('parent_version_id'),
+  summary: text('summary'),
+})
+
+// Full-text search index
+export const docSearch = sqliteTable('doc_search', {
+  docId: text('doc_id').primaryKey().references(() => docs.id, { onDelete: 'cascade' }),
+  searchVector: text('search_vector').notNull(),
+  plainContent: text('plain_content').notNull(),
 })
 
 // Code files being watched for regeneration
-export const watchedFiles = pgTable('watched_files', {
-  id: uuid('id').primaryKey().defaultRandom(),
+export const watchedFiles = sqliteTable('watched_files', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   filePath: text('file_path').notNull().unique(),
-  lastModified: timestamp('last_modified').notNull(),
+  lastModified: integer('last_modified', { mode: 'timestamp' }).notNull(),
   contentHash: text('content_hash').notNull(),
-  relatedDocs: jsonb('related_docs').$type<string[]>().default([]),
-}, (table) => ({
-  filePathIdx: index('watched_files_path_idx').on(table.filePath),
-}))
+  relatedDocs: text('related_docs', { mode: 'json' }).$type<string[]>().default([]),
+})
 
 // Regeneration queue
-export const regenerationQueue = pgTable('regeneration_queue', {
-  id: uuid('id').primaryKey().defaultRandom(),
+export const regenerationQueue = sqliteTable('regeneration_queue', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   filePath: text('file_path').notNull(),
   status: text('status').notNull().$type<'pending' | 'processing' | 'completed' | 'failed'>().default('pending'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  processedAt: timestamp('processed_at'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+  processedAt: integer('processed_at', { mode: 'timestamp' }),
   error: text('error'),
 })
 
@@ -87,12 +68,11 @@ export const docVersionsRelations = relations(docVersions, ({ one }) => ({
   }),
 }))
 
-// Export all tables for drizzle-kit
+// Export all tables
 export const schema = {
   docs,
   docVersions,
   docSearch,
-  userPreferences,
   watchedFiles,
   regenerationQueue,
 }

@@ -23,12 +23,11 @@ catryna-wikinelli/
 ├── apps/
 │   ├── server/                  # Bun backend (GraphQL Yoga)
 │   │   ├── src/
-│   │   │   ├── db/              # Drizzle ORM schema & client
+│   │   │   ├── db/              # Drizzle ORM schema & SQLite client
 │   │   │   ├── graphql/         # GraphQL schema & resolvers
 │   │   │   ├── mcp/             # MCP tool handlers
 │   │   │   ├── watcher/         # File watcher
-│   │   │   ├── regeneration/    # Git hooks integration
-│   │   │   └── cache/           # DragonflyDB caching
+│   │   │   └── regeneration/    # Git hooks integration
 │   │   └── drizzle.config.ts
 │   │
 │   └── web/                     # Vite + React frontend
@@ -50,14 +49,13 @@ catryna-wikinelli/
 
 | Layer | Technology | Purpose |
 |-------|------------|---------|
-| Runtime | Bun | Fast JS runtime, native file watching |
-| ORM | Drizzle | Type-safe SQL (Postgres + SQLite) |
+| Runtime | Bun | Fast JS runtime, native SQLite & file watching |
+| ORM | Drizzle | Type-safe SQL with SQLite |
 | Frontend | Vite + React | Fast HMR, modern build |
 | Routing | TanStack Router | Type-safe file-based routing |
 | Data Fetching | TanStack Query | Caching, optimistic updates |
 | API | GraphQL Yoga | Flexible queries, subscriptions |
-| Database | Postgres / SQLite | Postgres for server, SQLite for local |
-| Cache | DragonflyDB | Render cache, pub/sub (server mode) |
+| Database | SQLite | Local file-based database (via bun:sqlite) |
 | Diagrams | React Flow | Node-based architecture diagrams |
 | Whiteboard | tldraw | Canvas with sketchy style option |
 | Rich Text | TipTap | Block-based editing |
@@ -71,35 +69,19 @@ Catryna Wikinelli provides an MCP server that integrates directly with Claude Co
 
 1. Clone and install dependencies:
 ```bash
-git clone https://github.com/your-username/catryna-wikinelli.git
-cd catryna-wikinelli
+git clone https://github.com/Davidb3l/Catryna-Wikinelli.git
+cd Catryna-Wikinelli
 bun install
 ```
 
-2. Add to your Claude Code MCP settings (`~/.claude/claude_desktop_config.json` or project `.claude/settings.json`):
+2. Add to your Claude Code MCP settings (project `.claude/settings.json`):
 
 ```json
 {
   "mcpServers": {
     "catryna": {
       "command": "bun",
-      "args": ["run", "/path/to/catryna-wikinelli/apps/server/src/mcp/stdio.ts"],
-      "env": {
-        "CATRYNA_MODE": "local"
-      }
-    }
-  }
-}
-```
-
-Or use the workspace path:
-```json
-{
-  "mcpServers": {
-    "catryna": {
-      "command": "bun",
-      "args": ["run", "mcp"],
-      "cwd": "/path/to/catryna-wikinelli"
+      "args": ["run", "/path/to/catryna-wikinelli/apps/server/src/mcp/stdio.ts"]
     }
   }
 }
@@ -147,9 +129,6 @@ Documents are composed of blocks:
 Edit `catryna.config.yaml`:
 
 ```yaml
-# Run mode
-mode: local  # local (SQLite) | server (Postgres)
-
 # File watching
 watch:
   enabled: true
@@ -219,16 +198,10 @@ mutation {
 
 ## Database
 
-### Local Mode (SQLite)
-- Database file: `./catryna.db`
-- No external dependencies
-
-### Server Mode (Postgres)
-Set environment variables:
-```bash
-DATABASE_URL=postgres://user:pass@host:5432/catryna
-DRAGONFLY_URL=redis://localhost:6379
-```
+Catryna uses SQLite for local storage:
+- Database file: `./catryna.db` (created automatically)
+- Uses Bun's native SQLite (`bun:sqlite`)
+- WAL mode enabled for better concurrency
 
 ### Migrations
 ```bash
@@ -255,23 +228,7 @@ bun run db:push      # Push schema (dev)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CATRYNA_MODE` | `local` or `server` | `local` |
-| `DATABASE_URL` | Postgres connection URL | - |
-| `DRAGONFLY_URL` | Redis/Dragonfly URL | - |
 | `PORT` | Server port | `4567` |
-
-## Deployment
-
-### Docker
-```bash
-docker compose up -d
-```
-
-### Manual
-```bash
-bun run build
-cd apps/server && bun run start
-```
 
 ## License
 

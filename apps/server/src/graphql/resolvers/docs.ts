@@ -1,4 +1,4 @@
-import { eq, desc, like, sql, and } from 'drizzle-orm'
+import { eq, desc, like, and } from 'drizzle-orm'
 import { getDb, docs, docVersions, docSearch } from '../../db'
 import { hashContent } from '@catryna/shared'
 import type { Block, DocMetadata } from '@catryna/shared'
@@ -63,9 +63,6 @@ export const docsResolvers = {
       if (filter?.path) {
         conditions.push(like(docs.path, `${filter.path}%`))
       }
-      if (filter?.tag) {
-        conditions.push(sql`${docs.metadata}->>'tags' ? ${filter.tag}`)
-      }
 
       const results = await db
         .select({
@@ -80,7 +77,16 @@ export const docsResolvers = {
         .orderBy(desc(docs.updatedAt))
         .limit(100)
 
-      return results.map((doc) => ({
+      // Filter by tag in-memory (SQLite-compatible)
+      let filteredResults = results
+      if (filter?.tag) {
+        filteredResults = results.filter((doc) => {
+          const metadata = doc.metadata as DocMetadata
+          return metadata.tags?.includes(filter.tag!)
+        })
+      }
+
+      return filteredResults.map((doc) => ({
         ...doc,
         tags: (doc.metadata as DocMetadata).tags || [],
       }))

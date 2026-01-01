@@ -4,7 +4,6 @@ import { createFileWatcher } from './watcher/codeWatcher'
 import { startMcpServer } from './mcp/server'
 
 const PORT = parseInt(process.env.PORT || '4567', 10)
-const isLocal = process.env.CATRYNA_MODE === 'local'
 
 // Create GraphQL Yoga server
 const yoga = createYoga({
@@ -28,30 +27,27 @@ console.log(`
   ║                                                           ║
   ║   🐱 Catryna Wikinelli Server                             ║
   ║                                                           ║
-  ║   Mode:     ${isLocal ? 'Local (SQLite)' : 'Server (Postgres)'}                         ║
   ║   GraphQL:  http://localhost:${PORT}/graphql                  ║
   ║                                                           ║
   ╚═══════════════════════════════════════════════════════════╝
 `)
 
-// Start file watcher in local mode
-if (isLocal) {
-  try {
-    const watcher = await createFileWatcher({
-      include: ['src/**/*.{ts,tsx,js,jsx}', 'lib/**/*.py'],
-      exclude: ['**/*.test.*', '**/*.spec.*', '**/node_modules/**'],
-      debounceMs: 2000,
-    })
+// Start file watcher
+try {
+  const watcher = await createFileWatcher({
+    include: ['src/**/*.{ts,tsx,js,jsx}', 'lib/**/*.py'],
+    exclude: ['**/*.test.*', '**/*.spec.*', '**/node_modules/**'],
+    debounceMs: 2000,
+  })
 
-    watcher.on('change', (filePath) => {
-      console.log(`[Watcher] File changed: ${filePath}`)
-      // Queue for regeneration
-    })
+  watcher.on('change', (filePath) => {
+    console.log(`[Watcher] File changed: ${filePath}`)
+    // Queue for regeneration
+  })
 
-    console.log('[Watcher] File watcher started')
-  } catch (error) {
-    console.error('[Watcher] Failed to start:', error)
-  }
+  console.log('[Watcher] File watcher started')
+} catch (error) {
+  console.error('[Watcher] Failed to start:', error)
 }
 
 // Start MCP server for Claude Code integration
