@@ -1,8 +1,5 @@
-import { drizzle as drizzlePg } from 'drizzle-orm/postgres-js'
 import { drizzle as drizzleSqlite } from 'drizzle-orm/bun-sqlite'
 import { Database } from 'bun:sqlite'
-import postgres from 'postgres'
-import * as pgSchema from './schema'
 import * as sqliteSchema from './schema-sqlite'
 
 export type DbClient = ReturnType<typeof createDb>
@@ -62,6 +59,11 @@ export function createDb() {
     return drizzleSqlite(sqlite, { schema: sqliteSchema })
   }
 
+  // Lazy load postgres dependencies only when needed
+  const { drizzle: drizzlePg } = require('drizzle-orm/postgres-js')
+  const postgres = require('postgres')
+  const pgSchema = require('./schema')
+
   const connectionString = process.env.DATABASE_URL!
   const client = postgres(connectionString, {
     max: 10,
@@ -85,4 +87,4 @@ export function getDb(): DbClient {
 // Export SQLite schema by default (used in local/MCP mode)
 // For server mode with Postgres, import from './schema' directly
 export const { docs, docVersions, docSearch, watchedFiles, regenerationQueue } = sqliteSchema
-export { sqliteSchema, pgSchema }
+export { sqliteSchema }
