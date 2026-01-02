@@ -1,0 +1,42 @@
+---
+id: doc-getting-started
+title: "Getting Started with Catryna"
+path: "getting-started"
+tags: ["intro", "tutorial"]
+relatedFiles: []
+createdAt: 1735689600000
+updatedAt: 1735689600000
+createdBy: "claude-code"
+---
+
+# Getting Started with Catryna
+
+Welcome to **Catryna Wikinelli**, your AI-powered documentation companion!
+
+## How It Works
+
+Catryna bridges the gap between AI coding agents and human developers:
+
+- **Claude creates docs** using MCP tools (`create_doc`, `update_doc`)
+- **Claude reads docs** directly from `.docs/` folder
+- **Humans view docs** in this beautiful viewer
+
+## Quick Start
+
+```typescript
+// Install and run
+bun install
+bun run start
+```
+
+This creates an MCP server that Claude Code can connect to.
+
+## Creating Your First Doc
+
+Ask Claude Code to document your codebase:
+
+```
+"Document the authentication module in src/auth/"
+```
+
+Claude will analyze the code and create rich documentation with diagrams and code embeds.

@@ -1,17 +1,17 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { 
-  Search, Settings, HelpCircle, ChevronRight, ChevronDown, FileText, 
-  Menu, X, Plus, Clock, Terminal, Activity, Github, Edit3, Save, 
+import {
+  Search, Settings, HelpCircle, ChevronRight, ChevronDown, FileText,
+  Menu, X, Plus, Clock, Terminal, Activity, Github, Edit3, Save,
   MousePointer2, History, RotateCcw, Check, Monitor, Moon, Sun,
   Type as TypeIcon, Layout, Box, Share2, Layers, Folder, Copy, ExternalLink,
   Filter, Calendar, Tag, Sparkles, AlertCircle, GripVertical, Trash2, Maximize2,
-  Table as TableIcon, BarChart3, PieChart, Info
+  Table as TableIcon, BarChart3, PieChart, Info, Loader2
 } from 'lucide-react';
 import ReactFlow, { Background, Controls, MiniMap } from 'reactflow';
 import { Tldraw } from 'tldraw';
 import { NavItem, Document, Block, UserPreferences, HistoryEntry } from './types';
-import { INITIAL_NAV_ITEMS, MOCK_DOCS } from './constants';
+import { useDocsList, useDoc, useDocsSearch, EMPTY_DOC } from './hooks/useDocs';
 import { geminiService } from './services/geminiService';
 import * as Diff from 'diff';
 
@@ -39,23 +39,40 @@ const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant
   );
 };
 
-const CommandPalette: React.FC<{ isOpen: boolean; onClose: () => void; onSelect: (id: string) => void }> = ({ isOpen, onClose, onSelect }) => {
+const CommandPalette: React.FC<{ isOpen: boolean; onClose: () => void; onSelect: (id: string) => void; docs: Array<{ id: string; path: string; title: string; tags: string[] }> }> = ({ isOpen, onClose, onSelect, docs }) => {
   const [showFilters, setShowFilters] = useState(false);
+  const [query, setQuery] = useState('');
+  const { results, loading, search } = useDocsSearch();
+
+  useEffect(() => {
+    if (query.length >= 2) {
+      search(query);
+    }
+  }, [query, search]);
+
   if (!isOpen) return null;
+
+  // Show search results if query, otherwise show all docs
+  const displayDocs = query.length >= 2 ? results : docs;
+
   return (
     <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh] bg-black/40 backdrop-blur-sm px-4" onClick={onClose}>
       <div className="w-full max-w-xl bg-white dark:bg-zinc-900 rounded-xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-100 dark:border-zinc-800">
-          <Search size={18} className="text-zinc-400" />
-          <input autoFocus className="flex-1 bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 text-sm" placeholder="Search docs, code, or commands..." />
+          {loading ? <Loader2 size={18} className="text-zinc-400 animate-spin" /> : <Search size={18} className="text-zinc-400" />}
+          <input autoFocus value={query} onChange={e => setQuery(e.target.value)} className="flex-1 bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 text-sm" placeholder="Search docs..." />
           <button onClick={() => setShowFilters(!showFilters)} className={`p-1.5 rounded-md ${showFilters ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400' : 'text-zinc-400 hover:bg-zinc-100'}`}><Filter size={16} /></button>
           <kbd className="px-1.5 py-0.5 rounded border border-zinc-200 dark:border-zinc-800 text-[10px] text-zinc-400 font-sans">ESC</kbd>
         </div>
         <div className="p-2 max-h-[400px] overflow-y-auto">
-          {Object.values(MOCK_DOCS).map(doc => (
-            <div key={doc.id} onClick={() => { onSelect(doc.id); onClose(); }} className="flex items-center justify-between px-3 py-2.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer text-sm group">
+          {displayDocs.length === 0 ? (
+            <div className="py-8 text-center text-zinc-400 text-sm">
+              {query.length >= 2 ? 'No results found' : 'No docs yet. Create some with Claude Code!'}
+            </div>
+          ) : displayDocs.map(doc => (
+            <div key={doc.id || doc.path} onClick={() => { onSelect(doc.path); onClose(); setQuery(''); }} className="flex items-center justify-between px-3 py-2.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer text-sm group">
               <div className="flex items-center gap-3"><FileText size={16} className="text-zinc-400" /><span>{doc.title}</span></div>
-              <span className="text-[10px] text-zinc-400 uppercase opacity-0 group-hover:opacity-100">{doc.path[0]}</span>
+              <span className="text-[10px] text-zinc-400 uppercase opacity-0 group-hover:opacity-100">{doc.path.split('/')[0]}</span>
             </div>
           ))}
         </div>
@@ -129,8 +146,7 @@ const CoverageReport: React.FC<{ onClose: () => void }> = ({ onClose }) => (
 
 export default function App() {
   const [prefs, setPrefs] = useState<UserPreferences>({ theme: 'dark', whiteboardStyle: 'clean', fontSize: 'medium', editorLineNumbers: true });
-  const [selectedDocId, setSelectedDocId] = useState('welcome');
-  const [currentDoc, setCurrentDoc] = useState<Document>(MOCK_DOCS['welcome']);
+  const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024);
   const [isEditing, setIsEditing] = useState(false);
   const [activeEditor, setActiveEditor] = useState<null | 'diag' | 'wb' | 'coverage'>(null);
@@ -139,6 +155,13 @@ export default function App() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  // Fetch docs list and nav tree from .docs folder
+  const { docs, navItems, loading: listLoading, error: listError, refetch: refetchList } = useDocsList();
+
+  // Fetch current document
+  const { doc: fetchedDoc, loading: docLoading, error: docError } = useDoc(selectedDocPath);
+  const currentDoc = fetchedDoc || EMPTY_DOC;
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -152,13 +175,10 @@ export default function App() {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
   };
 
-  const handleDocSelect = (id: string) => {
-    const doc = MOCK_DOCS[id] || MOCK_DOCS['welcome'];
-    setSelectedDocId(id);
-    setCurrentDoc(doc);
+  const handleDocSelect = (path: string) => {
+    setSelectedDocPath(path);
     setIsEditing(false);
     if (window.innerWidth < 1024) setIsSidebarOpen(false);
-    addToast(`Doc: ${doc.title}`, 'info');
   };
 
   const tableOfContents = useMemo(() => {
@@ -175,8 +195,8 @@ export default function App() {
       {activeEditor === 'wb' && <WhiteboardEditor onClose={() => setActiveEditor(null)} style={prefs.whiteboardStyle} />}
       {activeEditor === 'coverage' && <CoverageReport onClose={() => setActiveEditor(null)} />}
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} prefs={prefs} setPrefs={setPrefs} />
-      <CommandPalette isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} onSelect={handleDocSelect} />
-      <VersionHistorySidebar isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} history={currentDoc.history || []} currentBlocks={currentDoc.blocks} onRevert={(b) => { setCurrentDoc({...currentDoc, blocks: b}); setIsHistoryOpen(false); addToast('Reverted'); }} />
+      <CommandPalette isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} onSelect={handleDocSelect} docs={docs} />
+      <VersionHistorySidebar isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} history={currentDoc.history || []} currentBlocks={currentDoc.blocks} onRevert={(b) => { setIsHistoryOpen(false); addToast('Reverted'); }} />
       <ToastContainer toasts={toasts} onRemove={(id) => setToasts(toasts.filter(t => t.id !== id))} />
 
       {isSidebarOpen && window.innerWidth < 1024 && <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setIsSidebarOpen(false)} />}
@@ -193,7 +213,16 @@ export default function App() {
             <Button variant="ghost" onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-1"><X size={16} /></Button>
           </div>
           <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
-            {INITIAL_NAV_ITEMS.map(item => <SidebarItem key={item.id} item={item} depth={0} selectedId={selectedDocId} onSelect={handleDocSelect} />)}
+            {listLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 size={20} className="animate-spin text-zinc-400" />
+              </div>
+            ) : navItems.length === 0 ? (
+              <div className="py-8 px-4 text-center">
+                <div className="text-zinc-400 text-sm mb-2">No docs yet</div>
+                <div className="text-zinc-500 text-xs">Use Claude Code to create documentation!</div>
+              </div>
+            ) : navItems.map(item => <SidebarItem key={item.id} item={item} depth={0} selectedId={selectedDocPath || ''} onSelect={handleDocSelect} />)}
             <div className="mt-8 px-4"><label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3 block">Reports</label><button onClick={() => setActiveEditor('coverage')} className="w-full flex items-center gap-2 text-sm text-zinc-500 hover:text-indigo-500 py-1.5 transition-colors"><BarChart3 size={14} /> Doc Coverage</button></div>
           </div>
           <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 flex items-center gap-3">
@@ -220,6 +249,11 @@ export default function App() {
         </header>
 
         <div className="flex-1 overflow-y-auto relative scrollbar-thin">
+          {docLoading ? (
+            <div className="flex items-center justify-center py-24">
+              <Loader2 size={32} className="animate-spin text-zinc-400" />
+            </div>
+          ) : (
           <div className="flex justify-between max-w-6xl mx-auto px-6 lg:px-12 py-12 gap-12">
             <div className="flex-1 max-w-3xl">
               <nav className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-8">
@@ -229,7 +263,7 @@ export default function App() {
               <h1 className="text-4xl lg:text-5xl font-black tracking-tight mb-10 text-zinc-900 dark:text-zinc-50">{currentDoc.title}</h1>
               <div className="space-y-2">
                 {currentDoc.blocks.map(block => (
-                  <BlockRenderer key={block.id} block={block} isEditing={isEditing} showLineNumbers={prefs.editorLineNumbers} whiteboardStyle={prefs.whiteboardStyle} onOpenEditor={setActiveEditor} onDelete={id => setCurrentDoc(p => ({...p, blocks: p.blocks.filter(b => b.id !== id)}))} onCopy={() => addToast('Copied')} />
+                  <BlockRenderer key={block.id} block={block} isEditing={isEditing} showLineNumbers={prefs.editorLineNumbers} whiteboardStyle={prefs.whiteboardStyle} onOpenEditor={setActiveEditor} onDelete={id => {}} onCopy={() => addToast('Copied')} />
                 ))}
               </div>
             </div>
@@ -246,6 +280,7 @@ export default function App() {
               </ul>
             </aside>
           </div>
+          )}
         </div>
       </main>
     </div>

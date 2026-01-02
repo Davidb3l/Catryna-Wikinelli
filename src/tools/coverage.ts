@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { getDb } from "../db";
+import { loadIndex } from "../storage";
 import { readdir, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 
@@ -20,6 +20,7 @@ const EXCLUDE_PATTERNS = [
   /dist\//,
   /build\//,
   /__pycache__/,
+  /\.docs\//,
 ];
 
 async function findSourceFiles(dir: string, rootDir: string): Promise<string[]> {
@@ -60,23 +61,19 @@ export function registerCoverageTools(server: McpServer): void {
       patterns: z.array(z.string()).optional().describe("Glob patterns to include"),
     },
     async ({ rootDir }) => {
-      const db = getDb();
       const scanDir = rootDir || process.cwd();
 
       try {
         // Find all source files
         const sourceFiles = await findSourceFiles(scanDir, scanDir);
 
-        // Get all documented files from metadata
-        const docs = db.query("SELECT metadata FROM docs").all() as Array<{ metadata: string }>;
+        // Get all documented files from index
+        const index = await loadIndex();
         const documentedFiles = new Set<string>();
 
-        for (const doc of docs) {
-          const meta = JSON.parse(doc.metadata);
-          if (meta.relatedFiles) {
-            for (const file of meta.relatedFiles) {
-              documentedFiles.add(file);
-            }
+        for (const doc of index.docs) {
+          for (const file of doc.relatedFiles) {
+            documentedFiles.add(file);
           }
         }
 
@@ -112,6 +109,7 @@ export function registerCoverageTools(server: McpServer): void {
             modules,
             totalUndocumented: undocumented.length,
             totalSourceFiles: sourceFiles.length,
+            hint: "Use create_doc with relatedFiles to document these modules",
           }) }],
         };
       } catch (error) {
@@ -129,28 +127,21 @@ export function registerCoverageTools(server: McpServer): void {
       rootDir: z.string().optional().describe("Root directory to analyze"),
     },
     async ({ rootDir }) => {
-      const db = getDb();
       const scanDir = rootDir || process.cwd();
 
       try {
         // Find all source files
         const sourceFiles = await findSourceFiles(scanDir, scanDir);
 
-        // Get all docs
-        const docs = db.query(`
-          SELECT path, title, metadata, updated_at
-          FROM docs
-          ORDER BY updated_at DESC
-        `).all() as Array<{ path: string; title: string; metadata: string; updated_at: number }>;
+        // Get all docs from index
+        const index = await loadIndex();
+        const docs = index.docs;
 
         // Get documented files
         const documentedFiles = new Set<string>();
         for (const doc of docs) {
-          const meta = JSON.parse(doc.metadata);
-          if (meta.relatedFiles) {
-            for (const file of meta.relatedFiles) {
-              documentedFiles.add(file);
-            }
+          for (const file of doc.relatedFiles) {
+            documentedFiles.add(file);
           }
         }
 
@@ -161,21 +152,24 @@ export function registerCoverageTools(server: McpServer): void {
           : 0;
 
         // Find recently updated docs
-        const recentlyUpdated = docs.slice(0, 5).map(d => ({
+        const sortedDocs = [...docs].sort((a, b) => b.updatedAt - a.updatedAt);
+        const recentlyUpdated = sortedDocs.slice(0, 5).map(d => ({
           path: d.path,
           title: d.title,
-          updatedAt: d.updated_at,
+          file: `.docs/${d.path}.mdx`,
+          updatedAt: d.updatedAt,
         }));
 
         // Find stale docs (not updated in 30 days)
         const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
         const staleDocs = docs
-          .filter(d => d.updated_at < thirtyDaysAgo)
+          .filter(d => d.updatedAt < thirtyDaysAgo)
           .slice(0, 10)
           .map(d => ({
             path: d.path,
             title: d.title,
-            updatedAt: d.updated_at,
+            file: `.docs/${d.path}.mdx`,
+            updatedAt: d.updatedAt,
           }));
 
         // Find undocumented files
@@ -194,6 +188,7 @@ export function registerCoverageTools(server: McpServer): void {
               undocumentedFiles,
               recentlyUpdated,
               staleDocs,
+              docsFolder: ".docs/",
             },
           }) }],
         };

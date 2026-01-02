@@ -1,23 +1,272 @@
 import path from 'path';
-import { defineConfig, loadEnv } from 'vite';
+import fs from 'fs';
+import { defineConfig, loadEnv, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig(({ mode }) => {
-    const env = loadEnv(mode, '.', '');
-    return {
-      server: {
-        port: 3000,
-        host: '0.0.0.0',
-      },
-      plugins: [react()],
-      define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
-      },
-      resolve: {
-        alias: {
-          '@': path.resolve(__dirname, '.'),
+// Plugin to serve .docs folder as API
+function docsApiPlugin(): Plugin {
+  const docsRoot = path.resolve(__dirname, '../.docs');
+
+  return {
+    name: 'docs-api',
+    configureServer(server) {
+      // API routes for docs
+      server.middlewares.use((req, res, next) => {
+        if (!req.url?.startsWith('/api/docs')) {
+          return next();
+        }
+
+        res.setHeader('Content-Type', 'application/json');
+
+        try {
+          // GET /api/docs - List all docs
+          if (req.url === '/api/docs' || req.url === '/api/docs/') {
+            const indexPath = path.join(docsRoot, '_index.json');
+            if (fs.existsSync(indexPath)) {
+              const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+              res.end(JSON.stringify(index));
+            } else {
+              res.end(JSON.stringify({ version: 1, docs: [], lastUpdated: null }));
+            }
+            return;
+          }
+
+          // GET /api/docs/search?q=query - Search docs
+          if (req.url?.startsWith('/api/docs/search')) {
+            const url = new URL(req.url, 'http://localhost');
+            const query = url.searchParams.get('q')?.toLowerCase() || '';
+
+            const indexPath = path.join(docsRoot, '_index.json');
+            if (!fs.existsSync(indexPath)) {
+              res.end(JSON.stringify({ results: [] }));
+              return;
+            }
+
+            const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+            const results = index.docs
+              .filter((doc: any) => {
+                // Search in title, tags, path
+                const searchable = `${doc.title} ${doc.tags?.join(' ') || ''} ${doc.path}`.toLowerCase();
+                return query.split(' ').every((term: string) => searchable.includes(term));
+              })
+              .slice(0, 20);
+
+            res.end(JSON.stringify({ results, query }));
+            return;
+          }
+
+          // GET /api/docs/:path - Get a specific doc
+          const docPath = req.url.replace('/api/docs/', '');
+          const filePath = path.join(docsRoot, `${docPath}.mdx`);
+
+          if (fs.existsSync(filePath)) {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const parsed = parseMdx(content);
+
+            // Get metadata from index
+            const indexPath = path.join(docsRoot, '_index.json');
+            let metadata = {};
+            if (fs.existsSync(indexPath)) {
+              const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+              const docMeta = index.docs.find((d: any) => d.path === docPath);
+              if (docMeta) metadata = docMeta;
+            }
+
+            res.end(JSON.stringify({
+              ...metadata,
+              path: docPath,
+              blocks: parsed.blocks,
+              raw: content,
+            }));
+          } else {
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: 'Doc not found', path: docPath }));
+          }
+        } catch (error) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: String(error) }));
+        }
+      });
+    }
+  };
+}
+
+// Parse MDX file into blocks
+function parseMdx(content: string): { metadata: Record<string, any>; blocks: any[] } {
+  const blocks: any[] = [];
+  let metadata: Record<string, any> = {};
+
+  // Extract frontmatter
+  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
+  let body = content;
+
+  if (frontmatterMatch) {
+    body = content.slice(frontmatterMatch[0].length);
+    const yaml = frontmatterMatch[1];
+
+    // Simple YAML parsing
+    yaml.split('\n').forEach(line => {
+      const match = line.match(/^(\w+):\s*(.*)$/);
+      if (match) {
+        const [, key, value] = match;
+        if (value.startsWith('[')) {
+          // Array
+          try {
+            metadata[key] = JSON.parse(value.replace(/'/g, '"'));
+          } catch {
+            metadata[key] = value;
+          }
+        } else if (value.startsWith('"') || value.startsWith("'")) {
+          metadata[key] = value.slice(1, -1);
+        } else if (!isNaN(Number(value))) {
+          metadata[key] = Number(value);
+        } else {
+          metadata[key] = value;
         }
       }
-    };
+    });
+  }
+
+  // Parse body into blocks
+  const lines = body.trim().split('\n');
+  let inCodeBlock = false;
+  let codeBlockLang = '';
+  let codeContent: string[] = [];
+  let blockId = 0;
+
+  const createId = () => `b${++blockId}`;
+
+  for (const line of lines) {
+    // Code block
+    if (line.startsWith('```')) {
+      if (!inCodeBlock) {
+        inCodeBlock = true;
+        codeBlockLang = line.slice(3).trim();
+        codeContent = [];
+      } else {
+        // End code block
+        if (codeBlockLang === 'mermaid') {
+          blocks.push({
+            id: createId(),
+            type: 'diagram',
+            content: codeContent.join('\n'),
+            metadata: { diagramData: { mermaid: codeContent.join('\n') } }
+          });
+        } else {
+          blocks.push({
+            id: createId(),
+            type: 'code',
+            content: codeContent.join('\n'),
+            metadata: { language: codeBlockLang || 'text' }
+          });
+        }
+        inCodeBlock = false;
+        codeBlockLang = '';
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeContent.push(line);
+      continue;
+    }
+
+    // Headings
+    if (line.startsWith('# ')) {
+      blocks.push({ id: createId(), type: 'heading-1', content: line.slice(2) });
+      continue;
+    }
+    if (line.startsWith('## ')) {
+      blocks.push({ id: createId(), type: 'heading-2', content: line.slice(3) });
+      continue;
+    }
+    if (line.startsWith('### ')) {
+      blocks.push({ id: createId(), type: 'heading-3', content: line.slice(4) });
+      continue;
+    }
+
+    // Divider
+    if (line === '---') {
+      blocks.push({ id: createId(), type: 'divider', content: '' });
+      continue;
+    }
+
+    // MDX components (callouts, etc.)
+    if (line.startsWith('<Callout')) {
+      const typeMatch = line.match(/type="(\w+)"/);
+      const type = typeMatch ? typeMatch[1] : 'info';
+      blocks.push({
+        id: createId(),
+        type: 'callout',
+        content: line.replace(/<\/?Callout[^>]*>/g, '').trim(),
+        metadata: { level: type }
+      });
+      continue;
+    }
+
+    // React Flow diagram
+    if (line.startsWith('<ReactFlow')) {
+      try {
+        const dataMatch = line.match(/data=\{([^}]+)\}/);
+        if (dataMatch) {
+          const data = JSON.parse(dataMatch[1]);
+          blocks.push({
+            id: createId(),
+            type: 'diagram',
+            content: '',
+            metadata: { diagramData: data }
+          });
+        }
+      } catch {}
+      continue;
+    }
+
+    // Whiteboard
+    if (line.startsWith('<Whiteboard')) {
+      try {
+        const dataMatch = line.match(/data=\{([^}]+)\}/);
+        if (dataMatch) {
+          const data = JSON.parse(dataMatch[1]);
+          blocks.push({
+            id: createId(),
+            type: 'whiteboard',
+            content: '',
+            metadata: { whiteboardData: data }
+          });
+        }
+      } catch {}
+      continue;
+    }
+
+    // Regular paragraph
+    if (line.trim()) {
+      blocks.push({ id: createId(), type: 'paragraph', content: line });
+    }
+  }
+
+  return { metadata, blocks };
+}
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, '.', '');
+  return {
+    server: {
+      port: 6969,
+      strictPort: false, // Auto-find next available port if 6969 is taken
+      host: '0.0.0.0',
+    },
+    plugins: [
+      react(),
+      docsApiPlugin(),
+    ],
+    define: {
+      'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+    },
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, '.'),
+      }
+    }
+  };
 });

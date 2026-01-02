@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "docs": [
+    {
+      "id": "doc-getting-started",
+      "path": "getting-started",
+      "title": "Getting Started with Catryna",
+      "tags": ["intro", "tutorial"],
+      "relatedFiles": [],
+      "createdAt": 1735689600000,
+      "updatedAt": 1735689600000,
+      "createdBy": "claude-code"
+    }
+  ],
+  "lastUpdated": 1735689600000
+}

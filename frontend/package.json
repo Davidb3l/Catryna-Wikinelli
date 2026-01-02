@@ -14,7 +14,7 @@
     "@google/genai": "^1.34.0",
     "lucide-react": "^0.562.0",
     "reactflow": "11.10.1",
-    "tldraw": "2.0.0-canary.c41d8e14798e",
+    "tldraw": "^2.4.0",
     "@tiptap/react": "2.1.13",
     "@tiptap/starter-kit": "2.1.13",
     "diff": "5.1.0"

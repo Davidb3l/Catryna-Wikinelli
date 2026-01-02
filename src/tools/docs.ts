@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { getDb, hashContent } from "../db";
+import { createDoc, getDoc, listDocs, updateDoc, deleteDoc } from "../storage";
 
 // Block schema for documents
 const BlockSchema = z.object({
@@ -13,57 +13,33 @@ export function registerDocTools(server: McpServer): void {
   server.tool(
     "create_doc",
     {
-      path: z.string().describe("Doc path, e.g. 'modules/auth' or 'architecture/database'"),
+      path: z.string().describe("Doc path, e.g. 'modules/auth' or 'architecture/database'. Creates .docs/{path}.mdx file"),
       title: z.string().describe("Human-readable title for the documentation page"),
       content: z.array(BlockSchema).describe("Array of content blocks"),
       tags: z.array(z.string()).optional().describe("Tags for categorization"),
       relatedFiles: z.array(z.string()).optional().describe("Source files this doc covers"),
     },
     async ({ path, title, content, tags, relatedFiles }) => {
-      const db = getDb();
-      const id = crypto.randomUUID();
-      const now = Date.now();
-
-      const metadata = JSON.stringify({
-        tags: tags || [],
-        relatedFiles: relatedFiles || [],
-        createdBy: "claude-code",
-      });
-
-      const blocksJson = JSON.stringify(content);
-
       try {
         // Check if doc already exists
-        const existing = db.query("SELECT id FROM docs WHERE path = ?").get(path);
+        const existing = await getDoc(path);
         if (existing) {
           return {
             content: [{ type: "text", text: JSON.stringify({ success: false, error: `Doc already exists at path: ${path}` }) }],
           };
         }
 
-        // Insert doc
-        db.run(
-          "INSERT INTO docs (id, path, title, blocks, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          [id, path, title, blocksJson, metadata, now, now]
-        );
-
-        // Create initial version
-        const versionId = crypto.randomUUID();
-        const contentHash = hashContent(blocksJson);
-        db.run(
-          "INSERT INTO doc_versions (id, doc_id, content, content_hash, created_at, summary) VALUES (?, ?, ?, ?, ?, ?)",
-          [versionId, id, blocksJson, contentHash, now, "Initial version"]
-        );
-
-        // Create search index
-        const plainContent = content.map(b => JSON.stringify(b.data)).join(" ");
-        db.run(
-          "INSERT INTO doc_search (doc_id, search_vector, plain_content) VALUES (?, ?, ?)",
-          [id, `${title} ${plainContent}`.toLowerCase(), plainContent]
-        );
+        const metadata = await createDoc(path, title, content, tags, relatedFiles);
 
         return {
-          content: [{ type: "text", text: JSON.stringify({ success: true, id, path, title }) }],
+          content: [{ type: "text", text: JSON.stringify({
+            success: true,
+            id: metadata.id,
+            path: metadata.path,
+            title: metadata.title,
+            file: `.docs/${path}.mdx`,
+            message: "Doc created. Claude can read it directly with the Read tool.",
+          }) }],
         };
       } catch (error) {
         return {
@@ -80,16 +56,15 @@ export function registerDocTools(server: McpServer): void {
       path: z.string().describe("Path of the document to retrieve"),
     },
     async ({ path }) => {
-      const db = getDb();
-
-      const doc = db.query(`
-        SELECT id, path, title, blocks, metadata, created_at, updated_at
-        FROM docs WHERE path = ?
-      `).get(path) as { id: string; path: string; title: string; blocks: string; metadata: string; created_at: number; updated_at: number } | null;
+      const doc = await getDoc(path);
 
       if (!doc) {
         return {
-          content: [{ type: "text", text: JSON.stringify({ success: false, error: `Doc not found: ${path}` }) }],
+          content: [{ type: "text", text: JSON.stringify({
+            success: false,
+            error: `Doc not found: ${path}`,
+            hint: "You can also read the file directly: .docs/{path}.mdx",
+          }) }],
         };
       }
 
@@ -97,14 +72,16 @@ export function registerDocTools(server: McpServer): void {
         content: [{ type: "text", text: JSON.stringify({
           success: true,
           doc: {
-            id: doc.id,
-            path: doc.path,
-            title: doc.title,
-            blocks: JSON.parse(doc.blocks),
-            metadata: JSON.parse(doc.metadata),
-            createdAt: doc.created_at,
-            updatedAt: doc.updated_at,
+            id: doc.metadata.id,
+            path: doc.metadata.path,
+            title: doc.metadata.title,
+            blocks: doc.blocks,
+            tags: doc.metadata.tags,
+            relatedFiles: doc.metadata.relatedFiles,
+            createdAt: doc.metadata.createdAt,
+            updatedAt: doc.metadata.updatedAt,
           },
+          file: `.docs/${path}.mdx`,
         }) }],
       };
     }
@@ -118,35 +95,24 @@ export function registerDocTools(server: McpServer): void {
       pathPrefix: z.string().optional().describe("Filter by path prefix"),
     },
     async ({ tag, pathPrefix }) => {
-      const db = getDb();
+      const docs = await listDocs({ tag, pathPrefix });
 
-      let query = "SELECT id, path, title, metadata, updated_at FROM docs WHERE 1=1";
-      const params: string[] = [];
-
-      if (pathPrefix) {
-        query += " AND path LIKE ?";
-        params.push(`${pathPrefix}%`);
-      }
-
-      query += " ORDER BY updated_at DESC";
-
-      const docs = db.query(query).all(...params) as Array<{ id: string; path: string; title: string; metadata: string; updated_at: number }>;
-
-      let results = docs.map(d => ({
+      const results = docs.map(d => ({
         id: d.id,
         path: d.path,
         title: d.title,
-        tags: JSON.parse(d.metadata).tags || [],
-        updatedAt: d.updated_at,
+        tags: d.tags,
+        file: `.docs/${d.path}.mdx`,
+        updatedAt: d.updatedAt,
       }));
 
-      // Filter by tag if specified
-      if (tag) {
-        results = results.filter(d => d.tags.includes(tag));
-      }
-
       return {
-        content: [{ type: "text", text: JSON.stringify({ success: true, docs: results, count: results.length }) }],
+        content: [{ type: "text", text: JSON.stringify({
+          success: true,
+          docs: results,
+          count: results.length,
+          hint: "All docs are stored in .docs/ folder. Claude can read them directly.",
+        }) }],
       };
     }
   );
@@ -162,68 +128,27 @@ export function registerDocTools(server: McpServer): void {
       relatedFiles: z.array(z.string()).optional().describe("New related files"),
     },
     async ({ path, title, content, tags, relatedFiles }) => {
-      const db = getDb();
-      const now = Date.now();
-
-      const existing = db.query("SELECT id, blocks, metadata FROM docs WHERE path = ?").get(path) as { id: string; blocks: string; metadata: string } | null;
-
-      if (!existing) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ success: false, error: `Doc not found: ${path}` }) }],
-        };
-      }
-
-      const currentMetadata = JSON.parse(existing.metadata);
-      const newMetadata = {
-        ...currentMetadata,
-        ...(tags !== undefined && { tags }),
-        ...(relatedFiles !== undefined && { relatedFiles }),
-      };
-
-      const newBlocks = content ? JSON.stringify(content) : existing.blocks;
-
       try {
-        // Update doc
-        const updates: string[] = [];
-        const params: (string | number)[] = [];
+        const updated = await updateDoc(path, {
+          title,
+          blocks: content,
+          tags,
+          relatedFiles,
+        });
 
-        if (title) {
-          updates.push("title = ?");
-          params.push(title);
-        }
-        if (content) {
-          updates.push("blocks = ?");
-          params.push(newBlocks);
-        }
-        updates.push("metadata = ?");
-        params.push(JSON.stringify(newMetadata));
-        updates.push("updated_at = ?");
-        params.push(now);
-
-        params.push(path);
-
-        db.run(`UPDATE docs SET ${updates.join(", ")} WHERE path = ?`, params);
-
-        // Create new version if content changed
-        if (content) {
-          const versionId = crypto.randomUUID();
-          const contentHash = hashContent(newBlocks);
-          db.run(
-            "INSERT INTO doc_versions (id, doc_id, content, content_hash, created_at, summary) VALUES (?, ?, ?, ?, ?, ?)",
-            [versionId, existing.id, newBlocks, contentHash, now, "Updated content"]
-          );
-
-          // Update search index
-          const plainContent = content.map(b => JSON.stringify(b.data)).join(" ");
-          const searchTitle = title || "";
-          db.run(
-            "INSERT OR REPLACE INTO doc_search (doc_id, search_vector, plain_content) VALUES (?, ?, ?)",
-            [existing.id, `${searchTitle} ${plainContent}`.toLowerCase(), plainContent]
-          );
+        if (!updated) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ success: false, error: `Doc not found: ${path}` }) }],
+          };
         }
 
         return {
-          content: [{ type: "text", text: JSON.stringify({ success: true, path }) }],
+          content: [{ type: "text", text: JSON.stringify({
+            success: true,
+            path: updated.path,
+            file: `.docs/${path}.mdx`,
+            updatedAt: updated.updatedAt,
+          }) }],
         };
       } catch (error) {
         return {
@@ -240,20 +165,17 @@ export function registerDocTools(server: McpServer): void {
       path: z.string().describe("Path of the document to delete"),
     },
     async ({ path }) => {
-      const db = getDb();
-
-      const existing = db.query("SELECT id FROM docs WHERE path = ?").get(path);
-
-      if (!existing) {
-        return {
-          content: [{ type: "text", text: JSON.stringify({ success: false, error: `Doc not found: ${path}` }) }],
-        };
-      }
-
       try {
-        db.run("DELETE FROM docs WHERE path = ?", [path]);
+        const deleted = await deleteDoc(path);
+
+        if (!deleted) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ success: false, error: `Doc not found: ${path}` }) }],
+          };
+        }
+
         return {
-          content: [{ type: "text", text: JSON.stringify({ success: true, path }) }],
+          content: [{ type: "text", text: JSON.stringify({ success: true, path, deleted: true }) }],
         };
       } catch (error) {
         return {

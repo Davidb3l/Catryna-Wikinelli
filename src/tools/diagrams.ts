@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { getDb, hashContent } from "../db";
+import { createDoc, getDoc } from "../storage";
 
 // React Flow node schema
 const NodeSchema = z.object({
@@ -36,70 +36,46 @@ export function registerDiagramTools(server: McpServer): void {
       edges: z.array(EdgeSchema).describe("React Flow edges"),
     },
     async ({ path, title, type, nodes, edges }) => {
-      const db = getDb();
-      const id = crypto.randomUUID();
-      const now = Date.now();
-
-      const diagramData = {
-        type: type || "custom",
-        nodes,
-        edges,
-      };
-
-      const blocks = [
-        {
-          type: "heading",
-          data: { level: 1, content: title || "Architecture Diagram" },
-        },
-        {
-          type: "react-flow",
-          data: diagramData,
-        },
-      ];
-
-      const blocksJson = JSON.stringify(blocks);
-      const metadata = JSON.stringify({
-        tags: ["diagram", type || "custom"],
-        relatedFiles: [],
-        createdBy: "claude-code",
-        diagramType: type || "custom",
-      });
-
       try {
         // Check if doc already exists
-        const existing = db.query("SELECT id FROM docs WHERE path = ?").get(path);
+        const existing = await getDoc(path);
         if (existing) {
           return {
             content: [{ type: "text", text: JSON.stringify({ success: false, error: `Doc already exists at path: ${path}` }) }],
           };
         }
 
-        // Insert doc
-        db.run(
-          "INSERT INTO docs (id, path, title, blocks, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          [id, path, title || "Architecture Diagram", blocksJson, metadata, now, now]
-        );
+        const diagramData = {
+          type: type || "custom",
+          nodes,
+          edges,
+        };
 
-        // Create initial version
-        const versionId = crypto.randomUUID();
-        const contentHash = hashContent(blocksJson);
-        db.run(
-          "INSERT INTO doc_versions (id, doc_id, content, content_hash, created_at, summary) VALUES (?, ?, ?, ?, ?, ?)",
-          [versionId, id, blocksJson, contentHash, now, "Initial diagram"]
-        );
+        const blocks = [
+          {
+            type: "heading",
+            data: { level: 1, content: title || "Architecture Diagram" },
+          },
+          {
+            type: "react-flow",
+            data: diagramData,
+          },
+        ];
 
-        // Create search index
-        const nodeLabels = nodes.map(n => n.data.label).join(" ");
-        db.run(
-          "INSERT INTO doc_search (doc_id, search_vector, plain_content) VALUES (?, ?, ?)",
-          [id, `${title || ""} diagram ${type || ""} ${nodeLabels}`.toLowerCase(), nodeLabels]
+        const metadata = await createDoc(
+          path,
+          title || "Architecture Diagram",
+          blocks,
+          ["diagram", type || "custom"],
+          []
         );
 
         return {
           content: [{ type: "text", text: JSON.stringify({
             success: true,
-            id,
+            id: metadata.id,
             path,
+            file: `.docs/${path}.mdx`,
             nodeCount: nodes.length,
             edgeCount: edges.length,
           }) }],
@@ -121,59 +97,41 @@ export function registerDiagramTools(server: McpServer): void {
       snapshot: z.record(z.unknown()).describe("tldraw snapshot data"),
     },
     async ({ path, title, snapshot }) => {
-      const db = getDb();
-      const id = crypto.randomUUID();
-      const now = Date.now();
-
-      const blocks = [
-        {
-          type: "heading",
-          data: { level: 1, content: title || "Whiteboard" },
-        },
-        {
-          type: "whiteboard",
-          data: { snapshot },
-        },
-      ];
-
-      const blocksJson = JSON.stringify(blocks);
-      const metadata = JSON.stringify({
-        tags: ["whiteboard"],
-        relatedFiles: [],
-        createdBy: "claude-code",
-      });
-
       try {
         // Check if doc already exists
-        const existing = db.query("SELECT id FROM docs WHERE path = ?").get(path);
+        const existing = await getDoc(path);
         if (existing) {
           return {
             content: [{ type: "text", text: JSON.stringify({ success: false, error: `Doc already exists at path: ${path}` }) }],
           };
         }
 
-        // Insert doc
-        db.run(
-          "INSERT INTO docs (id, path, title, blocks, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          [id, path, title || "Whiteboard", blocksJson, metadata, now, now]
-        );
+        const blocks = [
+          {
+            type: "heading",
+            data: { level: 1, content: title || "Whiteboard" },
+          },
+          {
+            type: "whiteboard",
+            data: { snapshot },
+          },
+        ];
 
-        // Create initial version
-        const versionId = crypto.randomUUID();
-        const contentHash = hashContent(blocksJson);
-        db.run(
-          "INSERT INTO doc_versions (id, doc_id, content, content_hash, created_at, summary) VALUES (?, ?, ?, ?, ?, ?)",
-          [versionId, id, blocksJson, contentHash, now, "Initial whiteboard"]
-        );
-
-        // Create search index
-        db.run(
-          "INSERT INTO doc_search (doc_id, search_vector, plain_content) VALUES (?, ?, ?)",
-          [id, `${title || ""} whiteboard`.toLowerCase(), title || "whiteboard"]
+        const metadata = await createDoc(
+          path,
+          title || "Whiteboard",
+          blocks,
+          ["whiteboard"],
+          []
         );
 
         return {
-          content: [{ type: "text", text: JSON.stringify({ success: true, id, path }) }],
+          content: [{ type: "text", text: JSON.stringify({
+            success: true,
+            id: metadata.id,
+            path,
+            file: `.docs/${path}.mdx`,
+          }) }],
         };
       } catch (error) {
         return {
