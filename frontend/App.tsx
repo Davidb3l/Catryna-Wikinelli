@@ -6,7 +6,7 @@ import {
   MousePointer2, History, RotateCcw, Check, Monitor, Moon, Sun,
   Type as TypeIcon, Layout, Box, Share2, Layers, Folder, Copy, ExternalLink,
   Filter, Calendar, Tag, Sparkles, AlertCircle, GripVertical, Trash2, Maximize2,
-  Table as TableIcon, BarChart3, PieChart, Info, Loader2
+  Table as TableIcon, BarChart3, PieChart, Info, Loader2, FolderOpen, ChevronUp
 } from 'lucide-react';
 import ReactFlow, { Background, Controls, MiniMap } from 'reactflow';
 import { Tldraw } from 'tldraw';
@@ -20,6 +20,12 @@ interface Toast {
   id: string;
   message: string;
   type: 'success' | 'info' | 'error';
+}
+
+interface Project {
+  name: string;
+  path: string;
+  docsPath: string;
 }
 
 // --- Components ---
@@ -157,6 +163,22 @@ export default function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [activeSection, setActiveSection] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [currentProject, setCurrentProject] = useState<string>('');
+  const [isProjectSelectorOpen, setIsProjectSelectorOpen] = useState(false);
+  const [projectsLoading, setProjectsLoading] = useState(true);
+
+  // Fetch projects list on mount
+  useEffect(() => {
+    fetch('/api/projects')
+      .then(res => res.json())
+      .then(data => {
+        setProjects(data.projects || []);
+        setCurrentProject(data.current || '');
+        setProjectsLoading(false);
+      })
+      .catch(() => setProjectsLoading(false));
+  }, []);
 
   // Fetch docs list and nav tree from .docs folder
   const { docs, navItems, loading: listLoading, error: listError, refetch: refetchList } = useDocsList();
@@ -181,6 +203,25 @@ export default function App() {
     setSelectedDocPath(path);
     setIsEditing(false);
     if (window.innerWidth < 1024) setIsSidebarOpen(false);
+  };
+
+  const handleProjectSwitch = async (projectPath: string) => {
+    try {
+      const res = await fetch('/api/projects/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: projectPath })
+      });
+      if (res.ok) {
+        setCurrentProject(projectPath);
+        setSelectedDocPath(null);
+        setIsProjectSelectorOpen(false);
+        refetchList();
+        addToast(`Switched to ${projectPath.split('/').pop() || projectPath.split('\\').pop()}`);
+      }
+    } catch (e) {
+      addToast('Failed to switch project', 'error');
+    }
   };
 
   const tableOfContents = useMemo(() => {
@@ -227,6 +268,17 @@ export default function App() {
     }
   };
 
+  // Close project selector when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (isProjectSelectorOpen && !(e.target as Element).closest('[data-project-selector]')) {
+        setIsProjectSelectorOpen(false);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [isProjectSelectorOpen]);
+
   return (
     <div className={`flex h-screen w-full overflow-hidden bg-white dark:bg-zinc-950 transition-colors`}>
       {activeEditor === 'diag' && <DiagramEditor onClose={() => { setActiveEditor(null); setEditorDiagramData(null); }} diagramData={editorDiagramData || undefined} />}
@@ -250,6 +302,49 @@ export default function App() {
             </div>
             <Button variant="ghost" onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-1"><X size={16} /></Button>
           </div>
+
+          {/* Project Selector */}
+          <div className="p-2 border-b border-zinc-200 dark:border-zinc-800" data-project-selector>
+            <div className="relative">
+              <button
+                onClick={() => setIsProjectSelectorOpen(!isProjectSelectorOpen)}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors text-sm"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <FolderOpen size={14} className="text-indigo-500 shrink-0" />
+                  <span className="truncate font-medium text-zinc-700 dark:text-zinc-300">
+                    {projectsLoading ? 'Loading...' : (currentProject.split('/').pop() || currentProject.split('\\').pop() || 'Select Project')}
+                  </span>
+                </div>
+                {isProjectSelectorOpen ? <ChevronUp size={14} className="text-zinc-400 shrink-0" /> : <ChevronDown size={14} className="text-zinc-400 shrink-0" />}
+              </button>
+
+              {isProjectSelectorOpen && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
+                  {projects.length === 0 ? (
+                    <div className="px-3 py-4 text-xs text-zinc-400 text-center">
+                      No projects with .docs folder found
+                    </div>
+                  ) : (
+                    projects.map(project => (
+                      <button
+                        key={project.path}
+                        onClick={() => handleProjectSwitch(project.path)}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ${
+                          currentProject === project.path ? 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400' : 'text-zinc-600 dark:text-zinc-400'
+                        }`}
+                      >
+                        <Folder size={14} className={currentProject === project.path ? 'text-indigo-500' : 'text-zinc-400'} />
+                        <span className="truncate">{project.name}</span>
+                        {currentProject === project.path && <Check size={14} className="ml-auto shrink-0 text-indigo-500" />}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
             {listLoading ? (
               <div className="flex items-center justify-center py-8">

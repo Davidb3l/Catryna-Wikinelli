@@ -3,13 +3,96 @@ import fs from 'fs';
 import { defineConfig, loadEnv, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// Scan common directories for projects with .docs folders
+function findProjects(): { name: string; path: string; docsPath: string }[] {
+  const projects: { name: string; path: string; docsPath: string }[] = [];
+
+  // Directories to scan for projects
+  const scanDirs = [
+    process.env.PROJECTS_ROOT || 'E:/0 - Code',
+    path.resolve(__dirname, '..'), // This repo
+  ];
+
+  for (const scanDir of scanDirs) {
+    if (!fs.existsSync(scanDir)) continue;
+
+    try {
+      const entries = fs.readdirSync(scanDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const projectPath = path.join(scanDir, entry.name);
+        const docsPath = path.join(projectPath, '.docs');
+
+        if (fs.existsSync(docsPath) && fs.existsSync(path.join(docsPath, '_index.json'))) {
+          projects.push({
+            name: entry.name,
+            path: projectPath,
+            docsPath: docsPath,
+          });
+        }
+      }
+    } catch {}
+  }
+
+  return projects;
+}
+
 // Plugin to serve .docs folder as API
+// Set DOCS_ROOT env var to point to a different project's .docs folder
 function docsApiPlugin(): Plugin {
-  const docsRoot = path.resolve(__dirname, '../.docs');
+  let docsRoot = process.env.DOCS_ROOT || path.resolve(__dirname, '../.docs');
 
   return {
     name: 'docs-api',
     configureServer(server) {
+      // API routes for projects
+      server.middlewares.use((req, res, next) => {
+        if (!req.url?.startsWith('/api/projects')) {
+          return next();
+        }
+
+        res.setHeader('Content-Type', 'application/json');
+
+        try {
+          // GET /api/projects - List all projects with .docs
+          if (req.url === '/api/projects' || req.url === '/api/projects/') {
+            const projects = findProjects();
+            const currentProject = projects.find(p => p.docsPath === docsRoot);
+            res.end(JSON.stringify({
+              projects,
+              current: currentProject?.path || docsRoot.replace('/.docs', '').replace('\\.docs', ''),
+            }));
+            return;
+          }
+
+          // POST /api/projects/select - Switch to a different project
+          if (req.url === '/api/projects/select' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', () => {
+              try {
+                const { path: projectPath } = JSON.parse(body);
+                const newDocsRoot = path.join(projectPath, '.docs');
+                if (fs.existsSync(newDocsRoot)) {
+                  docsRoot = newDocsRoot;
+                  res.end(JSON.stringify({ success: true, docsRoot }));
+                } else {
+                  res.statusCode = 404;
+                  res.end(JSON.stringify({ error: 'No .docs folder found', path: projectPath }));
+                }
+              } catch (e) {
+                res.statusCode = 400;
+                res.end(JSON.stringify({ error: String(e) }));
+              }
+            });
+            return;
+          }
+        } catch (error) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: String(error) }));
+        }
+      });
+
       // API routes for docs
       server.middlewares.use((req, res, next) => {
         if (!req.url?.startsWith('/api/docs')) {
