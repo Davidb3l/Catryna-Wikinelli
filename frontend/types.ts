@@ -1,5 +1,5 @@
 
-export type BlockType = 'paragraph' | 'heading-1' | 'heading-2' | 'heading-3' | 'code' | 'callout' | 'diagram' | 'whiteboard' | 'divider';
+export type BlockType = 'paragraph' | 'heading-1' | 'heading-2' | 'heading-3' | 'code' | 'callout' | 'diagram' | 'whiteboard' | 'divider' | 'table';
 
 export interface Block {
   id: string;
@@ -11,6 +11,8 @@ export interface Block {
     filePath?: string;
     diagramData?: any;
     whiteboardData?: any;
+    headers?: string[];
+    rows?: string[][];
   };
 }
 

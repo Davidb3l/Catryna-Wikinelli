@@ -426,6 +426,45 @@ function parseMdx(content: string): { metadata: Record<string, any>; blocks: any
       continue;
     }
 
+    // Markdown table
+    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+      const tableRows: string[] = [line];
+      // Collect all consecutive table rows
+      while (i + 1 < lines.length) {
+        const nextLine = lines[i + 1].trim();
+        if (nextLine.startsWith('|') && nextLine.endsWith('|')) {
+          tableRows.push(lines[i + 1]);
+          i++;
+        } else {
+          break;
+        }
+      }
+
+      // Parse table: first row is header, second is separator (skip), rest are data
+      if (tableRows.length >= 2) {
+        const parseRow = (row: string) =>
+          row.split('|').slice(1, -1).map(cell => cell.trim());
+
+        const headers = parseRow(tableRows[0]);
+        const rows: string[][] = [];
+
+        for (let r = 1; r < tableRows.length; r++) {
+          const row = tableRows[r];
+          // Skip separator row (contains only dashes and pipes)
+          if (/^\|[\s\-:|]+\|$/.test(row.trim())) continue;
+          rows.push(parseRow(row));
+        }
+
+        blocks.push({
+          id: createId(),
+          type: 'table',
+          content: '',
+          metadata: { headers, rows }
+        });
+      }
+      continue;
+    }
+
     // Regular paragraph
     if (line.trim()) {
       blocks.push({ id: createId(), type: 'paragraph', content: line });

@@ -517,6 +517,37 @@ const BlockRenderer: React.FC<{
     </div>
   );
 
+  if (block.type === 'table') {
+    const headers = block.metadata?.headers || [];
+    const rows = block.metadata?.rows || [];
+    return wrapper(
+      <div className="my-6 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <tr>
+              {headers.map((header: string, i: number) => (
+                <th key={i} className="px-4 py-3 text-left font-bold text-zinc-700 dark:text-zinc-300 border-b border-zinc-200 dark:border-zinc-800">
+                  {header.replace(/\*\*/g, '')}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row: string[], rowIdx: number) => (
+              <tr key={rowIdx} className="border-b border-zinc-100 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
+                {row.map((cell: string, cellIdx: number) => (
+                  <td key={cellIdx} className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
+                    {cell.replace(/\*\*/g, '')}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   return wrapper(
     <div contentEditable={isEditing} className="leading-relaxed text-zinc-700 dark:text-zinc-300 min-h-[1.5em] outline-none py-1.5 focus:bg-zinc-50 dark:focus:bg-zinc-900 transition-colors" suppressContentEditableWarning>{block.content}</div>
   );
