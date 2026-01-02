@@ -6,12 +6,34 @@ import react from '@vitejs/plugin-react';
 // Scan common directories for projects with .docs folders
 function findProjects(): { name: string; path: string; docsPath: string }[] {
   const projects: { name: string; path: string; docsPath: string }[] = [];
+  const home = process.env.HOME || process.env.USERPROFILE || '';
 
   // Directories to scan for projects
-  const scanDirs = [
-    process.env.PROJECTS_ROOT || 'E:/0 - Code',
-    path.resolve(__dirname, '..'), // This repo
-  ];
+  // Priority: PROJECTS_ROOT env var > sibling projects > common dev directories
+  const scanDirs: string[] = [];
+
+  // 1. User-specified projects root (set PROJECTS_ROOT env var)
+  if (process.env.PROJECTS_ROOT) {
+    scanDirs.push(process.env.PROJECTS_ROOT);
+  }
+
+  // 2. Parent directory (sibling projects to Catryna)
+  scanDirs.push(path.resolve(__dirname, '..'));
+
+  // 3. Common project directories (cross-platform)
+  if (home) {
+    scanDirs.push(
+      path.join(home, 'Projects'),
+      path.join(home, 'projects'),
+      path.join(home, 'Code'),
+      path.join(home, 'code'),
+      path.join(home, 'dev'),
+      path.join(home, 'repos'),
+      path.join(home, 'src'),
+    );
+  }
+
+  const seen = new Set<string>();
 
   for (const scanDir of scanDirs) {
     if (!fs.existsSync(scanDir)) continue;
@@ -23,7 +45,12 @@ function findProjects(): { name: string; path: string; docsPath: string }[] {
         const projectPath = path.join(scanDir, entry.name);
         const docsPath = path.join(projectPath, '.docs');
 
+        // Skip if already found (dedup by normalized path)
+        const normalizedPath = path.normalize(projectPath).toLowerCase();
+        if (seen.has(normalizedPath)) continue;
+
         if (fs.existsSync(docsPath) && fs.existsSync(path.join(docsPath, '_index.json'))) {
+          seen.add(normalizedPath);
           projects.push({
             name: entry.name,
             path: projectPath,
