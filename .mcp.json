@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "catryna": {
+      "command": "bun",
+      "args": ["run", "src/index.ts"]
+    }
+  }
+}

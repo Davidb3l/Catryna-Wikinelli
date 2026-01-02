@@ -1,24 +1,20 @@
 {
   "name": "catryna-wikinelli",
   "version": "1.0.0",
-  "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "type": "module",
+  "bin": {
+    "catryna-mcp": "./src/index.ts"
+  },
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
-    "lint": "turbo run lint",
-    "mcp": "bun run --filter=@catryna/server mcp",
-    "setup": "bun run scripts/setup-mcp.ts",
-    "db:generate": "turbo run db:generate --filter=@catryna/server",
-    "db:migrate": "turbo run db:migrate --filter=@catryna/server",
-    "db:push": "turbo run db:push --filter=@catryna/server"
+    "start": "bun run src/index.ts",
+    "dev": "bun run --watch src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
-    "turbo": "^2.3.0",
-    "typescript": "~5.8.2"
-  },
-  "packageManager": "bun@1.1.38"
+    "@types/bun": "latest",
+    "typescript": "^5.8.0"
+  }
 }
