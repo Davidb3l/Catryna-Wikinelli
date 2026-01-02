@@ -1,0 +1,128 @@
+---
+id: 2da43b16-2ffa-46eb-b07e-367d2173e777
+title: "MCP Tools Reference"
+path: "backend/tools"
+tags: ["backend", "mcp", "tools", "reference"]
+relatedFiles: ["src\tools\docs.ts", "src\tools\search.ts", "src\tools\diagrams.ts", "src\tools\coverage.ts"]
+createdAt: 1767321316028
+updatedAt: 1767321661004
+createdBy: "claude-code"
+---
+
+# MCP Tools Reference
+
+Complete reference for all MCP tools available in Catryna Wikinelli.
+
+## Document Tools (docs.ts)
+
+### create_doc
+
+Creates a new documentation page.
+
+```typescript
+// Parameters
+{
+  path: string,           // e.g., "modules/auth"
+  title: string,          // Human-readable title
+  content: Block[],       // Array of content blocks
+  tags?: string[],        // Categorization tags
+  relatedFiles?: string[] // Source files covered
+}
+```
+
+### get_doc
+
+Retrieves a document by path. Returns metadata and blocks.
+
+### list_docs
+
+Lists all documents with optional filtering by tag or path prefix.
+
+### update_doc
+
+Updates an existing document's title, content, tags, or relatedFiles.
+
+### delete_doc
+
+Removes a document by path.
+
+## Search Tools (search.ts)
+
+### search_docs
+
+Full-text search across all documents.
+
+```typescript
+// Parameters
+{
+  query: string,  // Search terms (min 2 chars)
+  limit?: number  // Max results (default 10)
+}
+```
+
+Scoring: Title matches (+3), tag matches (+2), path matches (+1), content matches (+1).
+
+## Diagram Tools (diagrams.ts)
+
+### create_diagram
+
+Creates a React Flow architecture diagram.
+
+```typescript
+// Parameters
+{
+  path: string,
+  title?: string,
+  type?: "architecture" | "flow" | "sequence" | "entity" | "custom",
+  nodes: Array<{
+    id: string,
+    data: { label: string },
+    position: { x: number, y: number },
+    type?: string
+  }>,
+  edges: Array<{
+    id: string,
+    source: string,
+    target: string,
+    label?: string
+  }>
+}
+```
+
+### create_whiteboard
+
+Creates a tldraw whiteboard document.
+
+```typescript
+// Parameters
+{
+  path: string,
+  title?: string,
+  snapshot: object  // tldraw snapshot data
+}
+```
+
+## Coverage Tools (coverage.ts)
+
+### get_undocumented_modules
+
+Finds source files that aren't linked to any documentation.
+
+```typescript
+// Scans for: .ts, .tsx, .js, .jsx, .py, .go, .rs
+// Excludes: node_modules, tests, dist, build
+```
+
+### get_doc_coverage
+
+Generates a coverage report with metrics:
+
+- `totalModules` - Number of source files
+
+- `documentedModules` - Files with linked docs
+
+- `coveragePercent` - Documentation coverage %
+
+- `staleDocs` - Docs not updated in 30+ days
+
+- `undocumentedFiles` - List of files needing docs

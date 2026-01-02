@@ -1,0 +1,78 @@
+---
+id: a3540b69-b97d-4466-adee-1d2dfd4e78dd
+title: "React Hooks"
+path: "frontend/hooks"
+tags: ["frontend", "hooks", "react"]
+relatedFiles: ["frontend\hooks\useDocs.ts"]
+createdAt: 1767321379449
+updatedAt: 1767321661283
+createdBy: "claude-code"
+---
+
+# React Hooks
+
+Custom React hooks for data fetching and state management.
+
+## useDocsList
+
+Fetches the list of all documents and builds a navigation tree.
+
+```typescript
+const { 
+  docs,      // DocMetadata[] - flat list of all docs
+  navItems,  // NavItem[] - hierarchical nav tree
+  loading,   // boolean
+  error,     // string | null
+  refetch    // () => Promise<void>
+} = useDocsList();
+```
+
+Automatically fetches on mount from `/api/docs`. The `navItems` are built by `buildNavTree()` which groups docs by path folders.
+
+## useDoc
+
+Fetches a single document by path.
+
+```typescript
+const { 
+  doc,       // Document | null
+  loading,   // boolean
+  error,     // string | null
+  refetch    // () => Promise<Document | null>
+} = useDoc(path);  // path: string | null
+```
+
+When `path` is null, returns null without fetching. On 404, sets doc to null without error.
+
+## useDocsSearch
+
+Search across all documents.
+
+```typescript
+const { 
+  results,   // DocMetadata[]
+  loading,   // boolean
+  error,     // string | null
+  search     // (query: string) => Promise<DocMetadata[]>
+} = useDocsSearch();
+```
+
+The `search` function requires a minimum of 2 characters. Calls `/api/docs/search?q={query}`.
+
+## EMPTY_DOC
+
+Default placeholder document shown when no doc is selected:
+
+```typescript
+export const EMPTY_DOC: Document = {
+  id: 'empty',
+  title: 'No Document Selected',
+  path: [],
+  blocks: [
+    { id: 'empty-1', type: 'heading-1', content: 'Welcome to Catryna Wikinelli' },
+    { id: 'empty-2', type: 'paragraph', content: 'Select a document from the sidebar...' },
+    { id: 'empty-3', type: 'callout', content: 'Use MCP tools to create docs.', metadata: { level: 'info' } },
+  ],
+  lastUpdated: new Date().toISOString(),
+};
+```

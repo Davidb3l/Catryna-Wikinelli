@@ -1,0 +1,76 @@
+---
+id: d37e0497-e75d-47d9-9d08-5ef7067ab81d
+title: "Architecture Overview"
+path: "architecture/overview"
+tags: ["architecture", "overview", "core"]
+relatedFiles: ["src\index.ts", "src\storage.ts"]
+createdAt: 1767321236003
+updatedAt: 1767321656661
+createdBy: "claude-code"
+---
+
+# Architecture Overview
+
+Catryna Wikinelli is a file-based documentation platform designed for both AI coding agents and humans. The key insight is that documentation is stored as .mdx files in the .docs/ folder, enabling dual access: AI agents can read docs directly via file system, while MCP tools handle mutations (create/update/delete).
+
+## Core Architecture
+
+The system consists of two main components:
+
+1. **MCP Server** - A Node.js server using the Model Context Protocol SDK that exposes tools for documentation management. Runs on stdio for Claude Code integration.
+
+2. **Frontend Viewer** - A React/Vite application (port 6969) that provides a visual interface for humans to browse, search, and view documentation.
+
+## Data Flow
+
+**Claude Code (AI Agent):**
+
+- READ: Direct file access to .docs/{path}.mdx - no MCP needed
+
+- WRITE: Uses MCP tools (create_doc, update_doc, delete_doc)
+
+**Frontend (Human):**
+
+- READ: Fetches from Vite dev server API that reads .docs/ folder
+
+- WRITE: Currently view-only (edit capabilities in development)
+
+## File Structure
+
+```text
+catryna-wikinelli/
+├── .docs/                    # Documentation files (git-tracked)
+│   ├── _index.json           # Index of all docs (metadata)
+│   └── **/*.mdx              # Individual doc files
+├── src/
+│   ├── index.ts              # MCP server entry point
+│   ├── storage.ts            # File-based storage layer
+│   └── tools/
+│       ├── docs.ts           # Document CRUD tools
+│       ├── search.ts         # Full-text search
+│       ├── diagrams.ts       # React Flow & tldraw
+│       └── coverage.ts       # Documentation coverage
+└── frontend/                 # Vite viewer (port 6969)
+```
+
+## Key Design Decisions
+
+{/* Block: raw
+{
+  "content": "<Callout type=\"info\">"
+}
+*/}
+
+**File-Based Storage**: Docs are MDX files with YAML frontmatter. This enables direct file reads by Claude, git versioning, and human editability.
+
+</Callout>
+
+{/* Block: raw
+{
+  "content": "<Callout type=\"info\">"
+}
+*/}
+
+**Dual Index**: _index.json maintains metadata for fast listing/search without parsing every MDX file.
+
+</Callout>

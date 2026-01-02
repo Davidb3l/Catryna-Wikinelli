@@ -132,11 +132,16 @@ function parseMdx(content: string): { metadata: Record<string, any>; blocks: any
   let inCodeBlock = false;
   let codeBlockLang = '';
   let codeContent: string[] = [];
+  let inCallout = false;
+  let calloutType = 'info';
+  let calloutContent: string[] = [];
   let blockId = 0;
 
   const createId = () => `b${++blockId}`;
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
     // Code block
     if (line.startsWith('```')) {
       if (!inCodeBlock) {
@@ -171,6 +176,26 @@ function parseMdx(content: string): { metadata: Record<string, any>; blocks: any
       continue;
     }
 
+    // Handle multi-line callout
+    if (inCallout) {
+      if (line.includes('</Callout>')) {
+        // End of callout - add content before closing tag
+        const beforeClose = line.replace('</Callout>', '').trim();
+        if (beforeClose) calloutContent.push(beforeClose);
+        blocks.push({
+          id: createId(),
+          type: 'callout',
+          content: calloutContent.join(' ').trim(),
+          metadata: { level: calloutType }
+        });
+        inCallout = false;
+        calloutContent = [];
+      } else {
+        calloutContent.push(line);
+      }
+      continue;
+    }
+
     // Headings
     if (line.startsWith('# ')) {
       blocks.push({ id: createId(), type: 'heading-1', content: line.slice(2) });
@@ -191,25 +216,48 @@ function parseMdx(content: string): { metadata: Record<string, any>; blocks: any
       continue;
     }
 
-    // MDX components (callouts, etc.)
+    // MDX components - Callout (handles both single and multi-line)
     if (line.startsWith('<Callout')) {
       const typeMatch = line.match(/type="(\w+)"/);
-      const type = typeMatch ? typeMatch[1] : 'info';
-      blocks.push({
-        id: createId(),
-        type: 'callout',
-        content: line.replace(/<\/?Callout[^>]*>/g, '').trim(),
-        metadata: { level: type }
-      });
+      calloutType = typeMatch ? typeMatch[1] : 'info';
+
+      // Check if it's a single-line callout (has closing tag on same line)
+      if (line.includes('</Callout>')) {
+        const content = line.replace(/<Callout[^>]*>/, '').replace('</Callout>', '').trim();
+        blocks.push({
+          id: createId(),
+          type: 'callout',
+          content,
+          metadata: { level: calloutType }
+        });
+      } else {
+        // Multi-line callout - start collecting content
+        inCallout = true;
+        calloutContent = [];
+        // Get any content after the opening tag on the same line
+        const afterTag = line.replace(/<Callout[^>]*>/, '').trim();
+        if (afterTag) calloutContent.push(afterTag);
+      }
       continue;
     }
 
-    // React Flow diagram
+    // React Flow diagram - extract JSON properly
     if (line.startsWith('<ReactFlow')) {
       try {
-        const dataMatch = line.match(/data=\{([^}]+)\}/);
-        if (dataMatch) {
-          const data = JSON.parse(dataMatch[1]);
+        // Find the start of data={
+        const dataStart = line.indexOf('data={');
+        if (dataStart !== -1) {
+          // Extract everything after data={ and find matching }
+          const jsonStart = dataStart + 6; // length of 'data={'
+          let braceCount = 1;
+          let jsonEnd = jsonStart;
+          for (let j = jsonStart; j < line.length && braceCount > 0; j++) {
+            if (line[j] === '{') braceCount++;
+            else if (line[j] === '}') braceCount--;
+            if (braceCount === 0) jsonEnd = j;
+          }
+          const jsonStr = line.slice(jsonStart, jsonEnd);
+          const data = JSON.parse(jsonStr);
           blocks.push({
             id: createId(),
             type: 'diagram',
@@ -217,16 +265,33 @@ function parseMdx(content: string): { metadata: Record<string, any>; blocks: any
             metadata: { diagramData: data }
           });
         }
-      } catch {}
+      } catch (e) {
+        // If JSON parsing fails, still add as diagram placeholder
+        blocks.push({
+          id: createId(),
+          type: 'diagram',
+          content: 'Diagram data could not be parsed',
+          metadata: { diagramData: {} }
+        });
+      }
       continue;
     }
 
-    // Whiteboard
+    // Whiteboard - extract JSON properly
     if (line.startsWith('<Whiteboard')) {
       try {
-        const dataMatch = line.match(/data=\{([^}]+)\}/);
-        if (dataMatch) {
-          const data = JSON.parse(dataMatch[1]);
+        const dataStart = line.indexOf('data={');
+        if (dataStart !== -1) {
+          const jsonStart = dataStart + 6;
+          let braceCount = 1;
+          let jsonEnd = jsonStart;
+          for (let j = jsonStart; j < line.length && braceCount > 0; j++) {
+            if (line[j] === '{') braceCount++;
+            else if (line[j] === '}') braceCount--;
+            if (braceCount === 0) jsonEnd = j;
+          }
+          const jsonStr = line.slice(jsonStart, jsonEnd);
+          const data = JSON.parse(jsonStr);
           blocks.push({
             id: createId(),
             type: 'whiteboard',
@@ -234,7 +299,19 @@ function parseMdx(content: string): { metadata: Record<string, any>; blocks: any
             metadata: { whiteboardData: data }
           });
         }
-      } catch {}
+      } catch {
+        blocks.push({
+          id: createId(),
+          type: 'whiteboard',
+          content: '',
+          metadata: { whiteboardData: {} }
+        });
+      }
+      continue;
+    }
+
+    // Skip closing tags that might be on their own line
+    if (line.trim() === '</Callout>' || line.trim() === '</ReactFlow>' || line.trim() === '</Whiteboard>') {
       continue;
     }
 

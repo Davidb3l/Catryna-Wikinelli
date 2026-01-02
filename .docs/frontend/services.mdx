@@ -1,0 +1,46 @@
+---
+id: bcef91fa-b73f-4934-9cba-8caafa22937e
+title: "Gemini AI Service"
+path: "frontend/services"
+tags: ["frontend", "ai", "gemini", "service"]
+relatedFiles: ["frontend\services\geminiService.ts"]
+createdAt: 1767321677827
+updatedAt: 1767321677827
+createdBy: "claude-code"
+---
+
+# Gemini AI Service
+
+Optional AI-powered features using Google's Gemini API for intelligent documentation assistance.
+
+## Overview
+
+Located at `frontend/services/geminiService.ts`, this service provides AI-powered utilities for documentation generation.
+
+## Methods
+
+### summarizeCode
+
+Generates a concise technical summary of code for documentation.
+
+```typescript
+await geminiService.summarizeCode(codeString);
+// Returns: string - Technical summary
+```
+
+### suggestDocumentStructure
+
+Suggests headings for a technical document on a given topic.
+
+```typescript
+await geminiService.suggestDocumentStructure("authentication");
+// Returns: string[] - e.g., ["Overview", "Installation", "API Usage", "Examples"]
+```
+
+## Configuration
+
+Requires `API_KEY` environment variable with a valid Google AI API key.
+
+<Callout type="warning">
+This service is optional and primarily for frontend AI features. The MCP tools work independently without Gemini.
+</Callout>

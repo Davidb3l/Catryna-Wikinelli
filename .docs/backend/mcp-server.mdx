@@ -1,0 +1,58 @@
+---
+id: 7b2456cf-6907-4c1d-9670-66baaf04880a
+title: "MCP Server"
+path: "backend/mcp-server"
+tags: ["backend", "mcp", "server"]
+relatedFiles: ["src\index.ts"]
+createdAt: 1767321253064
+updatedAt: 1767321658640
+createdBy: "claude-code"
+---
+
+# MCP Server
+
+The MCP (Model Context Protocol) server is the core backend component that enables Claude Code to interact with the documentation system.
+
+## Entry Point
+
+Located at `src/index.ts`, the server uses the official `@modelcontextprotocol/sdk` package to create a stdio-based server.
+
+```typescript
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+
+const server = new McpServer({
+  name: "catryna-wikinelli",
+  version: "1.0.0",
+});
+
+// Connect to stdio transport
+const transport = new StdioServerTransport();
+await server.connect(transport);
+```
+
+## Tool Registration
+
+The server registers four tool modules:
+
+- **docs.ts** - Document CRUD operations (create_doc, get_doc, list_docs, update_doc, delete_doc)
+
+- **search.ts** - Full-text search across documents (search_docs)
+
+- **diagrams.ts** - Visual content (create_diagram, create_whiteboard)
+
+- **coverage.ts** - Documentation metrics (get_undocumented_modules, get_doc_coverage)
+
+## Transport
+
+Uses stdio (standard input/output) for communication with Claude Code. This is the standard transport for CLI-based MCP servers.
+
+{/* Block: raw
+{
+  "content": "<Callout type=\"warning\">"
+}
+*/}
+
+Logs go to stderr since stdout is reserved for MCP protocol messages.
+
+</Callout>

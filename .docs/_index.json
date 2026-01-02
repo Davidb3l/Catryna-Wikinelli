@@ -5,12 +5,165 @@
       "id": "doc-getting-started",
       "path": "getting-started",
       "title": "Getting Started with Catryna",
-      "tags": ["intro", "tutorial"],
+      "tags": [
+        "intro",
+        "tutorial"
+      ],
       "relatedFiles": [],
       "createdAt": 1735689600000,
       "updatedAt": 1735689600000,
       "createdBy": "claude-code"
+    },
+    {
+      "id": "d37e0497-e75d-47d9-9d08-5ef7067ab81d",
+      "path": "architecture/overview",
+      "title": "Architecture Overview",
+      "tags": [
+        "architecture",
+        "overview",
+        "core"
+      ],
+      "relatedFiles": [
+        "src\\index.ts",
+        "src\\storage.ts"
+      ],
+      "createdAt": 1767321236003,
+      "updatedAt": 1767321656661,
+      "createdBy": "claude-code"
+    },
+    {
+      "id": "7b2456cf-6907-4c1d-9670-66baaf04880a",
+      "path": "backend/mcp-server",
+      "title": "MCP Server",
+      "tags": [
+        "backend",
+        "mcp",
+        "server"
+      ],
+      "relatedFiles": [
+        "src\\index.ts"
+      ],
+      "createdAt": 1767321253064,
+      "updatedAt": 1767321658640,
+      "createdBy": "claude-code"
+    },
+    {
+      "id": "3f76ea4c-d00d-4bc2-8c47-c70862631b43",
+      "path": "backend/storage",
+      "title": "Storage Layer",
+      "tags": [
+        "backend",
+        "storage",
+        "mdx"
+      ],
+      "relatedFiles": [
+        "src\\storage.ts"
+      ],
+      "createdAt": 1767321315890,
+      "updatedAt": 1767321660905,
+      "createdBy": "claude-code"
+    },
+    {
+      "id": "2da43b16-2ffa-46eb-b07e-367d2173e777",
+      "path": "backend/tools",
+      "title": "MCP Tools Reference",
+      "tags": [
+        "backend",
+        "mcp",
+        "tools",
+        "reference"
+      ],
+      "relatedFiles": [
+        "src\\tools\\docs.ts",
+        "src\\tools\\search.ts",
+        "src\\tools\\diagrams.ts",
+        "src\\tools\\coverage.ts"
+      ],
+      "createdAt": 1767321316028,
+      "updatedAt": 1767321661004,
+      "createdBy": "claude-code"
+    },
+    {
+      "id": "8ba895db-7586-4187-92fb-7da033094537",
+      "path": "frontend/overview",
+      "title": "Frontend Application",
+      "tags": [
+        "frontend",
+        "react",
+        "vite"
+      ],
+      "relatedFiles": [
+        "frontend\\App.tsx",
+        "frontend\\index.tsx",
+        "frontend\\vite.config.ts",
+        "frontend\\constants.tsx"
+      ],
+      "createdAt": 1767321379263,
+      "updatedAt": 1767321691220,
+      "createdBy": "claude-code"
+    },
+    {
+      "id": "a279005f-04b8-47a6-b67a-d58a8ebbd323",
+      "path": "frontend/types",
+      "title": "Types & Data Models",
+      "tags": [
+        "types",
+        "typescript",
+        "reference"
+      ],
+      "relatedFiles": [
+        "frontend\\types.ts"
+      ],
+      "createdAt": 1767321379351,
+      "updatedAt": 1767321661199,
+      "createdBy": "claude-code"
+    },
+    {
+      "id": "a3540b69-b97d-4466-adee-1d2dfd4e78dd",
+      "path": "frontend/hooks",
+      "title": "React Hooks",
+      "tags": [
+        "frontend",
+        "hooks",
+        "react"
+      ],
+      "relatedFiles": [
+        "frontend\\hooks\\useDocs.ts"
+      ],
+      "createdAt": 1767321379449,
+      "updatedAt": 1767321661283,
+      "createdBy": "claude-code"
+    },
+    {
+      "id": "a9e0e994-0429-4edc-93be-140197ddcdcc",
+      "path": "diagrams/system-architecture",
+      "title": "System Architecture Diagram",
+      "tags": [
+        "diagram",
+        "architecture"
+      ],
+      "relatedFiles": [],
+      "createdAt": 1767321536865,
+      "updatedAt": 1767323928237,
+      "createdBy": "claude-code"
+    },
+    {
+      "id": "bcef91fa-b73f-4934-9cba-8caafa22937e",
+      "path": "frontend/services",
+      "title": "Gemini AI Service",
+      "tags": [
+        "frontend",
+        "ai",
+        "gemini",
+        "service"
+      ],
+      "relatedFiles": [
+        "frontend\\services\\geminiService.ts"
+      ],
+      "createdAt": 1767321677827,
+      "updatedAt": 1767321677827,
+      "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1735689600000
+  "lastUpdated": 1767323928238
 }

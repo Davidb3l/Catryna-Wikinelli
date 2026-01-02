@@ -1,0 +1,111 @@
+---
+id: a279005f-04b8-47a6-b67a-d58a8ebbd323
+title: "Types & Data Models"
+path: "frontend/types"
+tags: ["types", "typescript", "reference"]
+relatedFiles: ["frontend\types.ts"]
+createdAt: 1767321379351
+updatedAt: 1767321661199
+createdBy: "claude-code"
+---
+
+# Types & Data Models
+
+Type definitions used throughout the Catryna Wikinelli application.
+
+## Block Types
+
+```typescript
+type BlockType = 
+  | 'paragraph' 
+  | 'heading-1' | 'heading-2' | 'heading-3' 
+  | 'code' 
+  | 'callout' 
+  | 'diagram' 
+  | 'whiteboard' 
+  | 'divider';
+
+interface Block {
+  id: string;
+  type: BlockType;
+  content: string;
+  metadata?: {
+    language?: string;           // For code blocks
+    level?: 'info' | 'warning' | 'error' | 'success';  // For callouts
+    filePath?: string;           // For code embeds
+    diagramData?: any;           // React Flow data
+    whiteboardData?: any;        // tldraw data
+  };
+}
+```
+
+## Document
+
+```typescript
+interface Document {
+  id: string;
+  title: string;
+  blocks: Block[];
+  lastUpdated: string;     // ISO date string
+  path: string[];          // e.g., ["modules", "auth"]
+  isDraft?: boolean;
+  history?: HistoryEntry[];
+}
+```
+
+## History Entry
+
+```typescript
+interface HistoryEntry {
+  id: string;
+  timestamp: string;
+  author: string;
+  blocks: Block[];
+  summary: string;
+}
+```
+
+## Navigation
+
+```typescript
+interface NavItem {
+  id: string;
+  title: string;
+  type: 'file' | 'folder';
+  children?: NavItem[];  // For folders
+}
+```
+
+## User Preferences
+
+```typescript
+interface UserPreferences {
+  theme: 'light' | 'dark' | 'system';
+  whiteboardStyle: 'clean' | 'sketchy';
+  fontSize: 'small' | 'medium' | 'large';
+  editorLineNumbers: boolean;
+}
+```
+
+## Backend Types (storage.ts)
+
+```typescript
+// Metadata stored in _index.json
+interface DocMetadata {
+  id: string;
+  path: string;
+  title: string;
+  tags: string[];
+  relatedFiles: string[];
+  createdAt: number;       // Unix timestamp ms
+  updatedAt: number;
+  createdBy: string;
+}
+
+// Full index structure
+interface DocIndex {
+  version: number;
+  docs: DocMetadata[];
+  lastUpdated: number | null;
+}
+```

@@ -150,11 +150,13 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024);
   const [isEditing, setIsEditing] = useState(false);
   const [activeEditor, setActiveEditor] = useState<null | 'diag' | 'wb' | 'coverage'>(null);
+  const [editorDiagramData, setEditorDiagramData] = useState<{ nodes?: any[]; edges?: any[] } | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [activeSection, setActiveSection] = useState<string | null>(null);
 
   // Fetch docs list and nav tree from .docs folder
   const { docs, navItems, loading: listLoading, error: listError, refetch: refetchList } = useDocsList();
@@ -182,16 +184,52 @@ export default function App() {
   };
 
   const tableOfContents = useMemo(() => {
-    return currentDoc.blocks.filter(b => b.type.startsWith('heading')).map(b => ({
-      id: b.id,
-      text: b.content,
-      level: b.type === 'heading-1' ? 1 : b.type === 'heading-2' ? 2 : 3
-    }));
+    return currentDoc.blocks
+      .filter(b => b.type.startsWith('heading'))
+      .filter(b => !(b.type === 'heading-1' && b.content === currentDoc.title))
+      .map(b => ({
+        id: b.id,
+        text: b.content,
+        level: b.type === 'heading-1' ? 1 : b.type === 'heading-2' ? 2 : 3
+      }));
   }, [currentDoc]);
+
+  // Scroll spy - track which section is visible
+  useEffect(() => {
+    const headingIds = tableOfContents.map(t => t.id);
+    if (headingIds.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setActiveSection(entry.target.id);
+          }
+        });
+      },
+      { rootMargin: '-80px 0px -80% 0px', threshold: 0 }
+    );
+
+    headingIds.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [tableOfContents]);
+
+  // Scroll to section when clicking ToC
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setActiveSection(id);
+    }
+  };
 
   return (
     <div className={`flex h-screen w-full overflow-hidden bg-white dark:bg-zinc-950 transition-colors`}>
-      {activeEditor === 'diag' && <DiagramEditor onClose={() => setActiveEditor(null)} />}
+      {activeEditor === 'diag' && <DiagramEditor onClose={() => { setActiveEditor(null); setEditorDiagramData(null); }} diagramData={editorDiagramData || undefined} />}
       {activeEditor === 'wb' && <WhiteboardEditor onClose={() => setActiveEditor(null)} style={prefs.whiteboardStyle} />}
       {activeEditor === 'coverage' && <CoverageReport onClose={() => setActiveEditor(null)} />}
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} prefs={prefs} setPrefs={setPrefs} />
@@ -262,18 +300,28 @@ export default function App() {
               </nav>
               <h1 className="text-4xl lg:text-5xl font-black tracking-tight mb-10 text-zinc-900 dark:text-zinc-50">{currentDoc.title}</h1>
               <div className="space-y-2">
-                {currentDoc.blocks.map(block => (
-                  <BlockRenderer key={block.id} block={block} isEditing={isEditing} showLineNumbers={prefs.editorLineNumbers} whiteboardStyle={prefs.whiteboardStyle} onOpenEditor={setActiveEditor} onDelete={id => {}} onCopy={() => addToast('Copied')} />
+                {currentDoc.blocks
+                  .filter(block => !(block.type === 'heading-1' && block.content === currentDoc.title))
+                  .map(block => (
+                  <BlockRenderer key={block.id} block={block} isEditing={isEditing} showLineNumbers={prefs.editorLineNumbers} whiteboardStyle={prefs.whiteboardStyle} onOpenEditor={(type, data) => { setActiveEditor(type); if (data) setEditorDiagramData(data); }} onDelete={id => {}} onCopy={() => addToast('Copied')} />
                 ))}
               </div>
             </div>
 
             {/* Table of Contents */}
-            <aside className="hidden xl:block w-48 sticky top-0 h-fit">
+            <aside className="hidden xl:block w-48 sticky top-0 h-fit pt-4">
               <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-4">On this page</div>
-              <ul className="space-y-2.5">
+              <ul className="space-y-2.5 border-l border-zinc-200 dark:border-zinc-800">
                 {tableOfContents.map(toc => (
-                  <li key={toc.id} className={`text-xs ${toc.level === 1 ? 'font-bold text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 pl-3 hover:text-indigo-500'} cursor-pointer transition-colors line-clamp-2`}>
+                  <li
+                    key={toc.id}
+                    onClick={() => scrollToSection(toc.id)}
+                    className={`text-xs cursor-pointer transition-colors line-clamp-2 -ml-px pl-3 border-l-2 ${
+                      activeSection === toc.id
+                        ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 font-medium'
+                        : 'border-transparent hover:border-zinc-300 dark:hover:border-zinc-600 ' + (toc.level === 1 ? 'font-bold text-zinc-700 dark:text-zinc-300' : 'text-zinc-500 pl-6')
+                    }`}
+                  >
                     {toc.text}
                   </li>
                 ))}
@@ -287,8 +335,8 @@ export default function App() {
   );
 }
 
-const BlockRenderer: React.FC<{ 
-  block: Block; isEditing: boolean; showLineNumbers: boolean; whiteboardStyle: 'clean' | 'sketchy'; onOpenEditor: (t: any) => void; onDelete: (id: string) => void; onCopy: () => void 
+const BlockRenderer: React.FC<{
+  block: Block; isEditing: boolean; showLineNumbers: boolean; whiteboardStyle: 'clean' | 'sketchy'; onOpenEditor: (t: any, data?: any) => void; onDelete: (id: string) => void; onCopy: () => void
 }> = ({ block, isEditing, showLineNumbers, whiteboardStyle, onOpenEditor, onDelete, onCopy }) => {
   const wrapper = (children: React.ReactNode) => (
     <div className="group relative">
@@ -302,13 +350,42 @@ const BlockRenderer: React.FC<{
     </div>
   );
 
-  if (block.type === 'diagram') return wrapper(
-    <div className="my-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/40 dark:bg-zinc-900/40 p-12 flex flex-col items-center justify-center transition-all hover:border-indigo-500/30 min-h-[300px] group/item shadow-inner">
-       <div className="px-3 py-1 bg-white dark:bg-zinc-800 rounded-full border border-zinc-200 dark:border-zinc-700 text-[10px] font-black uppercase mb-6 flex items-center gap-2 shadow-sm"><Layout size={12} className="text-indigo-500" /> Architecture Flow</div>
-       <Activity size={40} className="text-zinc-200 dark:text-zinc-800 mb-6" />
-       <Button variant="secondary" onClick={() => onOpenEditor('diag')} className="opacity-0 group-hover/item:opacity-100"><Maximize2 size={14} /> Open Diagram Editor</Button>
-    </div>
-  );
+  if (block.type === 'diagram') {
+    const diagramData = block.metadata?.diagramData;
+    const hasData = diagramData && (diagramData.nodes?.length > 0 || diagramData.mermaid);
+
+    if (hasData && diagramData.nodes) {
+      // Render actual React Flow diagram
+      return wrapper(
+        <div className="my-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-hidden group/item">
+          <div className="px-4 py-2 bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 flex justify-between items-center">
+            <span className="text-[10px] font-black uppercase flex items-center gap-2 text-zinc-500"><Layout size={12} className="text-indigo-500" /> Architecture Diagram</span>
+            <Button variant="ghost" onClick={() => onOpenEditor('diag', diagramData)} className="text-xs h-7 opacity-0 group-hover/item:opacity-100"><Maximize2 size={12} /> Expand</Button>
+          </div>
+          <div className="h-[400px] bg-zinc-50 dark:bg-zinc-950">
+            <ReactFlow
+              nodes={diagramData.nodes}
+              edges={diagramData.edges || []}
+              fitView
+              proOptions={{ hideAttribution: true }}
+            >
+              <Background color="#71717a" gap={16} size={1} />
+              <Controls showInteractive={false} />
+            </ReactFlow>
+          </div>
+        </div>
+      );
+    }
+
+    // Fallback placeholder for empty diagrams
+    return wrapper(
+      <div className="my-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/40 dark:bg-zinc-900/40 p-12 flex flex-col items-center justify-center transition-all hover:border-indigo-500/30 min-h-[300px] group/item shadow-inner">
+         <div className="px-3 py-1 bg-white dark:bg-zinc-800 rounded-full border border-zinc-200 dark:border-zinc-700 text-[10px] font-black uppercase mb-6 flex items-center gap-2 shadow-sm"><Layout size={12} className="text-indigo-500" /> Architecture Flow</div>
+         <Activity size={40} className="text-zinc-200 dark:text-zinc-800 mb-6" />
+         <Button variant="secondary" onClick={() => onOpenEditor('diag')} className="opacity-0 group-hover/item:opacity-100"><Maximize2 size={14} /> Open Diagram Editor</Button>
+      </div>
+    );
+  }
 
   if (block.type === 'whiteboard') return wrapper(
     <div className={`my-8 rounded-2xl border-2 ${whiteboardStyle === 'sketchy' ? 'border-dashed border-zinc-200' : 'border-zinc-100 dark:border-zinc-800'} bg-white dark:bg-zinc-950 p-12 min-h-[400px] flex flex-col items-center justify-center group/item shadow-sm`}>
@@ -335,7 +412,7 @@ const BlockRenderer: React.FC<{
   );
 
   if (block.type.startsWith('heading')) return wrapper(
-    <div contentEditable={isEditing} className={`${block.type === 'heading-1' ? 'text-3xl font-black' : 'text-xl font-bold'} mt-8 mb-4 outline-none text-zinc-900 dark:text-zinc-50 border-b-2 border-transparent focus:border-indigo-500/20`} suppressContentEditableWarning>{block.content}</div>
+    <div id={block.id} contentEditable={isEditing} className={`${block.type === 'heading-1' ? 'text-3xl font-black' : 'text-xl font-bold'} mt-8 mb-4 outline-none text-zinc-900 dark:text-zinc-50 border-b-2 border-transparent focus:border-indigo-500/20 scroll-mt-20`} suppressContentEditableWarning>{block.content}</div>
   );
 
   if (block.type === 'callout') return wrapper(
@@ -393,15 +470,47 @@ const SettingsModal: React.FC<{ isOpen: boolean; onClose: () => void; prefs: Use
   );
 };
 
-const DiagramEditor: React.FC<{ onClose: () => void }> = ({ onClose }) => (
-  <div className="fixed inset-0 z-[100] bg-white dark:bg-zinc-950 flex flex-col animate-in fade-in duration-300">
-    <header className="h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 shrink-0 z-10 bg-white dark:bg-zinc-950">
-      <div className="flex items-center gap-4"><Button variant="ghost" onClick={onClose}><X size={20} /></Button><span className="font-bold flex items-center gap-2"><Layout size={18} className="text-indigo-500" /> Architecture Editor</span></div>
-      <Button variant="accent" onClick={onClose}><Save size={16} /> Save Diagram</Button>
-    </header>
-    <div className="flex-1"><ReactFlow nodes={[{ id: '1', data: { label: 'Auth Service' }, position: { x: 250, y: 5 }, type: 'input' }]} edges={[]}><Background /><Controls /><MiniMap /></ReactFlow></div>
-  </div>
-);
+const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: { nodes?: any[]; edges?: any[] } }> = ({ onClose, diagramData }) => {
+  const [nodes, setNodes] = useState(diagramData?.nodes || [{ id: '1', data: { label: 'New Node' }, position: { x: 250, y: 100 } }]);
+  const [edges, setEdges] = useState(diagramData?.edges || []);
+
+  const onNodesChange = useCallback((changes: any) => {
+    setNodes((nds: any) => {
+      const updated = [...nds];
+      changes.forEach((change: any) => {
+        if (change.type === 'position' && change.position) {
+          const idx = updated.findIndex((n: any) => n.id === change.id);
+          if (idx !== -1) updated[idx] = { ...updated[idx], position: change.position };
+        }
+      });
+      return updated;
+    });
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-white dark:bg-zinc-950 flex flex-col animate-in fade-in duration-300">
+      <header className="h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 shrink-0 z-10 bg-white dark:bg-zinc-950">
+        <div className="flex items-center gap-4"><Button variant="ghost" onClick={onClose}><X size={20} /></Button><span className="font-bold flex items-center gap-2"><Layout size={18} className="text-indigo-500" /> Architecture Editor</span></div>
+        <Button variant="accent" onClick={onClose}><Save size={16} /> Save Diagram</Button>
+      </header>
+      <div className="flex-1">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          fitView
+          nodesDraggable={true}
+          nodesConnectable={true}
+          elementsSelectable={true}
+        >
+          <Background />
+          <Controls />
+          <MiniMap />
+        </ReactFlow>
+      </div>
+    </div>
+  );
+};
 
 const WhiteboardEditor: React.FC<{ onClose: () => void; style: 'clean' | 'sketchy' }> = ({ onClose, style }) => (
   <div className="fixed inset-0 z-[100] bg-white dark:bg-zinc-950 flex flex-col animate-in slide-in-from-bottom duration-300">

@@ -1,0 +1,12 @@
+---
+id: a9e0e994-0429-4edc-93be-140197ddcdcc
+title: "System Architecture Diagram"
+path: "diagrams/system-architecture"
+tags: ["diagram", "architecture"]
+relatedFiles: []
+createdAt: 1767321536865
+updatedAt: 1767323928237
+createdBy: "claude-code"
+---
+
+<ReactFlow data={{"type":"architecture","nodes":[{"id":"claude","data":{"label":"Claude Code"},"position":{"x":50,"y":50},"type":"input"},{"id":"human","data":{"label":"Human User"},"position":{"x":50,"y":250},"type":"input"},{"id":"mcp","data":{"label":"MCP Server"},"position":{"x":300,"y":50}},{"id":"frontend","data":{"label":"Vite Frontend (:6969)"},"position":{"x":300,"y":250}},{"id":"storage","data":{"label":"Storage Layer"},"position":{"x":550,"y":150}},{"id":"docs","data":{"label":".docs/ Folder"},"position":{"x":800,"y":50},"type":"output"},{"id":"index","data":{"label":"_index.json"},"position":{"x":800,"y":250},"type":"output"}],"edges":[{"id":"e1","source":"claude","target":"mcp","label":"MCP Tools"},{"id":"e2","source":"claude","target":"docs","label":"Direct Read","type":"smoothstep"},{"id":"e3","source":"human","target":"frontend","label":"Browser"},{"id":"e4","source":"mcp","target":"storage","label":"CRUD"},{"id":"e5","source":"frontend","target":"storage","label":"/api/*"},{"id":"e6","source":"storage","target":"docs","label":"MDX Files"},{"id":"e7","source":"storage","target":"index","label":"Metadata"}]}} />

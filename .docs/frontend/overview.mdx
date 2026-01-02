@@ -1,0 +1,100 @@
+---
+id: 8ba895db-7586-4187-92fb-7da033094537
+title: "Frontend Application"
+path: "frontend/overview"
+tags: ["frontend", "react", "vite"]
+relatedFiles: ["frontend\App.tsx", "frontend\index.tsx", "frontend\vite.config.ts", "frontend\constants.tsx"]
+createdAt: 1767321379263
+updatedAt: 1767321691220
+createdBy: "claude-code"
+---
+
+# Frontend Application
+
+The frontend is a React application built with Vite, providing a visual interface for humans to browse and view documentation created by Claude Code.
+
+## Tech Stack
+
+- **React 18** - UI framework
+
+- **Vite** - Build tool and dev server (port 6969)
+
+- **React Flow** - Architecture diagrams
+
+- **tldraw** - Whiteboard/canvas support
+
+- **Tailwind CSS** - Styling (inferred from class usage)
+
+- **Lucide React** - Icon library
+
+## Main Components
+
+**App.tsx** - Main application component with:
+
+- Sidebar navigation with collapsible folder tree
+
+- Command palette for quick doc search (Cmd+K)
+
+- Document viewer with block rendering
+
+- Table of contents (sticky sidebar)
+
+- Theme switching (light/dark/system)
+
+- Settings modal for preferences
+
+- Version history sidebar
+
+- Toast notifications
+
+## Key Features
+
+### Block Renderer
+
+Renders different block types with appropriate styling:
+
+- **heading** - H1/H2/H3 with proper typography
+
+- **code** - Syntax highlighted code blocks with copy button
+
+- **callout** - Info/warning/error boxes
+
+- **diagram** - Interactive React Flow diagrams
+
+- **whiteboard** - Embedded tldraw canvas
+
+### Edit Mode
+
+Content-editable blocks for in-browser editing (save functionality in development).
+
+### Diagram/Whiteboard Editors
+
+Full-screen modal editors for visual content:
+
+- **DiagramEditor** - React Flow canvas with controls and minimap
+
+- **WhiteboardEditor** - tldraw canvas with clean/sketchy styles
+
+## Data Fetching
+
+Uses custom hooks in `hooks/useDocs.ts`:
+
+- `useDocsList()` - Fetches all docs from /api/docs
+
+- `useDoc(path)` - Fetches single doc from /api/docs/{path}
+
+- `useDocsSearch()` - Search with /api/docs/search?q=...
+
+{/* Block: raw
+
+{
+
+  "content": "<Callout type=\"info\">"
+
+}
+
+*/}
+
+The Vite dev server proxies /api/* requests and reads directly from the .docs/ folder.
+
+</Callout>

@@ -1,0 +1,101 @@
+---
+id: 3f76ea4c-d00d-4bc2-8c47-c70862631b43
+title: "Storage Layer"
+path: "backend/storage"
+tags: ["backend", "storage", "mdx"]
+relatedFiles: ["src\storage.ts"]
+createdAt: 1767321315890
+updatedAt: 1767321660905
+createdBy: "claude-code"
+---
+
+# Storage Layer
+
+The storage layer (`src/storage.ts`) provides file-based persistence for documentation. Unlike traditional database approaches, docs are stored as MDX files that can be read directly by Claude Code.
+
+## Storage Structure
+
+```text
+.docs/
+├── _index.json          # Metadata index for fast lookups
+├── getting-started.mdx  # Root-level doc
+└── modules/
+    └── auth.mdx         # Nested doc
+```
+
+## MDX File Format
+
+Each document is an MDX file with YAML frontmatter:
+
+```mdx
+---
+id: abc123
+title: "Authentication Module"
+path: "modules/auth"
+tags: ["auth", "security"]
+relatedFiles: ["src/auth/index.ts"]
+createdAt: 1704067200000
+updatedAt: 1704067200000
+createdBy: "claude-code"
+---
+
+# Authentication Module
+
+This module handles user authentication...
+```
+
+## Core Interfaces
+
+```typescript
+interface DocMetadata {
+  id: string;
+  path: string;           // e.g., "modules/auth"
+  title: string;
+  tags: string[];
+  relatedFiles: string[]; // Source files this doc covers
+  createdAt: number;      // Unix timestamp
+  updatedAt: number;
+  createdBy: string;      // Always "claude-code"
+}
+
+interface Block {
+  type: string;           // heading, text, code, etc.
+  data: Record<string, unknown>;
+}
+```
+
+## Key Functions
+
+| Function | Description |
+
+|----------|-------------|
+
+| `createDoc()` | Creates new MDX file and updates index |
+
+| `getDoc()` | Reads and parses MDX file |
+
+| `listDocs()` | Returns filtered docs from index |
+
+| `updateDoc()` | Modifies MDX file and updates index |
+
+| `deleteDoc()` | Removes MDX file and index entry |
+
+| `searchDocs()` | Full-text search across content |
+
+## Block Types
+
+The storage layer converts blocks to/from MDX:
+
+- **heading** → `# Title` / `## Subtitle`
+
+- **text** → Plain paragraph
+
+- **code** → Fenced code block with language
+
+- **mermaid** → Mermaid diagram in code fence
+
+- **react-flow** → `<ReactFlow data={...} />`
+
+- **whiteboard** → `<Whiteboard data={...} />`
+
+- **callout** → `<Callout type="info">...</Callout>`
