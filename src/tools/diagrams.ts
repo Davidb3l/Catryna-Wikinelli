@@ -88,6 +88,60 @@ export function registerDiagramTools(server: McpServer): void {
     }
   );
 
+  // CREATE MERMAID DIAGRAM
+  server.tool(
+    "create_mermaid_diagram",
+    {
+      path: z.string().describe("Doc path for the diagram"),
+      title: z.string().optional().describe("Diagram title"),
+      mermaid: z.string().describe("Mermaid diagram code (flowchart, sequence, etc.)"),
+    },
+    async ({ path, title, mermaid }) => {
+      try {
+        // Check if doc already exists
+        const existing = await getDoc(path);
+        if (existing) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ success: false, error: `Doc already exists at path: ${path}` }) }],
+          };
+        }
+
+        const blocks = [
+          {
+            type: "heading",
+            data: { level: 1, content: title || "Mermaid Diagram" },
+          },
+          {
+            type: "mermaid",
+            data: { content: mermaid },
+          },
+        ];
+
+        const metadata = await createDoc(
+          path,
+          title || "Mermaid Diagram",
+          blocks,
+          ["diagram", "mermaid"],
+          []
+        );
+
+        return {
+          content: [{ type: "text", text: JSON.stringify({
+            success: true,
+            id: metadata.id,
+            path,
+            file: `.docs/${path}.mdx`,
+            mermaidLength: mermaid.length,
+          }) }],
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ success: false, error: String(error) }) }],
+        };
+      }
+    }
+  );
+
   // CREATE WHITEBOARD (tldraw)
   server.tool(
     "create_whiteboard",

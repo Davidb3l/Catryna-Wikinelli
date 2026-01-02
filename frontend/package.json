@@ -9,15 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3",
     "@google/genai": "^1.34.0",
-    "lucide-react": "^0.562.0",
-    "reactflow": "11.10.1",
-    "tldraw": "^2.4.0",
     "@tiptap/react": "2.1.13",
     "@tiptap/starter-kit": "2.1.13",
-    "diff": "5.1.0"
+    "diff": "5.1.0",
+    "lucide-react": "^0.562.0",
+    "mermaid": "^11.12.2",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "reactflow": "11.10.1",
+    "tldraw": "^2.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Search, Settings, HelpCircle, ChevronRight, ChevronDown, FileText,
   Menu, X, Plus, Clock, Terminal, Activity, Github, Edit3, Save,
@@ -10,10 +10,26 @@ import {
 } from 'lucide-react';
 import ReactFlow, { Background, Controls, MiniMap } from 'reactflow';
 import { Tldraw } from 'tldraw';
+import mermaid from 'mermaid';
 import { NavItem, Document, Block, UserPreferences, HistoryEntry } from './types';
 import { useDocsList, useDoc, useDocsSearch, EMPTY_DOC } from './hooks/useDocs';
 import { geminiService } from './services/geminiService';
 import * as Diff from 'diff';
+
+// Initialize mermaid with better sizing
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  securityLevel: 'loose',
+  flowchart: {
+    useMaxWidth: false,
+    htmlLabels: true,
+    curve: 'basis',
+  },
+  themeVariables: {
+    fontSize: '14px',
+  },
+});
 
 // --- Types & Interfaces ---
 interface Toast {
@@ -430,6 +446,46 @@ export default function App() {
   );
 }
 
+// Mermaid diagram renderer component
+const MermaidRenderer: React.FC<{ chart: string }> = ({ chart }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [svg, setSvg] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const renderChart = async () => {
+      if (!chart || !containerRef.current) return;
+      try {
+        const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+        const { svg } = await mermaid.render(id, chart);
+        setSvg(svg);
+        setError(null);
+      } catch (e) {
+        setError(String(e));
+        console.error('Mermaid render error:', e);
+      }
+    };
+    renderChart();
+  }, [chart]);
+
+  if (error) {
+    return (
+      <div className="p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-lg text-red-600 dark:text-red-400 text-sm">
+        <div className="font-bold mb-2">Diagram Error</div>
+        <pre className="text-xs overflow-auto">{error}</pre>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="mermaid-container w-full min-w-[600px] [&_svg]:w-full [&_svg]:h-auto [&_svg]:min-h-[300px]"
+      dangerouslySetInnerHTML={{ __html: svg }}
+    />
+  );
+};
+
 const BlockRenderer: React.FC<{
   block: Block; isEditing: boolean; showLineNumbers: boolean; whiteboardStyle: 'clean' | 'sketchy'; onOpenEditor: (t: any, data?: any) => void; onDelete: (id: string) => void; onCopy: () => void
 }> = ({ block, isEditing, showLineNumbers, whiteboardStyle, onOpenEditor, onDelete, onCopy }) => {
@@ -449,8 +505,22 @@ const BlockRenderer: React.FC<{
     const diagramData = block.metadata?.diagramData;
     const hasData = diagramData && (diagramData.nodes?.length > 0 || diagramData.mermaid);
 
+    // Render mermaid diagram
+    if (hasData && diagramData.mermaid) {
+      return wrapper(
+        <div className="my-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-hidden group/item">
+          <div className="px-4 py-2 bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 flex justify-between items-center">
+            <span className="text-[10px] font-black uppercase flex items-center gap-2 text-zinc-500"><Layout size={12} className="text-indigo-500" /> Mermaid Diagram</span>
+          </div>
+          <div className="p-8 bg-zinc-50 dark:bg-zinc-900 overflow-x-auto">
+            <MermaidRenderer chart={diagramData.mermaid} />
+          </div>
+        </div>
+      );
+    }
+
+    // Render React Flow diagram
     if (hasData && diagramData.nodes) {
-      // Render actual React Flow diagram
       return wrapper(
         <div className="my-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-hidden group/item">
           <div className="px-4 py-2 bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 flex justify-between items-center">
