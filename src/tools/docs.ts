@@ -15,7 +15,7 @@ export function registerDocTools(server: McpServer): void {
     {
       path: z.string().describe("Doc path, e.g. 'modules/auth' or 'architecture/database'. Creates .docs/{path}.mdx file"),
       title: z.string().describe("Human-readable title for the documentation page"),
-      content: z.array(BlockSchema).describe("Array of content blocks"),
+      content: z.array(BlockSchema).describe("Array of content blocks. SUPPORTED TYPES: heading, text, code, mermaid, callout, table, divider, markdown, react-flow, whiteboard. For full markdown docs use: {type:'markdown', data:{content:'# Your markdown...'}}"),
       tags: z.array(z.string()).optional().describe("Tags for categorization"),
       relatedFiles: z.array(z.string()).optional().describe("Source files this doc covers"),
     },
@@ -123,7 +123,7 @@ export function registerDocTools(server: McpServer): void {
     {
       path: z.string().describe("Path of the document to update"),
       title: z.string().optional().describe("New title"),
-      content: z.array(BlockSchema).optional().describe("New content blocks"),
+      content: z.array(BlockSchema).optional().describe("New content blocks. SUPPORTED TYPES: heading, text, code, mermaid, callout, table, divider, markdown, react-flow, whiteboard"),
       tags: z.array(z.string()).optional().describe("New tags"),
       relatedFiles: z.array(z.string()).optional().describe("New related files"),
     },

@@ -149,9 +149,16 @@ function blockToMdx(block: Block): string {
     }
     case "divider":
       return "---";
+    case "markdown":
+      // Raw markdown content - just output directly
+      return String(block.data.content || "");
     default:
-      // Generic block - store as JSON comment for round-trip
-      return `{/* Block: ${block.type}\n${JSON.stringify(block.data, null, 2)}\n*/}`;
+      // Unknown block type - warn and output content if available
+      console.warn(`[Catryna] Unknown block type: "${block.type}". Use: heading, text, code, mermaid, callout, table, divider, react-flow, whiteboard, or markdown`);
+      if (block.data.content) {
+        return String(block.data.content);
+      }
+      return `{/* Unknown block type: ${block.type} */}`;
   }
 }
 

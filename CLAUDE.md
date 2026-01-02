@@ -199,19 +199,71 @@ Read .docs/modules/auth.mdx
 
 ## Block Types
 
-Documents are composed of blocks:
+Documents are composed of blocks. **You MUST use the correct block types** - unknown types will cause rendering issues.
 
-| Type | Description |
-|------|-------------|
-| `heading` | H1-H6 headings |
-| `text` | Rich text paragraph |
-| `code` | Code block with syntax highlighting |
-| `callout` | Info/warning/error boxes |
-| `mermaid` | Mermaid diagrams |
-| `react-flow` | Architecture diagrams |
-| `whiteboard` | tldraw canvas |
-| `table` | Data tables |
-| `divider` | Horizontal rule |
+| Type | Description | Data Fields |
+|------|-------------|-------------|
+| `heading` | H1-H6 headings | `{ level: 1-6, content: "Title" }` |
+| `text` | Paragraph text | `{ content: "Text here" }` |
+| `code` | Code block | `{ language: "typescript", content: "code" }` |
+| `mermaid` | Mermaid diagrams | `{ content: "flowchart TD..." }` |
+| `callout` | Info/warning/error | `{ type: "info", content: "Note" }` |
+| `table` | Data tables | `{ headers: [...], rows: [...] }` |
+| `divider` | Horizontal rule | `{}` |
+| `markdown` | Raw markdown | `{ content: "# Full markdown..." }` |
+| `react-flow` | Architecture diagrams | `{ nodes: [...], edges: [...] }` |
+| `whiteboard` | tldraw canvas | `{ snapshot: {...} }` |
+
+### IMPORTANT: How to Create Docs Correctly
+
+**Option 1: Use `markdown` block for full documents (RECOMMENDED)**
+
+When creating documentation with mixed content (headings, code, mermaid diagrams, tables), use a single `markdown` block:
+
+```json
+{
+  "path": "auth/flow",
+  "title": "Authentication Flow",
+  "content": [
+    {
+      "type": "markdown",
+      "data": {
+        "content": "# Authentication Flow\n\nThis explains auth.\n\n## Login\n\n```mermaid\nsequenceDiagram\n    Client->>Server: POST /login\n```\n\n## Code Example\n\n```typescript\nconst token = await login(email, password);\n```"
+      }
+    }
+  ]
+}
+```
+
+**Option 2: Use individual blocks for structured content**
+
+```json
+{
+  "path": "auth/flow",
+  "title": "Authentication Flow",
+  "content": [
+    { "type": "heading", "data": { "level": 1, "content": "Authentication Flow" } },
+    { "type": "text", "data": { "content": "This explains auth." } },
+    { "type": "heading", "data": { "level": 2, "content": "Login Diagram" } },
+    { "type": "mermaid", "data": { "content": "sequenceDiagram\n    Client->>Server: POST /login" } },
+    { "type": "code", "data": { "language": "typescript", "content": "const token = await login();" } }
+  ]
+}
+```
+
+### Common Mistakes to Avoid
+
+❌ **WRONG** - Unknown block types get wrapped in JSON comments:
+```json
+{ "type": "paragraph", "data": { "content": "..." } }  // "paragraph" is not valid!
+{ "type": "diagram", "data": { "content": "..." } }    // "diagram" is not valid!
+```
+
+✅ **CORRECT** - Use supported types:
+```json
+{ "type": "text", "data": { "content": "..." } }      // Use "text" for paragraphs
+{ "type": "mermaid", "data": { "content": "..." } }   // Use "mermaid" for diagrams
+```
 
 ---
 
