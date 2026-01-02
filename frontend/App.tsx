@@ -548,8 +548,66 @@ const BlockRenderer: React.FC<{
     );
   }
 
+  // Parse inline markdown (bold, italic, code, links)
+  const parseInlineMarkdown = (text: string) => {
+    const parts: React.ReactNode[] = [];
+    let remaining = text;
+    let key = 0;
+
+    while (remaining.length > 0) {
+      // Bold **text**
+      const boldMatch = remaining.match(/^\*\*(.+?)\*\*/);
+      if (boldMatch) {
+        parts.push(<strong key={key++} className="font-bold text-zinc-900 dark:text-zinc-100">{boldMatch[1]}</strong>);
+        remaining = remaining.slice(boldMatch[0].length);
+        continue;
+      }
+
+      // Italic *text*
+      const italicMatch = remaining.match(/^\*(.+?)\*/);
+      if (italicMatch) {
+        parts.push(<em key={key++}>{italicMatch[1]}</em>);
+        remaining = remaining.slice(italicMatch[0].length);
+        continue;
+      }
+
+      // Inline code `text`
+      const codeMatch = remaining.match(/^`(.+?)`/);
+      if (codeMatch) {
+        parts.push(<code key={key++} className="px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded text-sm font-mono">{codeMatch[1]}</code>);
+        remaining = remaining.slice(codeMatch[0].length);
+        continue;
+      }
+
+      // Link [text](url)
+      const linkMatch = remaining.match(/^\[(.+?)\]\((.+?)\)/);
+      if (linkMatch) {
+        parts.push(<a key={key++} href={linkMatch[2]} className="text-indigo-500 hover:underline">{linkMatch[1]}</a>);
+        remaining = remaining.slice(linkMatch[0].length);
+        continue;
+      }
+
+      // Regular character
+      const nextSpecial = remaining.search(/[\*`\[]/);
+      if (nextSpecial === -1) {
+        parts.push(remaining);
+        break;
+      } else if (nextSpecial === 0) {
+        parts.push(remaining[0]);
+        remaining = remaining.slice(1);
+      } else {
+        parts.push(remaining.slice(0, nextSpecial));
+        remaining = remaining.slice(nextSpecial);
+      }
+    }
+
+    return parts;
+  };
+
   return wrapper(
-    <div contentEditable={isEditing} className="leading-relaxed text-zinc-700 dark:text-zinc-300 min-h-[1.5em] outline-none py-1.5 focus:bg-zinc-50 dark:focus:bg-zinc-900 transition-colors" suppressContentEditableWarning>{block.content}</div>
+    <div contentEditable={isEditing} className="leading-relaxed text-zinc-700 dark:text-zinc-300 min-h-[1.5em] outline-none py-1.5 focus:bg-zinc-50 dark:focus:bg-zinc-900 transition-colors" suppressContentEditableWarning>
+      {isEditing ? block.content : parseInlineMarkdown(block.content)}
+    </div>
   );
 };
 
