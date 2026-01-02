@@ -9,11 +9,9 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript)](https://www.typescriptlang.org)
 
-<img src="https://github.com/user-attachments/assets/placeholder-banner.png" alt="Catryna Wikinelli Banner" width="800" />
-
 *Living documentation that purrs along with your codebase* 🐾
 
-[Features](#-features) • [Quick Start](#-quick-start) • [MCP Tools](#-mcp-tools) • [Architecture](#-architecture) • [Contributing](#-contributing)
+[Features](#-features) • [Quick Start](#-quick-start) • [How It Works](#-how-it-works) • [MCP Tools](#-mcp-tools) • [Contributing](#-contributing)
 
 </div>
 
@@ -21,24 +19,18 @@
 
 ## ✨ Features
 
+### 🤖 Built for AI + Humans
+Catryna bridges the gap between AI coding agents and human developers:
+- **Claude reads docs directly** from `.docs/` folder (no MCP needed)
+- **Claude writes docs** via MCP tools (`create_doc`, `update_doc`)
+- **Humans view docs** in a beautiful React viewer at `localhost:6969`
+- **Git-versioned** - docs travel with your codebase
+
 ### 📚 Smart Documentation Viewer
 - **Block-based editor** with rich content types (text, code, diagrams, whiteboards)
 - **Full-text search** with fuzzy matching (Ctrl+K)
 - **Version history** with diff viewer and one-click revert
 - **Code embeds** that link directly to your editor (VS Code, Cursor, IntelliJ)
-
-### 🤖 AI-Native with MCP Integration
-Catryna speaks fluent AI! Built-in **Model Context Protocol (MCP)** tools let Claude Code and other AI agents:
-- Create and update documentation automatically
-- Generate architecture diagrams from code analysis
-- Track documentation coverage across your codebase
-- Trigger regeneration when source files change
-
-### 🔄 Auto-Regeneration
-- **File watcher** detects code changes in real-time
-- **Git hooks** trigger doc updates on commit/push
-- **Stale detection** flags outdated documentation
-- **Coverage reports** show what needs documenting
 
 ### 🎨 Interactive Visuals
 - **React Flow** diagrams for system architecture
@@ -46,11 +38,11 @@ Catryna speaks fluent AI! Built-in **Model Context Protocol (MCP)** tools let Cl
 - **Mermaid** support for code-defined diagrams
 - Clean or sketchy whiteboard styles
 
-### 🏠 Local-First Philosophy
-- All data stored locally (SQLite/PostgreSQL)
-- No cloud dependencies required
-- Optional DragonflyDB caching for performance
-- Works offline, syncs when connected
+### 🏠 Local-First & Simple
+- **File-based storage** - docs are `.mdx` files in `.docs/` folder
+- **No database required** - just files and a JSON index
+- **No cloud dependencies** - works offline
+- **Git-friendly** - docs are versioned with your code
 
 ---
 
@@ -70,86 +62,100 @@ cd Catryna-Wikinelli
 # Install dependencies
 bun install
 
-# Copy environment config
-cp .env.example .env
-
-# Initialize the database (SQLite by default)
-bun run db:push
-
-# Start development servers
-bun run dev
+# Install frontend dependencies
+cd frontend && bun install && cd ..
 ```
 
-The app will be available at:
-- **Frontend**: http://localhost:8080
-- **GraphQL API**: http://localhost:4567/graphql
+### Running
 
-### One-liner Install
-
+**Terminal 1 - MCP Server (for Claude Code):**
 ```bash
-git clone https://github.com/Davidb3l/Catryna-Wikinelli.git && cd Catryna-Wikinelli && bun install && cp .env.example .env && bun run dev
+bun run start
 ```
 
-### Configuration
-
-Create a `catryna.config.yaml` in your project root:
-
-```yaml
-# catryna.config.yaml
-project:
-  name: "My Project"
-  root: "."
-
-watch:
-  include:
-    - "src/**/*.ts"
-    - "src/**/*.tsx"
-  exclude:
-    - "node_modules"
-    - "dist"
-
-database:
-  type: "sqlite"  # or "postgres"
-  path: ".catryna/docs.db"
-
-ai:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
+**Terminal 2 - Frontend Viewer (for humans):**
+```bash
+cd frontend && bun run dev
+# Opens http://localhost:6969
 ```
 
----
+### Add to Claude Code
 
-## 🔧 MCP Tools
-
-Catryna exposes these tools for AI agents via the Model Context Protocol:
-
-| Tool | Description |
-|------|-------------|
-| `catryna_create_doc` | Create a new documentation page |
-| `catryna_update_doc` | Update existing documentation |
-| `catryna_search` | Full-text search across all docs |
-| `catryna_get_doc` | Retrieve a specific document |
-| `catryna_list_docs` | List all documentation pages |
-| `catryna_delete_doc` | Remove a documentation page |
-| `catryna_add_diagram` | Add a React Flow diagram |
-| `catryna_add_whiteboard` | Add a tldraw whiteboard |
-| `catryna_get_coverage` | Get documentation coverage report |
-| `catryna_trigger_regen` | Manually trigger regeneration |
-
-### Claude Code Integration
-
-Add to your Claude Code MCP settings:
+Add to your project's `.claude/settings.json`:
 
 ```json
 {
   "mcpServers": {
     "catryna": {
       "command": "bun",
-      "args": ["run", "mcp"],
+      "args": ["run", "/path/to/Catryna-Wikinelli/src/index.ts"],
       "cwd": "/path/to/Catryna-Wikinelli"
     }
   }
 }
+```
+
+Restart Claude Code, then use `/mcp` to verify the server is connected.
+
+---
+
+## 🔄 How It Works
+
+```
+┌─────────────────┐         ┌─────────────────┐
+│   Claude Code   │         │  Human Viewer   │
+│                 │         │  localhost:6969 │
+└────────┬────────┘         └────────┬────────┘
+         │                           │
+         │ MCP: create_doc           │ HTTP: /api/docs
+         │ MCP: update_doc           │
+         │ Read: .docs/*.mdx         │
+         │                           │
+         ▼                           ▼
+┌─────────────────────────────────────────────┐
+│              .docs/ folder                  │
+│  ├── _index.json      (doc index)          │
+│  ├── getting-started.mdx                   │
+│  ├── modules/                              │
+│  │   └── auth.mdx                          │
+│  └── architecture/                         │
+│      └── database.mdx                      │
+└─────────────────────────────────────────────┘
+```
+
+**Key insight:** Docs are stored as files, so Claude can read them directly. MCP tools are only needed for creating/updating docs.
+
+---
+
+## 🔧 MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `create_doc` | Create a new doc → `.docs/{path}.mdx` |
+| `get_doc` | Retrieve a document by path |
+| `list_docs` | List all docs with optional filtering |
+| `update_doc` | Update an existing document |
+| `delete_doc` | Delete a document |
+| `search_docs` | Full-text search across docs |
+| `create_diagram` | Create a React Flow diagram |
+| `create_whiteboard` | Create a tldraw whiteboard |
+| `get_undocumented_modules` | List source files without docs |
+| `get_doc_coverage` | Get documentation coverage report |
+
+### Example Usage in Claude Code
+
+```
+# List existing docs
+> list_docs
+
+# Read a doc directly (no MCP needed!)
+> Read .docs/modules/auth.mdx
+
+# Create a new doc
+> create_doc path="modules/auth" title="Authentication" content=[...]
+
+# Search for docs
+> search_docs query="authentication"
 ```
 
 ---
@@ -158,24 +164,23 @@ Add to your Claude Code MCP settings:
 
 ```
 catryna-wikinelli/
-├── apps/
-│   ├── server/          # Bun backend with GraphQL Yoga
-│   │   ├── src/
-│   │   │   ├── db/      # Drizzle ORM schemas
-│   │   │   ├── graphql/ # GraphQL resolvers
-│   │   │   ├── mcp/     # MCP tool handlers
-│   │   │   └── watcher/ # File change detection
-│   │   └── ...
-│   └── web/             # Vite + React frontend
-│       ├── src/
-│       │   ├── components/
-│       │   ├── routes/  # TanStack Router pages
-│       │   └── lib/     # GraphQL client, hooks
-│       └── ...
-├── packages/
-│   ├── shared/          # Shared types and utilities
-│   └── mcp-client/      # MCP client for external use
-└── catryna.config.yaml
+├── .docs/                    # Documentation files (git-tracked)
+│   ├── _index.json           # Index of all docs
+│   └── *.mdx                 # Individual doc files
+├── src/
+│   ├── index.ts              # MCP server entry point
+│   ├── storage.ts            # File-based storage layer
+│   └── tools/
+│       ├── docs.ts           # Document CRUD tools
+│       ├── search.ts         # Full-text search
+│       ├── diagrams.ts       # React Flow & tldraw
+│       └── coverage.ts       # Documentation coverage
+├── frontend/                 # Vite + React viewer
+│   ├── App.tsx               # Main app component
+│   ├── hooks/useDocs.ts      # Data fetching hooks
+│   └── vite.config.ts        # Vite config with API plugin
+├── package.json
+└── .mcp.json                 # Claude Code MCP config
 ```
 
 ### Tech Stack
@@ -183,63 +188,35 @@ catryna-wikinelli/
 | Layer | Technology |
 |-------|------------|
 | Runtime | Bun |
-| Frontend | React 19, Vite, TanStack Router/Query |
-| Backend | GraphQL Yoga, Drizzle ORM |
-| Database | SQLite / PostgreSQL |
-| Cache | DragonflyDB (optional) |
-| Diagrams | React Flow, tldraw, Mermaid |
-| Editor | TipTap |
+| MCP SDK | @modelcontextprotocol/sdk |
+| Storage | File-based (.docs/*.mdx) |
+| Frontend | React 19, Vite |
+| Diagrams | React Flow, tldraw |
 | Styling | Tailwind CSS |
 
 ---
 
 ## 📖 Block Types
 
-Catryna supports these content block types:
+Docs are stored as MDX files with these block types:
 
 | Type | Description |
 |------|-------------|
-| `text` | Rich text with markdown support |
 | `heading` | H1-H6 headings |
+| `text` | Rich text paragraphs |
 | `code` | Syntax-highlighted code blocks |
-| `code-embed` | Live code from your files with editor links |
-| `callout` | Info, warning, error, success callouts |
+| `callout` | Info, warning, error boxes |
 | `react-flow` | Interactive architecture diagrams |
 | `whiteboard` | Freeform tldraw canvas |
 | `mermaid` | Code-defined diagrams |
-| `table` | Data tables with headers |
+| `table` | Data tables |
 | `divider` | Horizontal separator |
-
----
-
-## 🎯 Roadmap
-
-### MVP (v1.0) ✅
-- [x] Documentation viewer with block editor
-- [x] MCP tool integration
-- [x] Full-text search
-- [x] Version history
-- [x] Code linking
-- [x] User preferences
-
-### v1.5 (Current)
-- [x] Git hook integration
-- [x] Coverage reporting
-- [x] Diff viewer
-- [x] DragonflyDB caching
-
-### v2.0 (Planned)
-- [ ] Real-time collaboration
-- [ ] Custom block plugins
-- [ ] Documentation templates
-- [ ] Export to static site (Docusaurus, VitePress)
-- [ ] GitHub/GitLab integration
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) first.
+Contributions are welcome!
 
 ```bash
 # Fork and clone
