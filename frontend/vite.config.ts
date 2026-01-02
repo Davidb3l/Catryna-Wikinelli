@@ -18,7 +18,8 @@ function findProjects(): { name: string; path: string; docsPath: string }[] {
   }
 
   // 2. Parent directory (sibling projects to Catryna)
-  scanDirs.push(path.resolve(__dirname, '..'));
+  // __dirname is /frontend, so go up 2 levels to reach sibling projects
+  scanDirs.push(path.resolve(__dirname, '../..'));
 
   // 3. Common project directories (cross-platform)
   if (home) {
