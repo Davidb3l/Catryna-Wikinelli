@@ -81,7 +81,7 @@ cd frontend && bun run dev
 
 ### Add to Claude Code
 
-Add to your project's `.claude/settings.json`:
+Create `.mcp.json` in your project root (or add to `~/.claude.json` for global):
 
 ```json
 {
@@ -94,6 +94,8 @@ Add to your project's `.claude/settings.json`:
   }
 }
 ```
+
+> ⚠️ **Note:** `.claude/settings.json` is ignored! Use `.mcp.json` or `~/.claude.json`.
 
 Restart Claude Code, then use `/mcp` to verify the server is connected.
 

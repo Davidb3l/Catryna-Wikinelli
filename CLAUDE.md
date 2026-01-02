@@ -25,9 +25,11 @@ cd Catryna-Wikinelli
 bun install
 ```
 
-### Step 2: Add MCP Server to Your Project
+### Step 2: Add MCP Server
 
-Add this to your project's `.claude/settings.json` (create if it doesn't exist):
+**Option A: Project-specific** (recommended)
+
+Create `.mcp.json` in your project root:
 
 ```json
 {
@@ -41,7 +43,27 @@ Add this to your project's `.claude/settings.json` (create if it doesn't exist):
 }
 ```
 
-**Important:** Replace `C:/path/to/Catryna-Wikinelli` with your actual installation path.
+**Option B: Global (all projects)**
+
+Add to your global config file:
+- **Windows:** `%USERPROFILE%\.claude.json`
+- **Mac/Linux:** `~/.claude.json`
+
+```json
+{
+  "mcpServers": {
+    "catryna": {
+      "command": "bun",
+      "args": ["run", "/path/to/Catryna-Wikinelli/src/index.ts"],
+      "cwd": "/path/to/Catryna-Wikinelli"
+    }
+  }
+}
+```
+
+**Important:** Replace the path with your actual Catryna installation path.
+
+> ⚠️ **Note:** `.claude/settings.json` is ignored by Claude Code! Use `.mcp.json` or `~/.claude.json` instead.
 
 ### Step 3: Restart Claude Code
 
