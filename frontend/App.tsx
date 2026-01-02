@@ -8,7 +8,7 @@ import {
   Filter, Calendar, Tag, Sparkles, AlertCircle, GripVertical, Trash2, Maximize2,
   Table as TableIcon, BarChart3, PieChart, Info, Loader2, FolderOpen, ChevronUp
 } from 'lucide-react';
-import ReactFlow, { Background, Controls, MiniMap } from 'reactflow';
+import ReactFlow, { Background, Controls, MiniMap, Position, MarkerType } from 'reactflow';
 import { Tldraw } from 'tldraw';
 import mermaid from 'mermaid';
 import { NavItem, Document, Block, UserPreferences, HistoryEntry } from './types';
@@ -521,6 +521,18 @@ const BlockRenderer: React.FC<{
 
     // Render React Flow diagram
     if (hasData && diagramData.nodes) {
+      // Process nodes to add proper handle positions for top-to-bottom flow
+      const processedNodes = diagramData.nodes.map((node) => ({
+        ...node,
+        sourcePosition: node.sourcePosition || Position.Bottom,
+        targetPosition: node.targetPosition || Position.Top,
+      }));
+      // Process edges to use smoothstep type for cleaner routing
+      const processedEdges = (diagramData.edges || []).map((edge) => ({
+        ...edge,
+        type: edge.type || 'smoothstep',
+        markerEnd: edge.markerEnd || { type: MarkerType.ArrowClosed, width: 15, height: 15 },
+      }));
       return wrapper(
         <div className="my-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-hidden group/item">
           <div className="px-4 py-2 bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 flex justify-between items-center">
@@ -529,10 +541,11 @@ const BlockRenderer: React.FC<{
           </div>
           <div className="h-[400px] bg-zinc-50 dark:bg-zinc-950">
             <ReactFlow
-              nodes={diagramData.nodes}
-              edges={diagramData.edges || []}
+              nodes={processedNodes}
+              edges={processedEdges}
               fitView
               proOptions={{ hideAttribution: true }}
+              defaultEdgeOptions={{ type: 'smoothstep' }}
             >
               <Background color="#71717a" gap={16} size={1} />
               <Controls showInteractive={false} />
@@ -725,8 +738,21 @@ const SettingsModal: React.FC<{ isOpen: boolean; onClose: () => void; prefs: Use
 };
 
 const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: { nodes?: any[]; edges?: any[] } }> = ({ onClose, diagramData }) => {
-  const [nodes, setNodes] = useState(diagramData?.nodes || [{ id: '1', data: { label: 'New Node' }, position: { x: 250, y: 100 } }]);
-  const [edges, setEdges] = useState(diagramData?.edges || []);
+  // Process initial nodes with proper handle positions for top-to-bottom flow
+  const initialNodes = (diagramData?.nodes || [{ id: '1', data: { label: 'New Node' }, position: { x: 250, y: 100 } }]).map((node) => ({
+    ...node,
+    sourcePosition: node.sourcePosition || Position.Bottom,
+    targetPosition: node.targetPosition || Position.Top,
+  }));
+  // Process initial edges with smoothstep type for cleaner routing
+  const initialEdges = (diagramData?.edges || []).map((edge) => ({
+    ...edge,
+    type: edge.type || 'smoothstep',
+    markerEnd: edge.markerEnd || { type: MarkerType.ArrowClosed, width: 15, height: 15 },
+  }));
+
+  const [nodes, setNodes] = useState(initialNodes);
+  const [edges, setEdges] = useState(initialEdges);
 
   const onNodesChange = useCallback((changes: any) => {
     setNodes((nds: any) => {
@@ -756,6 +782,7 @@ const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: { nodes?: any
           nodesDraggable={true}
           nodesConnectable={true}
           elementsSelectable={true}
+          defaultEdgeOptions={{ type: 'smoothstep' }}
         >
           <Background />
           <Controls />
