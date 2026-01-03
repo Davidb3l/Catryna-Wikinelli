@@ -426,6 +426,39 @@ function parseMdx(content: string): { metadata: Record<string, any>; blocks: any
       continue;
     }
 
+    // Table component - extract JSON properly (like ReactFlow)
+    if (line.startsWith('<Table')) {
+      try {
+        const dataStart = line.indexOf('data={');
+        if (dataStart !== -1) {
+          const jsonStart = dataStart + 6;
+          let braceCount = 1;
+          let jsonEnd = jsonStart;
+          for (let j = jsonStart; j < line.length && braceCount > 0; j++) {
+            if (line[j] === '{') braceCount++;
+            else if (line[j] === '}') braceCount--;
+            if (braceCount === 0) jsonEnd = j;
+          }
+          const jsonStr = line.slice(jsonStart, jsonEnd);
+          const data = JSON.parse(jsonStr);
+          blocks.push({
+            id: createId(),
+            type: 'table',
+            content: '',
+            metadata: { headers: data.headers || [], rows: data.rows || [] }
+          });
+        }
+      } catch {
+        blocks.push({
+          id: createId(),
+          type: 'table',
+          content: '',
+          metadata: { headers: [], rows: [] }
+        });
+      }
+      continue;
+    }
+
     // Markdown table
     if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
       const tableRows: string[] = [line];
