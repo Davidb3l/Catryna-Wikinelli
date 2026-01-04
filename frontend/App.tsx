@@ -16,20 +16,41 @@ import { useDocsList, useDoc, useDocsSearch, EMPTY_DOC } from './hooks/useDocs';
 import { geminiService } from './services/geminiService';
 import * as Diff from 'diff';
 
-// Initialize mermaid with better sizing
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'dark',
-  securityLevel: 'loose',
-  flowchart: {
-    useMaxWidth: false,
-    htmlLabels: true,
-    curve: 'basis',
-  },
-  themeVariables: {
-    fontSize: '14px',
-  },
-});
+// Initialize mermaid with theme support
+const initMermaid = (isDark: boolean) => {
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: isDark ? 'dark' : 'base',
+    securityLevel: 'loose',
+    flowchart: {
+      useMaxWidth: false,
+      htmlLabels: true,
+      curve: 'basis',
+    },
+    themeVariables: isDark ? {
+      fontSize: '14px',
+    } : {
+      // Light mode - clean white/gray theme like Stripe
+      fontSize: '14px',
+      primaryColor: '#E8E8F0',
+      primaryTextColor: '#0A2540',
+      primaryBorderColor: '#C4C4D4',
+      lineColor: '#425466',
+      secondaryColor: '#F6F9FC',
+      tertiaryColor: '#FFFFFF',
+      background: '#FFFFFF',
+      mainBkg: '#F6F9FC',
+      secondBkg: '#FFFFFF',
+      clusterBkg: '#F6F9FC',
+      clusterBorder: '#D4D4DC',
+      titleColor: '#0A2540',
+      edgeLabelBackground: '#FFFFFF',
+    },
+  });
+};
+
+// Default initialization
+initMermaid(true);
 
 // --- Types & Interfaces ---
 interface Toast {
@@ -48,11 +69,11 @@ interface Project {
 
 const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'ghost' | 'outline' | 'accent' | 'secondary' }> = ({ children, className, variant = 'primary', ...props }) => {
   const variants = {
-    primary: 'bg-zinc-900 text-zinc-50 dark:bg-zinc-50 dark:text-zinc-900 hover:opacity-90',
-    ghost: 'hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400',
-    outline: 'border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300',
-    accent: 'bg-indigo-600 text-white hover:bg-indigo-700',
-    secondary: 'bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100 hover:opacity-90'
+    primary: 'bg-navy text-white dark:bg-zinc-50 dark:text-zinc-900 hover:opacity-90',
+    ghost: 'hover:bg-surface dark:hover:bg-zinc-800 text-navy-light dark:text-zinc-400',
+    outline: 'border border-zinc-200 dark:border-zinc-800 hover:bg-surface dark:hover:bg-zinc-900 text-navy-light dark:text-zinc-300',
+    accent: 'bg-accent text-white hover:bg-accent-hover',
+    secondary: 'bg-surface text-navy dark:bg-zinc-800 dark:text-zinc-100 hover:opacity-90'
   };
   return (
     <button className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 disabled:pointer-events-none ${variants[variant]} ${className}`} {...props}>
@@ -83,7 +104,7 @@ const CommandPalette: React.FC<{ isOpen: boolean; onClose: () => void; onSelect:
         <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-100 dark:border-zinc-800">
           {loading ? <Loader2 size={18} className="text-zinc-400 animate-spin" /> : <Search size={18} className="text-zinc-400" />}
           <input autoFocus value={query} onChange={e => setQuery(e.target.value)} className="flex-1 bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 text-sm" placeholder="Search docs..." />
-          <button onClick={() => setShowFilters(!showFilters)} className={`p-1.5 rounded-md ${showFilters ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400' : 'text-zinc-400 hover:bg-zinc-100'}`}><Filter size={16} /></button>
+          <button onClick={() => setShowFilters(!showFilters)} className={`p-1.5 rounded-md ${showFilters ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}><Filter size={16} /></button>
           <kbd className="px-1.5 py-0.5 rounded border border-zinc-200 dark:border-zinc-800 text-[10px] text-zinc-400 font-sans">ESC</kbd>
         </div>
         <div className="p-2 max-h-[400px] overflow-y-auto">
@@ -119,7 +140,7 @@ const VersionHistorySidebar: React.FC<{
           <div key={entry.id} className="p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors group">
             <div className="flex justify-between items-start mb-2">
               <div className="flex flex-col">
-                <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">{entry.summary}</span>
+                <span className="text-sm font-bold text-navy dark:text-zinc-50">{entry.summary}</span>
                 <span className="text-[10px] text-zinc-400 font-mono">{new Date(entry.timestamp).toLocaleString()}</span>
               </div>
               <div className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-[9px] font-bold text-zinc-500 uppercase">{entry.author}</div>
@@ -205,8 +226,12 @@ export default function App() {
 
   useEffect(() => {
     const root = window.document.documentElement;
-    if (prefs.theme === 'dark' || (prefs.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) root.classList.add('dark');
+    const isDark = prefs.theme === 'dark' || (prefs.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (isDark) root.classList.add('dark');
     else root.classList.remove('dark');
+
+    // Reinitialize mermaid with new theme
+    initMermaid(isDark);
   }, [prefs.theme]);
 
   const addToast = (message: string, type: Toast['type'] = 'success') => {
@@ -307,11 +332,11 @@ export default function App() {
 
       {isSidebarOpen && window.innerWidth < 1024 && <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setIsSidebarOpen(false)} />}
 
-      <aside className={`fixed lg:relative h-full z-50 bg-zinc-50 dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full lg:translate-x-0'}`}>
+      <aside className={`fixed lg:relative h-full z-50 bg-surface dark:bg-zinc-950 border-r border-zinc-200/80 dark:border-zinc-800 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full lg:translate-x-0'}`}>
         <div className="flex flex-col h-full w-64">
           <div className="p-4 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 shrink-0 h-14">
-            <div className="flex items-center gap-2 font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-              <div className="w-6 h-6 bg-zinc-900 dark:bg-zinc-100 rounded flex items-center justify-center text-white dark:text-zinc-900 shadow-xl">
+            <div className="flex items-center gap-2 font-bold tracking-tight text-navy dark:text-zinc-50">
+              <div className="w-6 h-6 bg-accent dark:bg-zinc-100 rounded flex items-center justify-center text-white dark:text-zinc-900 shadow-lg">
                 <span className="text-xs">🐱</span>
               </div>
               Catryna
@@ -324,11 +349,11 @@ export default function App() {
             <div className="relative">
               <button
                 onClick={() => setIsProjectSelectorOpen(!isProjectSelectorOpen)}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors text-sm"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-sm border border-zinc-200/60 dark:border-zinc-800"
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <FolderOpen size={14} className="text-indigo-500 shrink-0" />
-                  <span className="truncate font-medium text-zinc-700 dark:text-zinc-300">
+                  <FolderOpen size={14} className="text-accent shrink-0" />
+                  <span className="truncate font-medium text-navy-light dark:text-zinc-300">
                     {projectsLoading ? 'Loading...' : (currentProject.split('/').pop() || currentProject.split('\\').pop() || 'Select Project')}
                   </span>
                 </div>
@@ -346,13 +371,13 @@ export default function App() {
                       <button
                         key={project.path}
                         onClick={() => handleProjectSwitch(project.path)}
-                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ${
-                          currentProject === project.path ? 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400' : 'text-zinc-600 dark:text-zinc-400'
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-surface dark:hover:bg-zinc-800 transition-colors ${
+                          currentProject === project.path ? 'bg-accent/10 dark:bg-indigo-950/30 text-accent dark:text-indigo-400' : 'text-navy-light dark:text-zinc-400'
                         }`}
                       >
-                        <Folder size={14} className={currentProject === project.path ? 'text-indigo-500' : 'text-zinc-400'} />
+                        <Folder size={14} className={currentProject === project.path ? 'text-accent' : 'text-zinc-400'} />
                         <span className="truncate">{project.name}</span>
-                        {currentProject === project.path && <Check size={14} className="ml-auto shrink-0 text-indigo-500" />}
+                        {currentProject === project.path && <Check size={14} className="ml-auto shrink-0 text-accent" />}
                       </button>
                     ))
                   )}
@@ -372,18 +397,18 @@ export default function App() {
                 <div className="text-zinc-500 text-xs">Use Claude Code to create documentation!</div>
               </div>
             ) : navItems.map(item => <SidebarItem key={item.id} item={item} depth={0} selectedId={selectedDocPath || ''} onSelect={handleDocSelect} />)}
-            <div className="mt-8 px-4"><label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3 block">Reports</label><button onClick={() => setActiveEditor('coverage')} className="w-full flex items-center gap-2 text-sm text-zinc-500 hover:text-indigo-500 py-1.5 transition-colors"><BarChart3 size={14} /> Doc Coverage</button></div>
+            <div className="mt-8 px-4"><label className="text-[10px] font-bold text-navy-light dark:text-zinc-400 uppercase tracking-widest mb-3 block">Reports</label><button onClick={() => setActiveEditor('coverage')} className="w-full flex items-center gap-2 text-sm text-navy-light dark:text-zinc-500 hover:text-accent py-1.5 transition-colors"><BarChart3 size={14} /> Doc Coverage</button></div>
           </div>
-          <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold text-xs ring-2 ring-indigo-500/20">CW</div>
-            <div className="flex-1 min-w-0"><div className="text-xs font-semibold truncate">Catryna Wikinelli</div><div className="text-[10px] text-zinc-500">v2.5.0-beta</div></div>
-            <Settings size={16} className="text-zinc-400 cursor-pointer hover:text-indigo-500" onClick={() => setIsSettingsOpen(true)} />
+          <div className="p-4 border-t border-zinc-200/80 dark:border-zinc-800 flex items-center gap-3 bg-white/50 dark:bg-zinc-900/50">
+            <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-white font-bold text-xs ring-2 ring-accent/20">CW</div>
+            <div className="flex-1 min-w-0"><div className="text-xs font-semibold truncate text-navy dark:text-zinc-200">Catryna Wikinelli</div><div className="text-[10px] text-navy-light dark:text-zinc-500">v2.5.0-beta</div></div>
+            <Settings size={16} className="text-navy-light dark:text-zinc-400 cursor-pointer hover:text-accent" onClick={() => setIsSettingsOpen(true)} />
           </div>
         </div>
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-950 relative">
-        <header className="h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 shrink-0 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md sticky top-0 z-40">
+        <header className="h-14 border-b border-zinc-200/80 dark:border-zinc-800 flex items-center justify-between px-6 shrink-0 bg-white/95 dark:bg-zinc-950/80 backdrop-blur-md sticky top-0 z-40">
           <div className="flex items-center gap-4">
             {!isSidebarOpen && <Button variant="ghost" onClick={() => setIsSidebarOpen(true)} className="p-1"><Menu size={16} /></Button>}
             <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-bold text-zinc-400">
@@ -405,11 +430,11 @@ export default function App() {
           ) : (
           <div className="flex justify-between max-w-6xl mx-auto px-6 lg:px-12 py-12 gap-12">
             <div className="flex-1 max-w-3xl">
-              <nav className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-8">
-                {currentDoc.path.map((p, i) => <React.Fragment key={p}><button className="hover:text-indigo-500">{p}</button><ChevronRight size={10} /></React.Fragment>)}
-                <span className="text-zinc-900 dark:text-zinc-100">{currentDoc.title}</span>
+              <nav className="flex items-center gap-1.5 text-[10px] font-bold text-navy-light dark:text-zinc-400 uppercase tracking-widest mb-8">
+                {currentDoc.path.map((p, i) => <React.Fragment key={p}><button className="hover:text-accent">{p}</button><ChevronRight size={10} /></React.Fragment>)}
+                <span className="text-navy dark:text-zinc-100">{currentDoc.title}</span>
               </nav>
-              <h1 className="text-4xl lg:text-5xl font-black tracking-tight mb-10 text-zinc-900 dark:text-zinc-50">{currentDoc.title}</h1>
+              <h1 className="text-4xl lg:text-5xl font-black tracking-tight mb-10 text-navy dark:text-zinc-50">{currentDoc.title}</h1>
               <div className="space-y-2">
                 {currentDoc.blocks
                   .filter(block => !(block.type === 'heading-1' && block.content === currentDoc.title))
@@ -421,16 +446,16 @@ export default function App() {
 
             {/* Table of Contents */}
             <aside className="hidden xl:block w-48 sticky top-0 h-fit pt-4">
-              <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-4">On this page</div>
-              <ul className="space-y-2.5 border-l border-zinc-200 dark:border-zinc-800">
+              <div className="text-[10px] font-bold text-navy-light dark:text-zinc-400 uppercase tracking-widest mb-4">On this page</div>
+              <ul className="space-y-2.5 border-l border-zinc-200/80 dark:border-zinc-800">
                 {tableOfContents.map(toc => (
                   <li
                     key={toc.id}
                     onClick={() => scrollToSection(toc.id)}
                     className={`text-xs cursor-pointer transition-colors line-clamp-2 -ml-px pl-3 border-l-2 ${
                       activeSection === toc.id
-                        ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 font-medium'
-                        : 'border-transparent hover:border-zinc-300 dark:hover:border-zinc-600 ' + (toc.level === 1 ? 'font-bold text-zinc-700 dark:text-zinc-300' : 'text-zinc-500 pl-6')
+                        ? 'border-accent text-accent dark:text-indigo-400 font-medium'
+                        : 'border-transparent hover:border-zinc-300 dark:hover:border-zinc-600 ' + (toc.level === 1 ? 'font-bold text-navy-light dark:text-zinc-300' : 'text-navy-light/70 dark:text-zinc-500 pl-6')
                     }`}
                   >
                     {toc.text}
@@ -500,6 +525,62 @@ const BlockRenderer: React.FC<{
       {children}
     </div>
   );
+
+  // Parse inline markdown (bold, italic, code, links)
+  const parseInlineMarkdown = (text: string): React.ReactNode[] => {
+    const parts: React.ReactNode[] = [];
+    let remaining = text;
+    let key = 0;
+
+    while (remaining.length > 0) {
+      // Bold **text**
+      const boldMatch = remaining.match(/^\*\*(.+?)\*\*/);
+      if (boldMatch) {
+        parts.push(<strong key={key++} className="font-bold text-navy dark:text-zinc-100">{boldMatch[1]}</strong>);
+        remaining = remaining.slice(boldMatch[0].length);
+        continue;
+      }
+
+      // Italic *text*
+      const italicMatch = remaining.match(/^\*(.+?)\*/);
+      if (italicMatch) {
+        parts.push(<em key={key++}>{italicMatch[1]}</em>);
+        remaining = remaining.slice(italicMatch[0].length);
+        continue;
+      }
+
+      // Inline code `text`
+      const codeMatch = remaining.match(/^`(.+?)`/);
+      if (codeMatch) {
+        parts.push(<code key={key++} className="px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded text-sm font-mono">{codeMatch[1]}</code>);
+        remaining = remaining.slice(codeMatch[0].length);
+        continue;
+      }
+
+      // Link [text](url)
+      const linkMatch = remaining.match(/^\[(.+?)\]\((.+?)\)/);
+      if (linkMatch) {
+        parts.push(<a key={key++} href={linkMatch[2]} className="text-accent hover:underline">{linkMatch[1]}</a>);
+        remaining = remaining.slice(linkMatch[0].length);
+        continue;
+      }
+
+      // Regular character
+      const nextSpecial = remaining.search(/[\*`\[]/);
+      if (nextSpecial === -1) {
+        parts.push(remaining);
+        break;
+      } else if (nextSpecial === 0) {
+        parts.push(remaining[0]);
+        remaining = remaining.slice(1);
+      } else {
+        parts.push(remaining.slice(0, nextSpecial));
+        remaining = remaining.slice(nextSpecial);
+      }
+    }
+
+    return parts;
+  };
 
   if (block.type === 'diagram') {
     const diagramData = block.metadata?.diagramData;
@@ -590,13 +671,15 @@ const BlockRenderer: React.FC<{
   );
 
   if (block.type.startsWith('heading')) return wrapper(
-    <div id={block.id} contentEditable={isEditing} className={`${block.type === 'heading-1' ? 'text-3xl font-black' : 'text-xl font-bold'} mt-8 mb-4 outline-none text-zinc-900 dark:text-zinc-50 border-b-2 border-transparent focus:border-indigo-500/20 scroll-mt-20`} suppressContentEditableWarning>{block.content}</div>
+    <div id={block.id} contentEditable={isEditing} className={`${block.type === 'heading-1' ? 'text-3xl font-black' : 'text-xl font-bold'} mt-8 mb-4 outline-none text-navy dark:text-zinc-50 border-b-2 border-transparent focus:border-accent/20 scroll-mt-20`} suppressContentEditableWarning>{block.content}</div>
   );
 
   if (block.type === 'callout') return wrapper(
-    <div className={`p-4 rounded-xl border flex gap-4 my-4 bg-indigo-50/30 dark:bg-indigo-950/20 border-indigo-100 dark:border-indigo-900/50`}>
-      <Info size={18} className="text-indigo-500 shrink-0 mt-0.5" />
-      <div contentEditable={isEditing} className="text-sm leading-relaxed text-zinc-700 dark:text-zinc-300 outline-none" suppressContentEditableWarning>{block.content}</div>
+    <div className={`p-4 rounded-xl border flex gap-4 my-4 bg-accent/5 dark:bg-indigo-950/20 border-accent/20 dark:border-indigo-900/50`}>
+      <Info size={18} className="text-accent shrink-0 mt-0.5" />
+      <div contentEditable={isEditing} className="text-sm leading-relaxed text-navy-light dark:text-zinc-300 outline-none" suppressContentEditableWarning>
+        {isEditing ? block.content : parseInlineMarkdown(block.content)}
+      </div>
     </div>
   );
 
@@ -604,12 +687,12 @@ const BlockRenderer: React.FC<{
     const headers = block.metadata?.headers || [];
     const rows = block.metadata?.rows || [];
     return wrapper(
-      <div className="my-6 rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+      <div className="my-6 rounded-xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-zinc-50 dark:bg-zinc-900">
+          <thead className="bg-surface dark:bg-zinc-900">
             <tr>
               {headers.map((header: string, i: number) => (
-                <th key={i} className="px-4 py-3 text-left font-bold text-zinc-700 dark:text-zinc-300 border-b border-zinc-200 dark:border-zinc-800">
+                <th key={i} className="px-4 py-3 text-left font-bold text-navy dark:text-zinc-300 border-b border-zinc-200/80 dark:border-zinc-800">
                   {header.replace(/\*\*/g, '')}
                 </th>
               ))}
@@ -617,9 +700,9 @@ const BlockRenderer: React.FC<{
           </thead>
           <tbody>
             {rows.map((row: string[], rowIdx: number) => (
-              <tr key={rowIdx} className="border-b border-zinc-100 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
+              <tr key={rowIdx} className="border-b border-zinc-100 dark:border-zinc-800 last:border-0 hover:bg-surface/50 dark:hover:bg-zinc-900/50">
                 {row.map((cell: string, cellIdx: number) => (
-                  <td key={cellIdx} className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
+                  <td key={cellIdx} className="px-4 py-3 text-navy-light dark:text-zinc-400">
                     {cell.replace(/\*\*/g, '')}
                   </td>
                 ))}
@@ -631,64 +714,8 @@ const BlockRenderer: React.FC<{
     );
   }
 
-  // Parse inline markdown (bold, italic, code, links)
-  const parseInlineMarkdown = (text: string) => {
-    const parts: React.ReactNode[] = [];
-    let remaining = text;
-    let key = 0;
-
-    while (remaining.length > 0) {
-      // Bold **text**
-      const boldMatch = remaining.match(/^\*\*(.+?)\*\*/);
-      if (boldMatch) {
-        parts.push(<strong key={key++} className="font-bold text-zinc-900 dark:text-zinc-100">{boldMatch[1]}</strong>);
-        remaining = remaining.slice(boldMatch[0].length);
-        continue;
-      }
-
-      // Italic *text*
-      const italicMatch = remaining.match(/^\*(.+?)\*/);
-      if (italicMatch) {
-        parts.push(<em key={key++}>{italicMatch[1]}</em>);
-        remaining = remaining.slice(italicMatch[0].length);
-        continue;
-      }
-
-      // Inline code `text`
-      const codeMatch = remaining.match(/^`(.+?)`/);
-      if (codeMatch) {
-        parts.push(<code key={key++} className="px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded text-sm font-mono">{codeMatch[1]}</code>);
-        remaining = remaining.slice(codeMatch[0].length);
-        continue;
-      }
-
-      // Link [text](url)
-      const linkMatch = remaining.match(/^\[(.+?)\]\((.+?)\)/);
-      if (linkMatch) {
-        parts.push(<a key={key++} href={linkMatch[2]} className="text-indigo-500 hover:underline">{linkMatch[1]}</a>);
-        remaining = remaining.slice(linkMatch[0].length);
-        continue;
-      }
-
-      // Regular character
-      const nextSpecial = remaining.search(/[\*`\[]/);
-      if (nextSpecial === -1) {
-        parts.push(remaining);
-        break;
-      } else if (nextSpecial === 0) {
-        parts.push(remaining[0]);
-        remaining = remaining.slice(1);
-      } else {
-        parts.push(remaining.slice(0, nextSpecial));
-        remaining = remaining.slice(nextSpecial);
-      }
-    }
-
-    return parts;
-  };
-
   return wrapper(
-    <div contentEditable={isEditing} className="leading-relaxed text-zinc-700 dark:text-zinc-300 min-h-[1.5em] outline-none py-1.5 focus:bg-zinc-50 dark:focus:bg-zinc-900 transition-colors" suppressContentEditableWarning>
+    <div contentEditable={isEditing} className="leading-relaxed text-navy-light dark:text-zinc-300 min-h-[1.5em] outline-none py-1.5 focus:bg-surface dark:focus:bg-zinc-900 transition-colors" suppressContentEditableWarning>
       {isEditing ? block.content : parseInlineMarkdown(block.content)}
     </div>
   );
@@ -700,8 +727,8 @@ const SidebarItem: React.FC<{ item: NavItem; depth: number; selectedId: string; 
   const isSelected = selectedId === item.id;
   return (
     <div className="select-none mb-0.5">
-      <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer text-xs transition-all ${isSelected ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-950 dark:text-zinc-50 font-bold' : 'text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`} style={{ paddingLeft: `${(depth * 16) + 12}px` }} onClick={() => item.type === 'folder' ? setIsOpen(!isOpen) : onSelect(item.id)}>
-        {item.type === 'folder' ? (isOpen ? <ChevronDown size={12} className="text-zinc-400" /> : <ChevronRight size={12} className="text-zinc-400" />) : <FileText size={14} className={isSelected ? 'text-indigo-500' : 'text-zinc-400'} />}
+      <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer text-xs transition-all ${isSelected ? 'bg-white dark:bg-zinc-800 text-navy dark:text-zinc-50 font-bold shadow-sm' : 'text-navy-light dark:text-zinc-400 hover:bg-white/60 dark:hover:bg-zinc-900'}`} style={{ paddingLeft: `${(depth * 16) + 12}px` }} onClick={() => item.type === 'folder' ? setIsOpen(!isOpen) : onSelect(item.id)}>
+        {item.type === 'folder' ? (isOpen ? <ChevronDown size={12} className="text-navy-light dark:text-zinc-400" /> : <ChevronRight size={12} className="text-navy-light dark:text-zinc-400" />) : <FileText size={14} className={isSelected ? 'text-accent' : 'text-navy-light/60 dark:text-zinc-400'} />}
         <span className="truncate">{item.title}</span>
       </div>
       {item.type === 'folder' && isOpen && item.children && <div className="mt-0.5">{item.children.map(child => <SidebarItem key={child.id} item={child} depth={depth + 1} selectedId={selectedId} onSelect={onSelect} />)}</div>}
@@ -725,8 +752,8 @@ const SettingsModal: React.FC<{ isOpen: boolean; onClose: () => void; prefs: Use
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/60 backdrop-blur-md" onClick={onClose}>
-      <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl p-8" onClick={e => e.stopPropagation()}>
-        <h2 className="text-xl font-bold mb-8 flex items-center gap-2"><Settings size={20} /> Preferences</h2>
+      <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 p-8" onClick={e => e.stopPropagation()}>
+        <h2 className="text-xl font-bold mb-8 flex items-center gap-2 text-zinc-900 dark:text-zinc-50"><Settings size={20} /> Preferences</h2>
         <div className="space-y-8">
            <section><label className="text-[10px] font-bold uppercase text-zinc-400 mb-3 block">Theme</label><div className="grid grid-cols-3 gap-2">{(['light', 'dark', 'system'] as const).map(t => <button key={t} onClick={() => setPrefs({...prefs, theme: t})} className={`p-4 rounded-xl border flex flex-col items-center gap-2 ${prefs.theme === t ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950 text-indigo-600' : 'border-zinc-200 dark:border-zinc-800 text-zinc-400'}`}>{t === 'light' ? <Sun size={18} /> : t === 'dark' ? <Moon size={18} /> : <Monitor size={18} />}<span className="text-[10px] font-bold uppercase">{t}</span></button>)}</div></section>
            <section><label className="text-[10px] font-bold uppercase text-zinc-400 mb-3 block">Canvas Style</label><div className="flex gap-2">{(['clean', 'sketchy'] as const).map(s => <button key={s} onClick={() => setPrefs({...prefs, whiteboardStyle: s})} className={`flex-1 p-3 rounded-xl border text-[10px] font-bold uppercase ${prefs.whiteboardStyle === s ? 'border-indigo-500 text-indigo-600' : 'border-zinc-200 dark:border-zinc-800'}`}>{s}</button>)}</div></section>
