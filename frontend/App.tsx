@@ -11,40 +11,78 @@ import {
 import ReactFlow, { Background, Controls, MiniMap, Position, MarkerType } from 'reactflow';
 import { Tldraw } from 'tldraw';
 import mermaid from 'mermaid';
+import { TurboNode } from './components/TurboNode';
+import { TurboEdge } from './components/TurboEdge';
+import { TurboEdgeGradient } from './components/TurboEdgeGradient';
+
+// Custom node and edge types for Turbo Flow style
+const nodeTypes = { turbo: TurboNode };
+const edgeTypes = { turbo: TurboEdge };
 import { NavItem, Document, Block, UserPreferences, HistoryEntry } from './types';
 import { useDocsList, useDoc, useDocsSearch, EMPTY_DOC } from './hooks/useDocs';
 import { geminiService } from './services/geminiService';
 import * as Diff from 'diff';
 
-// Initialize mermaid with theme support
+// Initialize mermaid with Turbo Flow inspired theme
 const initMermaid = (isDark: boolean) => {
   mermaid.initialize({
     startOnLoad: false,
-    theme: isDark ? 'dark' : 'base',
+    theme: 'base',
     securityLevel: 'loose',
     flowchart: {
       useMaxWidth: false,
       htmlLabels: true,
       curve: 'basis',
+      padding: 20,
+      nodeSpacing: 50,
+      rankSpacing: 60,
     },
     themeVariables: isDark ? {
-      fontSize: '14px',
+      // Dark mode - Turbo Flow inspired
+      fontSize: '13px',
+      fontFamily: '"JetBrains Mono", monospace',
+      primaryColor: '#1a1a2e',
+      primaryTextColor: '#f3f4f6',
+      primaryBorderColor: '#a853ba',
+      lineColor: '#a853ba',
+      secondaryColor: '#16213e',
+      tertiaryColor: '#111111',
+      background: '#111111',
+      mainBkg: '#1a1a2e',
+      secondBkg: '#16213e',
+      clusterBkg: '#16213e',
+      clusterBorder: '#a853ba',
+      titleColor: '#f3f4f6',
+      edgeLabelBackground: '#111111',
+      nodeTextColor: '#f3f4f6',
+      actorBorder: '#a853ba',
+      actorBkg: '#1a1a2e',
+      actorTextColor: '#f3f4f6',
+      signalColor: '#a853ba',
+      signalTextColor: '#f3f4f6',
     } : {
-      // Light mode - clean white/gray theme like Stripe
-      fontSize: '14px',
-      primaryColor: '#E8E8F0',
+      // Light mode - Stripe inspired with accent colors
+      fontSize: '13px',
+      fontFamily: '"JetBrains Mono", monospace',
+      primaryColor: '#F6F9FC',
       primaryTextColor: '#0A2540',
-      primaryBorderColor: '#C4C4D4',
-      lineColor: '#425466',
-      secondaryColor: '#F6F9FC',
-      tertiaryColor: '#FFFFFF',
+      primaryBorderColor: '#635BFF',
+      lineColor: '#635BFF',
+      secondaryColor: '#FFFFFF',
+      tertiaryColor: '#F6F9FC',
       background: '#FFFFFF',
       mainBkg: '#F6F9FC',
       secondBkg: '#FFFFFF',
       clusterBkg: '#F6F9FC',
-      clusterBorder: '#D4D4DC',
+      clusterBorder: '#635BFF',
       titleColor: '#0A2540',
       edgeLabelBackground: '#FFFFFF',
+      nodeTextColor: '#0A2540',
+      actorBorder: '#635BFF',
+      actorBkg: '#F6F9FC',
+      actorTextColor: '#0A2540',
+      signalColor: '#635BFF',
+      signalTextColor: '#0A2540',
     },
   });
 };
@@ -482,8 +520,23 @@ const MermaidRenderer: React.FC<{ chart: string }> = ({ chart }) => {
       if (!chart || !containerRef.current) return;
       try {
         const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-        const { svg } = await mermaid.render(id, chart);
-        setSvg(svg);
+        let { svg: renderedSvg } = await mermaid.render(id, chart);
+
+        // Inject gradient definition for turbo-style edges
+        const gradientDef = `
+          <defs>
+            <linearGradient id="mermaid-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#e92a67" />
+              <stop offset="50%" stop-color="#a853ba" />
+              <stop offset="100%" stop-color="#2a8af6" />
+            </linearGradient>
+          </defs>
+        `;
+
+        // Insert gradient after opening svg tag
+        renderedSvg = renderedSvg.replace(/<svg([^>]*)>/, `<svg$1>${gradientDef}`);
+
+        setSvg(renderedSvg);
         setError(null);
       } catch (e) {
         setError(String(e));
@@ -602,17 +655,17 @@ const BlockRenderer: React.FC<{
 
     // Render React Flow diagram
     if (hasData && diagramData.nodes) {
-      // Process nodes to add proper handle positions for top-to-bottom flow
+      // Process nodes - preserve original positions for proper routing
       const processedNodes = diagramData.nodes.map((node) => ({
         ...node,
+        type: node.type || 'default',
         sourcePosition: node.sourcePosition || Position.Bottom,
         targetPosition: node.targetPosition || Position.Top,
       }));
-      // Process edges to use smoothstep type for cleaner routing
+      // Process edges to use turbo edge type with gradient (no arrows - cleaner look)
       const processedEdges = (diagramData.edges || []).map((edge) => ({
         ...edge,
-        type: edge.type || 'smoothstep',
-        markerEnd: edge.markerEnd || { type: MarkerType.ArrowClosed, width: 15, height: 15 },
+        type: edge.type || 'turbo',
       }));
       return wrapper(
         <div className="my-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-hidden group/item">
@@ -621,12 +674,15 @@ const BlockRenderer: React.FC<{
             <Button variant="ghost" onClick={() => onOpenEditor('diag', diagramData)} className="text-xs h-7 opacity-0 group-hover/item:opacity-100"><Maximize2 size={12} /> Expand</Button>
           </div>
           <div className="h-[400px] bg-zinc-50 dark:bg-zinc-950">
+            <TurboEdgeGradient />
             <ReactFlow
               nodes={processedNodes}
               edges={processedEdges}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
               fitView
               proOptions={{ hideAttribution: true }}
-              defaultEdgeOptions={{ type: 'smoothstep' }}
+              defaultEdgeOptions={{ type: 'turbo' }}
             >
               <Background color="#71717a" gap={16} size={1} />
               <Controls showInteractive={false} />
@@ -765,17 +821,17 @@ const SettingsModal: React.FC<{ isOpen: boolean; onClose: () => void; prefs: Use
 };
 
 const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: { nodes?: any[]; edges?: any[] } }> = ({ onClose, diagramData }) => {
-  // Process initial nodes with proper handle positions for top-to-bottom flow
+  // Process initial nodes - preserve original positions for proper routing
   const initialNodes = (diagramData?.nodes || [{ id: '1', data: { label: 'New Node' }, position: { x: 250, y: 100 } }]).map((node) => ({
     ...node,
+    type: node.type || 'default',
     sourcePosition: node.sourcePosition || Position.Bottom,
     targetPosition: node.targetPosition || Position.Top,
   }));
-  // Process initial edges with smoothstep type for cleaner routing
+  // Process initial edges with turbo edge type (no arrows for cleaner look)
   const initialEdges = (diagramData?.edges || []).map((edge) => ({
     ...edge,
-    type: edge.type || 'smoothstep',
-    markerEnd: edge.markerEnd || { type: MarkerType.ArrowClosed, width: 15, height: 15 },
+    type: edge.type || 'turbo',
   }));
 
   const [nodes, setNodes] = useState(initialNodes);
@@ -801,15 +857,18 @@ const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: { nodes?: any
         <Button variant="accent" onClick={onClose}><Save size={16} /> Save Diagram</Button>
       </header>
       <div className="flex-1">
+        <TurboEdgeGradient />
         <ReactFlow
           nodes={nodes}
           edges={edges}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onNodesChange={onNodesChange}
           fitView
           nodesDraggable={true}
           nodesConnectable={true}
           elementsSelectable={true}
-          defaultEdgeOptions={{ type: 'smoothstep' }}
+          defaultEdgeOptions={{ type: 'turbo' }}
         >
           <Background />
           <Controls />

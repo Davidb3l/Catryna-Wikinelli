@@ -1,0 +1,465 @@
+/* =============================================================================
+   Turbo Flow Theme for React Flow
+   Inspired by https://reactflow.dev/examples/styling/turbo-flow
+   Adapted for Catryna Wikinelli with light/dark mode support
+   ============================================================================= */
+
+/* --- React Flow Container --- */
+.react-flow {
+  --bg-color: rgb(17, 17, 17);
+  --text-color: rgb(243, 244, 246);
+  --node-border-radius: 10px;
+  --node-box-shadow: 10px 0 15px rgba(42, 138, 246, 0.3),
+    -10px 0 15px rgba(233, 42, 103, 0.3);
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+/* Light mode overrides */
+:root:not(.dark) .react-flow {
+  --bg-color: #F6F9FC;
+  --text-color: #0A2540;
+  --node-box-shadow: 10px 0 20px rgba(99, 91, 255, 0.15),
+    -10px 0 20px rgba(233, 42, 103, 0.15);
+}
+
+/* --- Turbo Node Styles --- */
+.react-flow__node-turbo {
+  border-radius: var(--node-border-radius);
+  display: flex;
+  height: 70px;
+  min-width: 150px;
+  font-family: 'JetBrains Mono', 'Fira Mono', monospace;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  box-shadow: var(--node-box-shadow);
+}
+
+.react-flow__node-turbo .wrapper {
+  overflow: hidden;
+  display: flex;
+  padding: 2px;
+  position: relative;
+  border-radius: var(--node-border-radius);
+  flex-grow: 1;
+}
+
+/* Animated gradient border */
+.react-flow__node-turbo .wrapper.gradient:before {
+  content: '';
+  position: absolute;
+  padding-bottom: calc(100% * 1.41421356237);
+  width: calc(100% * 1.41421356237);
+  background: conic-gradient(
+    from -160deg at 50% 50%,
+    #e92a67 0deg,
+    #a853ba 120deg,
+    #2a8af6 240deg,
+    #e92a67 360deg
+  );
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 100%;
+}
+
+/* Light mode gradient - softer colors */
+:root:not(.dark) .react-flow__node-turbo .wrapper.gradient:before {
+  background: conic-gradient(
+    from -160deg at 50% 50%,
+    #635BFF 0deg,
+    #a853ba 120deg,
+    #00D4FF 240deg,
+    #635BFF 360deg
+  );
+}
+
+/* Selected node animation */
+.react-flow__node-turbo.selected .wrapper.gradient:before {
+  content: '';
+  background: conic-gradient(
+    from -160deg at 50% 50%,
+    #e92a67 0deg,
+    #a853ba 120deg,
+    #2a8af6 240deg,
+    rgba(42, 138, 246, 0) 360deg
+  );
+  animation: turbo-spinner 4s linear infinite;
+  transform: translate(-50%, -50%) rotate(0deg);
+  z-index: -1;
+}
+
+:root:not(.dark) .react-flow__node-turbo.selected .wrapper.gradient:before {
+  background: conic-gradient(
+    from -160deg at 50% 50%,
+    #635BFF 0deg,
+    #a853ba 120deg,
+    #00D4FF 240deg,
+    rgba(0, 212, 255, 0) 360deg
+  );
+}
+
+@keyframes turbo-spinner {
+  100% {
+    transform: translate(-50%, -50%) rotate(-360deg);
+  }
+}
+
+.react-flow__node-turbo .inner {
+  background: var(--bg-color);
+  padding: 16px 20px;
+  border-radius: var(--node-border-radius);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex-grow: 1;
+  position: relative;
+}
+
+.react-flow__node-turbo .icon {
+  margin-right: 8px;
+}
+
+.react-flow__node-turbo .body {
+  display: flex;
+  align-items: center;
+}
+
+.react-flow__node-turbo .title {
+  font-size: 14px;
+  margin-bottom: 2px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.react-flow__node-turbo .subtitle {
+  font-size: 11px;
+  color: #777;
+}
+
+:root:not(.dark) .react-flow__node-turbo .subtitle {
+  color: #425466;
+}
+
+/* Cloud badge in corner */
+.react-flow__node-turbo .cloud {
+  border-radius: 100%;
+  width: 30px;
+  height: 30px;
+  right: 0;
+  position: absolute;
+  top: 0;
+  transform: translate(50%, -50%);
+  display: flex;
+  transform-origin: center center;
+  padding: 2px;
+  overflow: hidden;
+  box-shadow: var(--node-box-shadow);
+  z-index: 1;
+}
+
+.react-flow__node-turbo .cloud div {
+  background-color: var(--bg-color);
+  flex-grow: 1;
+  border-radius: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+}
+
+.react-flow__node-turbo .cloud svg {
+  width: 14px;
+  height: 14px;
+  color: #a853ba;
+}
+
+/* --- Handle Styles --- */
+.react-flow__handle {
+  width: 8px;
+  height: 8px;
+  background: #a853ba;
+  border: 2px solid var(--bg-color);
+}
+
+:root:not(.dark) .react-flow__handle {
+  background: #635BFF;
+}
+
+.react-flow__node:focus {
+  outline: none;
+}
+
+/* --- Edge Styles with Gradient --- */
+.react-flow__edge .react-flow__edge-path {
+  stroke: url(#turbo-edge-gradient);
+  stroke-width: 2;
+  stroke-opacity: 0.75;
+}
+
+/* Fallback stroke for edges without gradient */
+.react-flow__edge-path {
+  stroke: #a853ba;
+}
+
+:root:not(.dark) .react-flow__edge-path {
+  stroke: #635BFF;
+}
+
+/* --- Controls Styles --- */
+.react-flow__controls {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.react-flow__controls button {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  border: 1px solid #95679e;
+  border-bottom: none;
+}
+
+:root:not(.dark) .react-flow__controls button {
+  background-color: #ffffff;
+  color: #0A2540;
+  border-color: #635BFF;
+}
+
+.react-flow__controls button:hover {
+  background-color: rgb(37, 37, 37);
+}
+
+:root:not(.dark) .react-flow__controls button:hover {
+  background-color: #F6F9FC;
+}
+
+.react-flow__controls button:first-child {
+  border-radius: 5px 5px 0 0;
+}
+
+.react-flow__controls button:last-child {
+  border-bottom: 1px solid #95679e;
+  border-radius: 0 0 5px 5px;
+}
+
+:root:not(.dark) .react-flow__controls button:last-child {
+  border-bottom-color: #635BFF;
+}
+
+.react-flow__controls button path {
+  fill: var(--text-color);
+}
+
+:root:not(.dark) .react-flow__controls button path {
+  fill: #0A2540;
+}
+
+/* --- MiniMap Styles --- */
+.react-flow__minimap {
+  background-color: rgba(17, 17, 17, 0.8);
+  border: 1px solid #333;
+  border-radius: 8px;
+}
+
+:root:not(.dark) .react-flow__minimap {
+  background-color: rgba(246, 249, 252, 0.9);
+  border-color: #E0E0E0;
+}
+
+/* --- Attribution --- */
+.react-flow__attribution {
+  background: rgba(200, 200, 200, 0.2);
+}
+
+.react-flow__attribution a {
+  color: #95679e;
+}
+
+:root:not(.dark) .react-flow__attribution a {
+  color: #635BFF;
+}
+
+/* --- Background --- */
+.react-flow__background {
+  background-color: var(--bg-color);
+}
+
+/* --- Default Node Override (for non-turbo nodes) --- */
+.react-flow__node-default {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border: 1px solid #2a8af6;
+  border-radius: 8px;
+  padding: 10px 15px;
+  box-shadow: 0 4px 20px rgba(42, 138, 246, 0.2);
+  color: #f3f4f6;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+:root:not(.dark) .react-flow__node-default {
+  background: linear-gradient(135deg, #ffffff 0%, #F6F9FC 100%);
+  border-color: #635BFF;
+  box-shadow: 0 4px 20px rgba(99, 91, 255, 0.15);
+  color: #0A2540;
+}
+
+/* Selected state for default nodes */
+.react-flow__node-default.selected {
+  border-color: #e92a67;
+  box-shadow: 0 0 0 2px rgba(233, 42, 103, 0.3),
+    0 4px 20px rgba(233, 42, 103, 0.3);
+}
+
+:root:not(.dark) .react-flow__node-default.selected {
+  border-color: #635BFF;
+  box-shadow: 0 0 0 2px rgba(99, 91, 255, 0.3),
+    0 4px 20px rgba(99, 91, 255, 0.2);
+}
+
+/* =============================================================================
+   Mermaid Turbo Flow Theme
+   ============================================================================= */
+
+/* Container styling */
+.mermaid-container {
+  padding: 1rem;
+}
+
+/* Dark mode Mermaid styles */
+.dark .mermaid-container svg {
+  background: transparent !important;
+}
+
+/* Node styling - dark mode */
+.dark .mermaid-container .node rect,
+.dark .mermaid-container .node circle,
+.dark .mermaid-container .node ellipse,
+.dark .mermaid-container .node polygon,
+.dark .mermaid-container .node path {
+  fill: #1a1a2e !important;
+  stroke: #a853ba !important;
+  stroke-width: 2px !important;
+  filter: drop-shadow(0 0 8px rgba(168, 83, 186, 0.4));
+}
+
+.dark .mermaid-container .node .label {
+  color: #f3f4f6 !important;
+  fill: #f3f4f6 !important;
+}
+
+/* Edge/line styling - dark mode */
+.dark .mermaid-container .edgePath .path,
+.dark .mermaid-container .flowchart-link {
+  stroke: url(#mermaid-gradient) !important;
+  stroke-width: 2px !important;
+  filter: drop-shadow(0 0 4px rgba(168, 83, 186, 0.5));
+}
+
+/* Arrowheads - dark mode */
+.dark .mermaid-container marker path {
+  fill: #2a8af6 !important;
+  stroke: #2a8af6 !important;
+}
+
+/* Sequence diagram actors - dark mode */
+.dark .mermaid-container .actor {
+  fill: #1a1a2e !important;
+  stroke: #a853ba !important;
+  stroke-width: 2px !important;
+  filter: drop-shadow(0 0 8px rgba(168, 83, 186, 0.4));
+}
+
+.dark .mermaid-container .actor-line {
+  stroke: #a853ba !important;
+  stroke-dasharray: 4, 4;
+}
+
+.dark .mermaid-container .messageLine0,
+.dark .mermaid-container .messageLine1 {
+  stroke: #a853ba !important;
+  stroke-width: 2px !important;
+}
+
+.dark .mermaid-container text.actor,
+.dark .mermaid-container .messageText {
+  fill: #f3f4f6 !important;
+  font-family: 'JetBrains Mono', monospace !important;
+}
+
+/* Subgraph/cluster styling - dark mode */
+.dark .mermaid-container .cluster rect {
+  fill: #16213e !important;
+  stroke: #a853ba !important;
+  stroke-width: 1px !important;
+  stroke-dasharray: 5, 5;
+}
+
+.dark .mermaid-container .cluster text {
+  fill: #a853ba !important;
+}
+
+/* Light mode Mermaid styles */
+:root:not(.dark) .mermaid-container .node rect,
+:root:not(.dark) .mermaid-container .node circle,
+:root:not(.dark) .mermaid-container .node ellipse,
+:root:not(.dark) .mermaid-container .node polygon,
+:root:not(.dark) .mermaid-container .node path {
+  fill: #F6F9FC !important;
+  stroke: #635BFF !important;
+  stroke-width: 2px !important;
+  filter: drop-shadow(0 2px 6px rgba(10, 37, 64, 0.08));
+}
+
+/* Edge labels (recordPayment, etc.) - light mode */
+:root:not(.dark) .mermaid-container .edgeLabel {
+  filter: drop-shadow(0 1px 4px rgba(10, 37, 64, 0.1));
+}
+
+:root:not(.dark) .mermaid-container .node .label {
+  color: #0A2540 !important;
+  fill: #0A2540 !important;
+}
+
+:root:not(.dark) .mermaid-container .edgePath .path,
+:root:not(.dark) .mermaid-container .flowchart-link {
+  stroke: #635BFF !important;
+  stroke-width: 2px !important;
+}
+
+:root:not(.dark) .mermaid-container marker path {
+  fill: #635BFF !important;
+  stroke: #635BFF !important;
+}
+
+:root:not(.dark) .mermaid-container .actor {
+  fill: #F6F9FC !important;
+  stroke: #635BFF !important;
+  stroke-width: 2px !important;
+}
+
+:root:not(.dark) .mermaid-container .actor-line {
+  stroke: #635BFF !important;
+  stroke-dasharray: 4, 4;
+}
+
+:root:not(.dark) .mermaid-container .messageLine0,
+:root:not(.dark) .mermaid-container .messageLine1 {
+  stroke: #635BFF !important;
+  stroke-width: 2px !important;
+}
+
+:root:not(.dark) .mermaid-container text.actor,
+:root:not(.dark) .mermaid-container .messageText {
+  fill: #0A2540 !important;
+  font-family: 'JetBrains Mono', monospace !important;
+}
+
+:root:not(.dark) .mermaid-container .cluster rect {
+  fill: #FFFFFF !important;
+  stroke: #635BFF !important;
+  stroke-width: 1px !important;
+  stroke-dasharray: 5, 5;
+}
+
+:root:not(.dark) .mermaid-container .cluster text {
+  fill: #635BFF !important;
+}
