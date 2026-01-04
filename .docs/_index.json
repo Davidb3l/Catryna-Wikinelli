@@ -28,7 +28,7 @@
         "src\\storage.ts"
       ],
       "createdAt": 1767321236003,
-      "updatedAt": 1767321656661,
+      "updatedAt": 1767336003658,
       "createdBy": "claude-code"
     },
     {
@@ -163,7 +163,28 @@
       "createdAt": 1767321677827,
       "updatedAt": 1767321677827,
       "createdBy": "claude-code"
+    },
+    {
+      "id": "49ba4ce6-9348-476a-9e54-58b48fdbab2c",
+      "path": "styling/diagram-themes",
+      "title": "Diagram Themes & Styling",
+      "tags": [
+        "styling",
+        "react-flow",
+        "mermaid",
+        "turbo-flow",
+        "theming"
+      ],
+      "relatedFiles": [
+        "frontend/index.css",
+        "frontend/App.tsx",
+        "frontend/components/TurboNode.tsx",
+        "frontend/components/TurboEdge.tsx"
+      ],
+      "createdAt": 1767494114128,
+      "updatedAt": 1767494114128,
+      "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1767323928238
+  "lastUpdated": 1767494114131
 }

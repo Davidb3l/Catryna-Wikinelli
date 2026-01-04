@@ -168,6 +168,7 @@ catryna-wikinelli/
 | `delete_doc` | Delete a document |
 | `search_docs` | Full-text search across documents |
 | `create_diagram` | Create React Flow architecture diagram |
+| `create_mermaid_diagram` | Create Mermaid diagram (flowchart, sequence, etc.) |
 | `create_whiteboard` | Create tldraw whiteboard |
 | `get_undocumented_modules` | List source files without docs |
 | `get_doc_coverage` | Get documentation coverage report |
@@ -264,6 +265,31 @@ When creating documentation with mixed content (headings, code, mermaid diagrams
 { "type": "text", "data": { "content": "..." } }      // Use "text" for paragraphs
 { "type": "mermaid", "data": { "content": "..." } }   // Use "mermaid" for diagrams
 ```
+
+---
+
+## Diagram Theming (Turbo Flow)
+
+All diagrams use a **Turbo Flow** inspired theme with consistent styling:
+
+### Dark Mode Colors
+- **Pink** `#e92a67` - Gradient start
+- **Purple** `#a853ba` - Primary borders/lines
+- **Blue** `#2a8af6` - Gradient end
+- **Node BG** `#1a1a2e` - Dark node fill
+
+### Light Mode Colors (Stripe-inspired)
+- **Accent** `#635BFF` - Borders/lines
+- **Navy** `#0A2540` - Text
+- **Surface** `#F6F9FC` - Node fill
+
+### Features
+- Gradient edges (pink → purple → blue)
+- Glow/shadow effects on nodes
+- Monospace font (JetBrains Mono)
+- Smoothstep edge routing for clean connections
+
+See `.docs/styling/diagram-themes.mdx` for full details.
 
 ---
 
