@@ -1,4 +1,55 @@
 /* =============================================================================
+   Mobile Responsiveness & Touch Support
+   ============================================================================= */
+
+/* Improve touch targets on mobile */
+@media (max-width: 640px) {
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Smaller buttons can override */
+  .min-h-auto {
+    min-height: auto;
+  }
+}
+
+/* Smooth scrolling for the whole app */
+html {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent horizontal overflow on mobile */
+body {
+  overflow-x: hidden;
+}
+
+/* Better tap highlighting on mobile */
+* {
+  -webkit-tap-highlight-color: rgba(99, 91, 255, 0.1);
+}
+
+/* Safe area insets for notched devices */
+@supports (padding: max(0px)) {
+  .safe-area-inset-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  .safe-area-inset-top {
+    padding-top: max(0px, env(safe-area-inset-top));
+  }
+}
+
+/* Scrollbar styling for mobile */
+@media (max-width: 640px) {
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+}
+
+/* =============================================================================
    Turbo Flow Theme for React Flow
    Inspired by https://reactflow.dev/examples/styling/turbo-flow
    Adapted for Catryna Wikinelli with light/dark mode support
@@ -321,7 +372,33 @@
 
 /* Container styling */
 .mermaid-container {
-  padding: 1rem;
+  padding: 0.75rem;
+  min-height: 200px;
+}
+
+@media (min-width: 640px) {
+  .mermaid-container {
+    padding: 1rem;
+  }
+}
+
+/* Make mermaid diagrams scrollable for wide diagrams */
+.mermaid-container svg {
+  min-width: fit-content;
+  height: auto;
+  min-height: 150px;
+}
+
+/* React Flow controls mobile positioning */
+@media (max-width: 640px) {
+  .react-flow__controls {
+    transform: scale(0.85);
+    transform-origin: bottom left;
+  }
+
+  .react-flow__minimap {
+    display: none !important;
+  }
 }
 
 /* Dark mode Mermaid styles */
@@ -339,6 +416,8 @@
   stroke: #a853ba !important;
   stroke-width: 2px !important;
   filter: drop-shadow(0 0 8px rgba(168, 83, 186, 0.4));
+  rx: 8px !important;
+  ry: 8px !important;
 }
 
 .dark .mermaid-container .node .label {
@@ -346,18 +425,77 @@
   fill: #f3f4f6 !important;
 }
 
+/* Ensure text labels are visible */
+.dark .mermaid-container .nodeLabel,
+.dark .mermaid-container .label,
+.dark .mermaid-container .node .label,
+.dark .mermaid-container text,
+.dark .mermaid-container .edgeLabel {
+  fill: #f3f4f6 !important;
+  color: #f3f4f6 !important;
+  font-size: 13px !important;
+}
+
+/* Edge label background rect - dark mode */
+.dark .mermaid-container .edgeLabel rect,
+.dark .mermaid-container .labelBkg,
+.dark .mermaid-container .edgeLabelRect {
+  fill: #1a1a2e !important;
+  stroke: #a853ba !important;
+  stroke-width: 1px !important;
+}
+
+/* Edge label text - dark mode */
+.dark .mermaid-container .edgeLabel text,
+.dark .mermaid-container .edgeLabel span,
+.dark .mermaid-container .edgeLabel foreignObject div {
+  fill: #f3f4f6 !important;
+  color: #f3f4f6 !important;
+  background: transparent !important;
+}
+
+.dark .mermaid-container .cluster-label text,
+.dark .mermaid-container .nodeLabel text {
+  fill: #f3f4f6 !important;
+}
+
 /* Edge/line styling - dark mode */
 .dark .mermaid-container .edgePath .path,
-.dark .mermaid-container .flowchart-link {
-  stroke: url(#mermaid-gradient) !important;
+.dark .mermaid-container .flowchart-link,
+.dark .mermaid-container path.path,
+.dark .mermaid-container .edge path,
+.dark .mermaid-container [class*="edge"] path,
+.dark .mermaid-container [class*="flowchart"] path:not([class*="label"]) {
+  stroke: #a853ba !important;
   stroke-width: 2px !important;
+  fill: none !important;
   filter: drop-shadow(0 0 4px rgba(168, 83, 186, 0.5));
+}
+
+/* Ensure edge paths are visible */
+.dark .mermaid-container .edge-pattern-solid,
+.dark .mermaid-container [class*="LS-"],
+.dark .mermaid-container [class*="LE-"] {
+  stroke: #a853ba !important;
+  stroke-width: 2px !important;
+  fill: none !important;
+}
+
+.dark .mermaid-container .edge-thickness-normal {
+  stroke-width: 2px !important;
+}
+
+/* Fix for Mermaid 11.x edge rendering */
+.dark .mermaid-container g.edgePath path {
+  stroke: #a853ba !important;
+  stroke-width: 2px !important;
+  fill: none !important;
 }
 
 /* Arrowheads - dark mode */
 .dark .mermaid-container marker path {
-  fill: #2a8af6 !important;
-  stroke: #2a8af6 !important;
+  fill: #a853ba !important;
+  stroke: #a853ba !important;
 }
 
 /* Sequence diagram actors - dark mode */
@@ -414,15 +552,54 @@
   filter: drop-shadow(0 1px 4px rgba(10, 37, 64, 0.1));
 }
 
+/* Edge label background rect - light mode */
+:root:not(.dark) .mermaid-container .edgeLabel rect,
+:root:not(.dark) .mermaid-container .labelBkg,
+:root:not(.dark) .mermaid-container .edgeLabelRect {
+  fill: #ffffff !important;
+  stroke: none !important;
+}
+
+/* Edge label text - light mode (ensure dark text) */
+:root:not(.dark) .mermaid-container .edgeLabel text,
+:root:not(.dark) .mermaid-container .edgeLabel span,
+:root:not(.dark) .mermaid-container .edgeLabel foreignObject div {
+  fill: #0A2540 !important;
+  color: #0A2540 !important;
+  background: transparent !important;
+}
+
 :root:not(.dark) .mermaid-container .node .label {
   color: #0A2540 !important;
   fill: #0A2540 !important;
 }
 
 :root:not(.dark) .mermaid-container .edgePath .path,
-:root:not(.dark) .mermaid-container .flowchart-link {
+:root:not(.dark) .mermaid-container .flowchart-link,
+:root:not(.dark) .mermaid-container path.path {
   stroke: #635BFF !important;
   stroke-width: 2px !important;
+  fill: none !important;
+}
+
+:root:not(.dark) .mermaid-container .edge-pattern-solid {
+  stroke: #635BFF !important;
+}
+
+/* Ensure text labels are visible - light mode */
+:root:not(.dark) .mermaid-container .nodeLabel,
+:root:not(.dark) .mermaid-container .label,
+:root:not(.dark) .mermaid-container .node .label,
+:root:not(.dark) .mermaid-container text,
+:root:not(.dark) .mermaid-container .edgeLabel {
+  fill: #0A2540 !important;
+  color: #0A2540 !important;
+  font-size: 13px !important;
+}
+
+:root:not(.dark) .mermaid-container .cluster-label text,
+:root:not(.dark) .mermaid-container .nodeLabel text {
+  fill: #0A2540 !important;
 }
 
 :root:not(.dark) .mermaid-container marker path {

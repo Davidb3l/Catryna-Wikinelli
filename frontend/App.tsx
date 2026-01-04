@@ -30,7 +30,7 @@ const initMermaid = (isDark: boolean) => {
     theme: 'base',
     securityLevel: 'loose',
     flowchart: {
-      useMaxWidth: false,
+      useMaxWidth: true,
       htmlLabels: true,
       curve: 'basis',
       padding: 20,
@@ -137,23 +137,23 @@ const CommandPalette: React.FC<{ isOpen: boolean; onClose: () => void; onSelect:
   const displayDocs = query.length >= 2 ? results : docs;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[15vh] bg-black/40 backdrop-blur-sm px-4" onClick={onClose}>
-      <div className="w-full max-w-xl bg-white dark:bg-zinc-900 rounded-xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-100 dark:border-zinc-800">
-          {loading ? <Loader2 size={18} className="text-zinc-400 animate-spin" /> : <Search size={18} className="text-zinc-400" />}
-          <input autoFocus value={query} onChange={e => setQuery(e.target.value)} className="flex-1 bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 text-sm" placeholder="Search docs..." />
-          <button onClick={() => setShowFilters(!showFilters)} className={`p-1.5 rounded-md ${showFilters ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}><Filter size={16} /></button>
-          <kbd className="px-1.5 py-0.5 rounded border border-zinc-200 dark:border-zinc-800 text-[10px] text-zinc-400 font-sans">ESC</kbd>
+    <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[10vh] sm:pt-[15vh] bg-black/40 backdrop-blur-sm px-3 sm:px-4" onClick={onClose}>
+      <div className="w-full max-w-xl bg-white dark:bg-zinc-900 rounded-lg sm:rounded-xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 border-b border-zinc-100 dark:border-zinc-800">
+          {loading ? <Loader2 size={18} className="text-zinc-400 animate-spin shrink-0" /> : <Search size={18} className="text-zinc-400 shrink-0" />}
+          <input autoFocus value={query} onChange={e => setQuery(e.target.value)} className="flex-1 bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 text-sm min-w-0" placeholder="Search docs..." />
+          <button onClick={() => setShowFilters(!showFilters)} className={`p-1.5 rounded-md shrink-0 ${showFilters ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}><Filter size={16} /></button>
+          <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded border border-zinc-200 dark:border-zinc-800 text-[10px] text-zinc-400 font-sans shrink-0">ESC</kbd>
         </div>
-        <div className="p-2 max-h-[400px] overflow-y-auto">
+        <div className="p-2 max-h-[50vh] sm:max-h-[400px] overflow-y-auto">
           {displayDocs.length === 0 ? (
-            <div className="py-8 text-center text-zinc-400 text-sm">
+            <div className="py-6 sm:py-8 text-center text-zinc-400 text-xs sm:text-sm">
               {query.length >= 2 ? 'No results found' : 'No docs yet. Create some with Claude Code!'}
             </div>
           ) : displayDocs.map(doc => (
-            <div key={doc.id || doc.path} onClick={() => { onSelect(doc.path); onClose(); setQuery(''); }} className="flex items-center justify-between px-3 py-2.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer text-sm group">
-              <div className="flex items-center gap-3"><FileText size={16} className="text-zinc-400" /><span>{doc.title}</span></div>
-              <span className="text-[10px] text-zinc-400 uppercase opacity-0 group-hover:opacity-100">{doc.path.split('/')[0]}</span>
+            <div key={doc.id || doc.path} onClick={() => { onSelect(doc.path); onClose(); setQuery(''); }} className="flex items-center justify-between px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer text-xs sm:text-sm group">
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0"><FileText size={14} className="text-zinc-400 shrink-0 sm:w-4 sm:h-4" /><span className="truncate">{doc.title}</span></div>
+              <span className="text-[9px] sm:text-[10px] text-zinc-400 uppercase opacity-0 group-hover:opacity-100 shrink-0 ml-2">{doc.path.split('/')[0]}</span>
             </div>
           ))}
         </div>
@@ -162,32 +162,32 @@ const CommandPalette: React.FC<{ isOpen: boolean; onClose: () => void; onSelect:
   );
 };
 
-const VersionHistorySidebar: React.FC<{ 
-  isOpen: boolean; onClose: () => void; history: HistoryEntry[]; currentBlocks: Block[]; onRevert: (b: Block[]) => void 
+const VersionHistorySidebar: React.FC<{
+  isOpen: boolean; onClose: () => void; history: HistoryEntry[]; currentBlocks: Block[]; onRevert: (b: Block[]) => void
 }> = ({ isOpen, onClose, history, currentBlocks, onRevert }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-y-0 right-0 w-80 lg:w-[450px] z-[150] bg-white dark:bg-zinc-950 border-l border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-      <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50">
-        <h3 className="font-bold flex items-center gap-2"><History size={18} /> Version History</h3>
+    <div className="fixed inset-y-0 right-0 w-full sm:w-80 lg:w-[450px] z-[150] bg-white dark:bg-zinc-950 border-l border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+      <div className="p-3 sm:p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50">
+        <h3 className="font-bold flex items-center gap-2 text-sm sm:text-base"><History size={18} /> Version History</h3>
         <Button variant="ghost" onClick={onClose} className="p-1"><X size={18} /></Button>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 sm:space-y-4">
         {history.length === 0 && <div className="text-center py-10 text-zinc-400 text-sm">No versions found.</div>}
         {history.map(entry => (
-          <div key={entry.id} className="p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors group">
-            <div className="flex justify-between items-start mb-2">
-              <div className="flex flex-col">
-                <span className="text-sm font-bold text-navy dark:text-zinc-50">{entry.summary}</span>
-                <span className="text-[10px] text-zinc-400 font-mono">{new Date(entry.timestamp).toLocaleString()}</span>
+          <div key={entry.id} className="p-3 sm:p-4 rounded-lg sm:rounded-xl border border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors group">
+            <div className="flex justify-between items-start mb-2 gap-2">
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs sm:text-sm font-bold text-navy dark:text-zinc-50 truncate">{entry.summary}</span>
+                <span className="text-[9px] sm:text-[10px] text-zinc-400 font-mono">{new Date(entry.timestamp).toLocaleString()}</span>
               </div>
-              <div className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-[9px] font-bold text-zinc-500 uppercase">{entry.author}</div>
+              <div className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-[8px] sm:text-[9px] font-bold text-zinc-500 uppercase shrink-0">{entry.author}</div>
             </div>
-            <div className="p-2 bg-zinc-50 dark:bg-zinc-900/30 rounded-lg text-[11px] font-mono text-zinc-500 mb-4 border border-zinc-100 dark:border-zinc-800">
+            <div className="p-2 bg-zinc-50 dark:bg-zinc-900/30 rounded-lg text-[10px] sm:text-[11px] font-mono text-zinc-500 mb-3 sm:mb-4 border border-zinc-100 dark:border-zinc-800">
               {entry.blocks.length} blocks changed
             </div>
             <Button variant="outline" className="w-full text-xs h-8 justify-center" onClick={() => onRevert(entry.blocks)}>
-              <RotateCcw size={14} /> Revert Changes
+              <RotateCcw size={14} /> Revert
             </Button>
           </div>
         ))}
@@ -198,23 +198,23 @@ const VersionHistorySidebar: React.FC<{
 
 const CoverageReport: React.FC<{ onClose: () => void }> = ({ onClose }) => (
   <div className="fixed inset-0 z-[160] bg-white dark:bg-zinc-950 flex flex-col animate-in fade-in duration-300">
-    <header className="h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 shrink-0">
-      <div className="flex items-center gap-3"><Button variant="ghost" onClick={onClose}><X size={20} /></Button><h2 className="font-bold flex items-center gap-2"><BarChart3 size={18} /> Documentation Coverage</h2></div>
-      <Button variant="accent"><Sparkles size={16} /> Auto-Generate Missing</Button>
+    <header className="h-12 sm:h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 shrink-0">
+      <div className="flex items-center gap-2 sm:gap-3"><Button variant="ghost" onClick={onClose} className="p-1"><X size={20} /></Button><h2 className="font-bold flex items-center gap-2 text-sm sm:text-base"><BarChart3 size={18} /> <span className="hidden sm:inline">Documentation</span> Coverage</h2></div>
+      <Button variant="accent" className="text-xs sm:text-sm px-2 sm:px-3"><Sparkles size={16} /> <span className="hidden sm:inline">Auto-Generate Missing</span><span className="sm:hidden">Generate</span></Button>
     </header>
-    <div className="flex-1 overflow-y-auto p-6 lg:p-12 max-w-5xl mx-auto w-full">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-        <div className="p-6 bg-zinc-50 dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800"><div className="text-xs text-zinc-400 font-bold uppercase mb-2">Health Score</div><div className="text-4xl font-black text-indigo-600">84%</div></div>
-        <div className="p-6 bg-zinc-50 dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800"><div className="text-xs text-zinc-400 font-bold uppercase mb-2">Total Pages</div><div className="text-4xl font-black text-zinc-900 dark:text-white">42</div></div>
-        <div className="p-6 bg-zinc-50 dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800"><div className="text-xs text-zinc-400 font-bold uppercase mb-2">Missing Context</div><div className="text-4xl font-black text-amber-500">12</div></div>
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-12 max-w-5xl mx-auto w-full">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-8 sm:mb-12">
+        <div className="p-4 sm:p-6 bg-zinc-50 dark:bg-zinc-900 rounded-xl sm:rounded-2xl border border-zinc-100 dark:border-zinc-800"><div className="text-[10px] sm:text-xs text-zinc-400 font-bold uppercase mb-1.5 sm:mb-2">Health Score</div><div className="text-3xl sm:text-4xl font-black text-indigo-600">84%</div></div>
+        <div className="p-4 sm:p-6 bg-zinc-50 dark:bg-zinc-900 rounded-xl sm:rounded-2xl border border-zinc-100 dark:border-zinc-800"><div className="text-[10px] sm:text-xs text-zinc-400 font-bold uppercase mb-1.5 sm:mb-2">Total Pages</div><div className="text-3xl sm:text-4xl font-black text-zinc-900 dark:text-white">42</div></div>
+        <div className="p-4 sm:p-6 bg-zinc-50 dark:bg-zinc-900 rounded-xl sm:rounded-2xl border border-zinc-100 dark:border-zinc-800"><div className="text-[10px] sm:text-xs text-zinc-400 font-bold uppercase mb-1.5 sm:mb-2">Missing Context</div><div className="text-3xl sm:text-4xl font-black text-amber-500">12</div></div>
       </div>
-      <div className="space-y-4">
+      <div className="space-y-3 sm:space-y-4">
         {['auth-service.ts', 'user-controller.go', 'database-layer.rs', 'frontend-api.ts'].map((f, i) => (
-          <div key={f} className="p-4 bg-white dark:bg-zinc-900/50 rounded-xl border border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
-            <div className="flex items-center gap-3"><Terminal size={16} className="text-zinc-400" /><span className="text-sm font-medium">{f}</span></div>
-            <div className="flex items-center gap-4">
-              <div className="w-24 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden"><div className="h-full bg-indigo-500" style={{ width: i === 3 ? '20%' : '100%' }} /></div>
-              <span className={`text-xs font-bold ${i === 3 ? 'text-red-500' : 'text-green-500'}`}>{i === 3 ? 'Missing' : 'Documented'}</span>
+          <div key={f} className="p-3 sm:p-4 bg-white dark:bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
+            <div className="flex items-center gap-2 sm:gap-3"><Terminal size={14} className="text-zinc-400 shrink-0 sm:w-4 sm:h-4" /><span className="text-xs sm:text-sm font-medium truncate">{f}</span></div>
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="flex-1 sm:w-24 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden"><div className="h-full bg-indigo-500" style={{ width: i === 3 ? '20%' : '100%' }} /></div>
+              <span className={`text-[10px] sm:text-xs font-bold shrink-0 ${i === 3 ? 'text-red-500' : 'text-green-500'}`}>{i === 3 ? 'Missing' : 'Done'}</span>
             </div>
           </div>
         ))}
@@ -368,9 +368,13 @@ export default function App() {
       <VersionHistorySidebar isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} history={currentDoc.history || []} currentBlocks={currentDoc.blocks} onRevert={(b) => { setIsHistoryOpen(false); addToast('Reverted'); }} />
       <ToastContainer toasts={toasts} onRemove={(id) => setToasts(toasts.filter(t => t.id !== id))} />
 
-      {isSidebarOpen && window.innerWidth < 1024 && <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setIsSidebarOpen(false)} />}
+      {/* Mobile sidebar backdrop */}
+      <div
+        className={`fixed inset-0 bg-black/60 z-40 lg:hidden transition-opacity duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        onClick={() => setIsSidebarOpen(false)}
+      />
 
-      <aside className={`fixed lg:relative h-full z-50 bg-surface dark:bg-zinc-950 border-r border-zinc-200/80 dark:border-zinc-800 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full lg:translate-x-0'}`}>
+      <aside className={`fixed lg:relative h-full z-50 bg-white dark:bg-zinc-950 border-r border-zinc-200/80 dark:border-zinc-800 transition-transform duration-300 ease-in-out shadow-2xl lg:shadow-none ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} w-64`}>
         <div className="flex flex-col h-full w-64">
           <div className="p-4 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 shrink-0 h-14">
             <div className="flex items-center gap-2 font-bold tracking-tight text-navy dark:text-zinc-50">
@@ -437,26 +441,26 @@ export default function App() {
             ) : navItems.map(item => <SidebarItem key={item.id} item={item} depth={0} selectedId={selectedDocPath || ''} onSelect={handleDocSelect} />)}
             <div className="mt-8 px-4"><label className="text-[10px] font-bold text-navy-light dark:text-zinc-400 uppercase tracking-widest mb-3 block">Reports</label><button onClick={() => setActiveEditor('coverage')} className="w-full flex items-center gap-2 text-sm text-navy-light dark:text-zinc-500 hover:text-accent py-1.5 transition-colors"><BarChart3 size={14} /> Doc Coverage</button></div>
           </div>
-          <div className="p-4 border-t border-zinc-200/80 dark:border-zinc-800 flex items-center gap-3 bg-white/50 dark:bg-zinc-900/50">
-            <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-white font-bold text-xs ring-2 ring-accent/20">CW</div>
-            <div className="flex-1 min-w-0"><div className="text-xs font-semibold truncate text-navy dark:text-zinc-200">Catryna Wikinelli</div><div className="text-[10px] text-navy-light dark:text-zinc-500">v2.5.0-beta</div></div>
-            <Settings size={16} className="text-navy-light dark:text-zinc-400 cursor-pointer hover:text-accent" onClick={() => setIsSettingsOpen(true)} />
+          <div className="p-3 sm:p-4 border-t border-zinc-200/80 dark:border-zinc-800 flex items-center gap-2 sm:gap-3 bg-white/50 dark:bg-zinc-900/50">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-accent flex items-center justify-center text-white font-bold text-[10px] sm:text-xs ring-2 ring-accent/20 shrink-0">CW</div>
+            <div className="flex-1 min-w-0"><div className="text-[11px] sm:text-xs font-semibold truncate text-navy dark:text-zinc-200">Catryna</div><div className="text-[9px] sm:text-[10px] text-navy-light dark:text-zinc-500">v2.5.0</div></div>
+            <Settings size={16} className="text-navy-light dark:text-zinc-400 cursor-pointer hover:text-accent shrink-0" onClick={() => setIsSettingsOpen(true)} />
           </div>
         </div>
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-950 relative">
-        <header className="h-14 border-b border-zinc-200/80 dark:border-zinc-800 flex items-center justify-between px-6 shrink-0 bg-white/95 dark:bg-zinc-950/80 backdrop-blur-md sticky top-0 z-40">
-          <div className="flex items-center gap-4">
+        <header className="h-12 sm:h-14 border-b border-zinc-200/80 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 shrink-0 bg-white/95 dark:bg-zinc-950/80 backdrop-blur-md sticky top-0 z-40">
+          <div className="flex items-center gap-2 sm:gap-4">
             {!isSidebarOpen && <Button variant="ghost" onClick={() => setIsSidebarOpen(true)} className="p-1"><Menu size={16} /></Button>}
             <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-bold text-zinc-400">
-               {isSaving ? <span className="text-indigo-500 animate-pulse">● Saving...</span> : <span className="text-green-500">● Local Synced</span>}
+               {isSaving ? <span className="text-indigo-500 animate-pulse">● Saving...</span> : <span className="text-green-500">● Synced</span>}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={() => setIsSearchOpen(true)} className="text-xs h-8"><Search size={16} /> <kbd className="hidden md:inline ml-2 opacity-50 font-sans">⌘K</kbd></Button>
-            <Button variant="ghost" onClick={() => setIsHistoryOpen(true)} className="text-xs h-8"><History size={16} /></Button>
-            {isEditing ? <Button variant="accent" onClick={() => { setIsSaving(true); setTimeout(() => { setIsSaving(false); setIsEditing(false); addToast('Saved'); }, 800); }} className="h-8"><Save size={16} /> Save</Button> : <Button variant="outline" onClick={() => setIsEditing(true)} className="h-8"><Edit3 size={16} /> Edit</Button>}
+          <div className="flex items-center gap-1 sm:gap-2">
+            <Button variant="ghost" onClick={() => setIsSearchOpen(true)} className="text-xs h-8 px-2 sm:px-3"><Search size={16} /> <kbd className="hidden md:inline ml-2 opacity-50 font-sans">⌘K</kbd></Button>
+            <Button variant="ghost" onClick={() => setIsHistoryOpen(true)} className="text-xs h-8 px-2 sm:px-3 hidden sm:flex"><History size={16} /></Button>
+            {isEditing ? <Button variant="accent" onClick={() => { setIsSaving(true); setTimeout(() => { setIsSaving(false); setIsEditing(false); addToast('Saved'); }, 800); }} className="h-8 px-2 sm:px-3"><Save size={16} /> <span className="hidden sm:inline">Save</span></Button> : <Button variant="outline" onClick={() => setIsEditing(true)} className="h-8 px-2 sm:px-3"><Edit3 size={16} /> <span className="hidden sm:inline">Edit</span></Button>}
           </div>
         </header>
 
@@ -466,34 +470,34 @@ export default function App() {
               <Loader2 size={32} className="animate-spin text-zinc-400" />
             </div>
           ) : (
-          <div className="flex justify-between max-w-6xl mx-auto px-6 lg:px-12 py-12 gap-12">
-            <div className="flex-1 max-w-3xl">
-              <nav className="flex items-center gap-1.5 text-[10px] font-bold text-navy-light dark:text-zinc-400 uppercase tracking-widest mb-8">
-                {currentDoc.path.map((p, i) => <React.Fragment key={p}><button className="hover:text-accent">{p}</button><ChevronRight size={10} /></React.Fragment>)}
-                <span className="text-navy dark:text-zinc-100">{currentDoc.title}</span>
+          <div className="flex justify-between max-w-6xl mx-auto px-4 sm:px-6 lg:px-12 py-6 sm:py-8 lg:py-12 gap-6 lg:gap-12">
+            <div className="flex-1 max-w-3xl min-w-0">
+              <nav className="flex items-center gap-1 sm:gap-1.5 text-[9px] sm:text-[10px] font-bold text-navy-light dark:text-zinc-400 uppercase tracking-widest mb-4 sm:mb-8 overflow-x-auto pb-1">
+                {currentDoc.path.map((p, i) => <React.Fragment key={p}><button className="hover:text-accent whitespace-nowrap">{p}</button><ChevronRight size={10} className="shrink-0" /></React.Fragment>)}
+                <span className="text-navy dark:text-zinc-100 whitespace-nowrap">{currentDoc.title}</span>
               </nav>
-              <h1 className="text-4xl lg:text-5xl font-black tracking-tight mb-10 text-navy dark:text-zinc-50">{currentDoc.title}</h1>
-              <div className="space-y-2">
+              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black tracking-tight mb-6 sm:mb-8 lg:mb-10 text-navy dark:text-zinc-50">{currentDoc.title}</h1>
+              <div className="space-y-1 sm:space-y-2">
                 {currentDoc.blocks
                   .filter(block => !(block.type === 'heading-1' && block.content === currentDoc.title))
                   .map(block => (
-                  <BlockRenderer key={block.id} block={block} isEditing={isEditing} showLineNumbers={prefs.editorLineNumbers} whiteboardStyle={prefs.whiteboardStyle} onOpenEditor={(type, data) => { setActiveEditor(type); if (data) setEditorDiagramData(data); }} onDelete={id => {}} onCopy={() => addToast('Copied')} />
+                  <BlockRenderer key={block.id} block={block} isEditing={isEditing} showLineNumbers={prefs.editorLineNumbers} whiteboardStyle={prefs.whiteboardStyle} theme={prefs.theme} onOpenEditor={(type, data) => { setActiveEditor(type); if (data) setEditorDiagramData(data); }} onDelete={id => {}} onCopy={() => addToast('Copied')} />
                 ))}
               </div>
             </div>
 
-            {/* Table of Contents */}
-            <aside className="hidden xl:block w-48 sticky top-0 h-fit pt-4">
+            {/* Table of Contents - show on larger tablets and desktop */}
+            <aside className="hidden lg:block w-40 xl:w-48 sticky top-0 h-fit pt-4 shrink-0">
               <div className="text-[10px] font-bold text-navy-light dark:text-zinc-400 uppercase tracking-widest mb-4">On this page</div>
-              <ul className="space-y-2.5 border-l border-zinc-200/80 dark:border-zinc-800">
+              <ul className="space-y-2 xl:space-y-2.5 border-l border-zinc-200/80 dark:border-zinc-800">
                 {tableOfContents.map(toc => (
                   <li
                     key={toc.id}
                     onClick={() => scrollToSection(toc.id)}
-                    className={`text-xs cursor-pointer transition-colors line-clamp-2 -ml-px pl-3 border-l-2 ${
+                    className={`text-[11px] xl:text-xs cursor-pointer transition-colors line-clamp-2 -ml-px pl-3 border-l-2 ${
                       activeSection === toc.id
                         ? 'border-accent text-accent dark:text-indigo-400 font-medium'
-                        : 'border-transparent hover:border-zinc-300 dark:hover:border-zinc-600 ' + (toc.level === 1 ? 'font-bold text-navy-light dark:text-zinc-300' : 'text-navy-light/70 dark:text-zinc-500 pl-6')
+                        : 'border-transparent hover:border-zinc-300 dark:hover:border-zinc-600 ' + (toc.level === 1 ? 'font-bold text-navy-light dark:text-zinc-300' : 'text-navy-light/70 dark:text-zinc-500 pl-5 xl:pl-6')
                     }`}
                   >
                     {toc.text}
@@ -510,7 +514,7 @@ export default function App() {
 }
 
 // Mermaid diagram renderer component
-const MermaidRenderer: React.FC<{ chart: string }> = ({ chart }) => {
+const MermaidRenderer: React.FC<{ chart: string; theme?: string }> = ({ chart, theme }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -519,6 +523,12 @@ const MermaidRenderer: React.FC<{ chart: string }> = ({ chart }) => {
     const renderChart = async () => {
       if (!chart || !containerRef.current) return;
       try {
+        // Compute isDark from theme prop
+        const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+        // Re-initialize mermaid with correct theme before rendering
+        initMermaid(isDark);
+
         const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
         let { svg: renderedSvg } = await mermaid.render(id, chart);
 
@@ -536,6 +546,26 @@ const MermaidRenderer: React.FC<{ chart: string }> = ({ chart }) => {
         // Insert gradient after opening svg tag
         renderedSvg = renderedSvg.replace(/<svg([^>]*)>/, `<svg$1>${gradientDef}`);
 
+        // Post-process SVG to fix edge label backgrounds for the current theme
+        // Target edgeLabel rect elements and set correct fill
+        const labelBgColor = isDark ? '#1a1a2e' : '#ffffff';
+        const labelTextColor = isDark ? '#f3f4f6' : '#0A2540';
+
+        // Fix edgeLabel rect backgrounds (Mermaid sets inline styles)
+        renderedSvg = renderedSvg.replace(
+          /<g[^>]*class="[^"]*edgeLabel[^"]*"[^>]*>[\s\S]*?<rect[^>]*>/g,
+          (match) => match.replace(/fill="[^"]*"/, `fill="${labelBgColor}"`)
+        );
+
+        // Also handle foreignObject backgrounds in edge labels
+        renderedSvg = renderedSvg.replace(
+          /(<g[^>]*class="[^"]*edgeLabel[^"]*"[^>]*>[\s\S]*?<foreignObject[^>]*>[\s\S]*?<div[^>]*style=")([^"]*)(")/g,
+          (match, before, style, after) => {
+            const newStyle = style.replace(/background[^;]*;?/g, '') + `background:${labelBgColor};color:${labelTextColor};`;
+            return before + newStyle + after;
+          }
+        );
+
         setSvg(renderedSvg);
         setError(null);
       } catch (e) {
@@ -544,7 +574,7 @@ const MermaidRenderer: React.FC<{ chart: string }> = ({ chart }) => {
       }
     };
     renderChart();
-  }, [chart]);
+  }, [chart, theme]);
 
   if (error) {
     return (
@@ -558,15 +588,15 @@ const MermaidRenderer: React.FC<{ chart: string }> = ({ chart }) => {
   return (
     <div
       ref={containerRef}
-      className="mermaid-container w-full min-w-[600px] [&_svg]:w-full [&_svg]:h-auto [&_svg]:min-h-[300px]"
+      className="mermaid-container w-full [&_svg]:w-full [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:min-h-[200px] sm:[&_svg]:min-h-[300px]"
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );
 };
 
 const BlockRenderer: React.FC<{
-  block: Block; isEditing: boolean; showLineNumbers: boolean; whiteboardStyle: 'clean' | 'sketchy'; onOpenEditor: (t: any, data?: any) => void; onDelete: (id: string) => void; onCopy: () => void
-}> = ({ block, isEditing, showLineNumbers, whiteboardStyle, onOpenEditor, onDelete, onCopy }) => {
+  block: Block; isEditing: boolean; showLineNumbers: boolean; whiteboardStyle: 'clean' | 'sketchy'; theme: string; onOpenEditor: (t: any, data?: any) => void; onDelete: (id: string) => void; onCopy: () => void
+}> = ({ block, isEditing, showLineNumbers, whiteboardStyle, theme, onOpenEditor, onDelete, onCopy }) => {
   const wrapper = (children: React.ReactNode) => (
     <div className="group relative">
       {isEditing && (
@@ -642,12 +672,37 @@ const BlockRenderer: React.FC<{
     // Render mermaid diagram
     if (hasData && diagramData.mermaid) {
       return wrapper(
-        <div className="my-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-hidden group/item">
-          <div className="px-4 py-2 bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 flex justify-between items-center">
+        <div className="my-4 sm:my-8 rounded-xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden group/item shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-none">
+          <div className="px-3 sm:px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 flex justify-between items-center">
             <span className="text-[10px] font-black uppercase flex items-center gap-2 text-zinc-500"><Layout size={12} className="text-indigo-500" /> Mermaid Diagram</span>
+            <Button variant="ghost" onClick={() => {
+              let zoom = 1;
+              const modal = document.createElement('div');
+              modal.className = 'fixed inset-0 z-[200] bg-zinc-950/95 flex flex-col';
+              modal.innerHTML = `
+                <div class="flex items-center justify-between p-4 border-b border-zinc-800">
+                  <span class="text-sm font-bold text-zinc-300">Diagram View</span>
+                  <div class="flex items-center gap-2">
+                    <button id="zoom-out" class="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-sm text-zinc-300">−</button>
+                    <span id="zoom-level" class="text-sm text-zinc-400 w-16 text-center">100%</span>
+                    <button id="zoom-in" class="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-sm text-zinc-300">+</button>
+                    <button id="close-modal" class="ml-4 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-sm text-zinc-300">Close</button>
+                  </div>
+                </div>
+                <div class="flex-1 overflow-auto p-8 flex items-center justify-center">
+                  <div id="diagram-content" class="mermaid-container transition-transform origin-center" style="transform: scale(1)"></div>
+                </div>
+              `;
+              const content = modal.querySelector('#diagram-content')!;
+              content.innerHTML = document.querySelector(`[data-mermaid-id="${block.id}"]`)?.innerHTML || '';
+              modal.querySelector('#zoom-in')!.onclick = (e) => { e.stopPropagation(); zoom = Math.min(3, zoom + 0.25); content.style.transform = `scale(${zoom})`; modal.querySelector('#zoom-level')!.textContent = `${Math.round(zoom * 100)}%`; };
+              modal.querySelector('#zoom-out')!.onclick = (e) => { e.stopPropagation(); zoom = Math.max(0.25, zoom - 0.25); content.style.transform = `scale(${zoom})`; modal.querySelector('#zoom-level')!.textContent = `${Math.round(zoom * 100)}%`; };
+              modal.querySelector('#close-modal')!.onclick = () => modal.remove();
+              document.body.appendChild(modal);
+            }} className="text-xs h-7 opacity-0 group-hover/item:opacity-100"><Maximize2 size={12} /> <span className="hidden sm:inline">Expand</span></Button>
           </div>
-          <div className="p-8 bg-zinc-50 dark:bg-zinc-900 overflow-x-auto">
-            <MermaidRenderer chart={diagramData.mermaid} />
+          <div className="p-4 sm:p-8 bg-white dark:bg-zinc-900 overflow-x-auto" data-mermaid-id={block.id}>
+            <MermaidRenderer chart={diagramData.mermaid} theme={theme} />
           </div>
         </div>
       );
@@ -668,12 +723,12 @@ const BlockRenderer: React.FC<{
         type: edge.type || 'turbo',
       }));
       return wrapper(
-        <div className="my-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-hidden group/item">
-          <div className="px-4 py-2 bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase flex items-center gap-2 text-zinc-500"><Layout size={12} className="text-indigo-500" /> Architecture Diagram</span>
-            <Button variant="ghost" onClick={() => onOpenEditor('diag', diagramData)} className="text-xs h-7 opacity-0 group-hover/item:opacity-100"><Maximize2 size={12} /> Expand</Button>
+        <div className="my-4 sm:my-8 rounded-xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-hidden group/item">
+          <div className="px-3 sm:px-4 py-2 bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 flex justify-between items-center">
+            <span className="text-[10px] font-black uppercase flex items-center gap-2 text-zinc-500"><Layout size={12} className="text-indigo-500" /> <span className="hidden sm:inline">Architecture</span> Diagram</span>
+            <Button variant="ghost" onClick={() => onOpenEditor('diag', diagramData)} className="text-xs h-7 opacity-0 group-hover/item:opacity-100"><Maximize2 size={12} /> <span className="hidden sm:inline">Expand</span></Button>
           </div>
-          <div className="h-[400px] bg-zinc-50 dark:bg-zinc-950">
+          <div className="h-[280px] sm:h-[350px] md:h-[400px] bg-zinc-50 dark:bg-zinc-950 touch-pan-y">
             <TurboEdgeGradient />
             <ReactFlow
               nodes={processedNodes}
@@ -683,9 +738,12 @@ const BlockRenderer: React.FC<{
               fitView
               proOptions={{ hideAttribution: true }}
               defaultEdgeOptions={{ type: 'turbo' }}
+              panOnScroll={false}
+              zoomOnScroll={false}
+              preventScrolling={false}
             >
               <Background color="#71717a" gap={16} size={1} />
-              <Controls showInteractive={false} />
+              <Controls showInteractive={false} className="!left-2 !bottom-2 sm:!left-4 sm:!bottom-4" />
             </ReactFlow>
           </div>
         </div>
@@ -694,46 +752,46 @@ const BlockRenderer: React.FC<{
 
     // Fallback placeholder for empty diagrams
     return wrapper(
-      <div className="my-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/40 dark:bg-zinc-900/40 p-12 flex flex-col items-center justify-center transition-all hover:border-indigo-500/30 min-h-[300px] group/item shadow-inner">
-         <div className="px-3 py-1 bg-white dark:bg-zinc-800 rounded-full border border-zinc-200 dark:border-zinc-700 text-[10px] font-black uppercase mb-6 flex items-center gap-2 shadow-sm"><Layout size={12} className="text-indigo-500" /> Architecture Flow</div>
-         <Activity size={40} className="text-zinc-200 dark:text-zinc-800 mb-6" />
-         <Button variant="secondary" onClick={() => onOpenEditor('diag')} className="opacity-0 group-hover/item:opacity-100"><Maximize2 size={14} /> Open Diagram Editor</Button>
+      <div className="my-4 sm:my-8 rounded-xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/40 dark:bg-zinc-900/40 p-6 sm:p-12 flex flex-col items-center justify-center transition-all hover:border-indigo-500/30 min-h-[200px] sm:min-h-[300px] group/item shadow-inner">
+         <div className="px-3 py-1 bg-white dark:bg-zinc-800 rounded-full border border-zinc-200 dark:border-zinc-700 text-[10px] font-black uppercase mb-4 sm:mb-6 flex items-center gap-2 shadow-sm"><Layout size={12} className="text-indigo-500" /> Architecture Flow</div>
+         <Activity size={32} className="text-zinc-200 dark:text-zinc-800 mb-4 sm:mb-6 sm:w-10 sm:h-10" />
+         <Button variant="secondary" onClick={() => onOpenEditor('diag')} className="opacity-0 group-hover/item:opacity-100 text-xs sm:text-sm"><Maximize2 size={14} /> Open Editor</Button>
       </div>
     );
   }
 
   if (block.type === 'whiteboard') return wrapper(
-    <div className={`my-8 rounded-2xl border-2 ${whiteboardStyle === 'sketchy' ? 'border-dashed border-zinc-200' : 'border-zinc-100 dark:border-zinc-800'} bg-white dark:bg-zinc-950 p-12 min-h-[400px] flex flex-col items-center justify-center group/item shadow-sm`}>
-       <div className="px-3 py-1 bg-zinc-50 dark:bg-zinc-900 rounded-full border border-zinc-200 dark:border-zinc-700 text-[10px] font-black uppercase mb-6 flex items-center gap-2"><Box size={12} className="text-amber-500" /> Whiteboard ({whiteboardStyle})</div>
-       <Share2 size={40} className="text-zinc-100 dark:text-zinc-900 mb-6" />
-       <Button variant="outline" onClick={() => onOpenEditor('wb')} className="opacity-0 group-hover/item:opacity-100"><Edit3 size={14} /> Launch Whiteboard</Button>
+    <div className={`my-4 sm:my-8 rounded-xl sm:rounded-2xl border-2 ${whiteboardStyle === 'sketchy' ? 'border-dashed border-zinc-200' : 'border-zinc-100 dark:border-zinc-800'} bg-white dark:bg-zinc-950 p-6 sm:p-12 min-h-[250px] sm:min-h-[400px] flex flex-col items-center justify-center group/item shadow-sm`}>
+       <div className="px-3 py-1 bg-zinc-50 dark:bg-zinc-900 rounded-full border border-zinc-200 dark:border-zinc-700 text-[10px] font-black uppercase mb-4 sm:mb-6 flex items-center gap-2"><Box size={12} className="text-amber-500" /> Whiteboard</div>
+       <Share2 size={32} className="text-zinc-100 dark:text-zinc-900 mb-4 sm:mb-6 sm:w-10 sm:h-10" />
+       <Button variant="outline" onClick={() => onOpenEditor('wb')} className="opacity-0 group-hover/item:opacity-100 text-xs sm:text-sm"><Edit3 size={14} /> Launch</Button>
     </div>
   );
 
   if (block.type === 'code') return wrapper(
-    <div className="my-6 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-950 shadow-2xl group/code">
-      <div className="px-4 py-2.5 bg-zinc-900 border-b border-zinc-800 flex justify-between items-center">
-        <span className="text-[10px] font-mono text-zinc-500 flex items-center gap-2 uppercase tracking-widest font-bold"><Terminal size={12} /> {block.metadata?.filePath || 'app.ts'}</span>
-        <div className="flex gap-2 opacity-0 group-hover/code:opacity-100 transition-opacity">
-           <button onClick={onCopy} className="p-1 hover:bg-zinc-800 rounded text-zinc-500 hover:text-white"><Copy size={12} /></button>
-           <a href={`vscode://file/${block.metadata?.filePath}`} className="p-1 hover:bg-zinc-800 rounded text-zinc-500 hover:text-white"><ExternalLink size={12} /></a>
+    <div className="my-4 sm:my-6 rounded-lg sm:rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-950 shadow-xl sm:shadow-2xl group/code">
+      <div className="px-3 sm:px-4 py-2 sm:py-2.5 bg-zinc-900 border-b border-zinc-800 flex justify-between items-center">
+        <span className="text-[9px] sm:text-[10px] font-mono text-zinc-500 flex items-center gap-1.5 sm:gap-2 uppercase tracking-widest font-bold truncate max-w-[60%]"><Terminal size={12} className="shrink-0" /> <span className="truncate">{block.metadata?.filePath || 'app.ts'}</span></span>
+        <div className="flex gap-1 sm:gap-2 opacity-100 sm:opacity-0 group-hover/code:opacity-100 transition-opacity">
+           <button onClick={onCopy} className="p-1.5 sm:p-1 hover:bg-zinc-800 rounded text-zinc-500 hover:text-white"><Copy size={14} className="sm:w-3 sm:h-3" /></button>
+           <a href={`vscode://file/${block.metadata?.filePath}`} className="p-1.5 sm:p-1 hover:bg-zinc-800 rounded text-zinc-500 hover:text-white hidden sm:block"><ExternalLink size={12} /></a>
         </div>
       </div>
-      <div className="flex bg-zinc-950">
-        {showLineNumbers && <div className="w-10 bg-zinc-900/40 border-r border-zinc-800 p-4 text-right text-zinc-700 font-mono text-xs select-none leading-relaxed">{block.content.split('\n').map((_, i) => <div key={i}>{i+1}</div>)}</div>}
-        <textarea readOnly={!isEditing} value={block.content} className="flex-1 p-4 font-mono text-sm bg-transparent text-zinc-300 focus:outline-none min-h-[120px] resize-none overflow-hidden leading-relaxed" rows={block.content.split('\n').length} />
+      <div className="flex bg-zinc-950 overflow-x-auto">
+        {showLineNumbers && <div className="hidden sm:block w-10 bg-zinc-900/40 border-r border-zinc-800 p-4 text-right text-zinc-700 font-mono text-xs select-none leading-relaxed shrink-0">{block.content.split('\n').map((_, i) => <div key={i}>{i+1}</div>)}</div>}
+        <textarea readOnly={!isEditing} value={block.content} className="flex-1 p-3 sm:p-4 font-mono text-xs sm:text-sm bg-transparent text-zinc-300 focus:outline-none min-h-[80px] sm:min-h-[120px] resize-none overflow-x-auto leading-relaxed min-w-0" rows={Math.min(block.content.split('\n').length, 20)} />
       </div>
     </div>
   );
 
   if (block.type.startsWith('heading')) return wrapper(
-    <div id={block.id} contentEditable={isEditing} className={`${block.type === 'heading-1' ? 'text-3xl font-black' : 'text-xl font-bold'} mt-8 mb-4 outline-none text-navy dark:text-zinc-50 border-b-2 border-transparent focus:border-accent/20 scroll-mt-20`} suppressContentEditableWarning>{block.content}</div>
+    <div id={block.id} contentEditable={isEditing} className={`${block.type === 'heading-1' ? 'text-2xl sm:text-3xl font-black' : 'text-lg sm:text-xl font-bold'} mt-6 sm:mt-8 mb-3 sm:mb-4 outline-none text-navy dark:text-zinc-50 border-b-2 border-transparent focus:border-accent/20 scroll-mt-16 sm:scroll-mt-20`} suppressContentEditableWarning>{block.content}</div>
   );
 
   if (block.type === 'callout') return wrapper(
-    <div className={`p-4 rounded-xl border flex gap-4 my-4 bg-accent/5 dark:bg-indigo-950/20 border-accent/20 dark:border-indigo-900/50`}>
-      <Info size={18} className="text-accent shrink-0 mt-0.5" />
-      <div contentEditable={isEditing} className="text-sm leading-relaxed text-navy-light dark:text-zinc-300 outline-none" suppressContentEditableWarning>
+    <div className={`p-3 sm:p-4 rounded-lg sm:rounded-xl border flex gap-3 sm:gap-4 my-3 sm:my-4 bg-accent/5 dark:bg-indigo-950/20 border-accent/20 dark:border-indigo-900/50`}>
+      <Info size={16} className="text-accent shrink-0 mt-0.5 sm:w-[18px] sm:h-[18px]" />
+      <div contentEditable={isEditing} className="text-xs sm:text-sm leading-relaxed text-navy-light dark:text-zinc-300 outline-none" suppressContentEditableWarning>
         {isEditing ? block.content : parseInlineMarkdown(block.content)}
       </div>
     </div>
@@ -743,29 +801,31 @@ const BlockRenderer: React.FC<{
     const headers = block.metadata?.headers || [];
     const rows = block.metadata?.rows || [];
     return wrapper(
-      <div className="my-6 rounded-xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-surface dark:bg-zinc-900">
-            <tr>
-              {headers.map((header: string, i: number) => (
-                <th key={i} className="px-4 py-3 text-left font-bold text-navy dark:text-zinc-300 border-b border-zinc-200/80 dark:border-zinc-800">
-                  {header.replace(/\*\*/g, '')}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row: string[], rowIdx: number) => (
-              <tr key={rowIdx} className="border-b border-zinc-100 dark:border-zinc-800 last:border-0 hover:bg-surface/50 dark:hover:bg-zinc-900/50">
-                {row.map((cell: string, cellIdx: number) => (
-                  <td key={cellIdx} className="px-4 py-3 text-navy-light dark:text-zinc-400">
-                    {cell.replace(/\*\*/g, '')}
-                  </td>
+      <div className="my-4 sm:my-6 rounded-lg sm:rounded-xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs sm:text-sm min-w-[400px]">
+            <thead className="bg-surface dark:bg-zinc-900">
+              <tr>
+                {headers.map((header: string, i: number) => (
+                  <th key={i} className="px-3 sm:px-4 py-2.5 sm:py-3 text-left font-bold text-navy dark:text-zinc-300 border-b border-zinc-200/80 dark:border-zinc-800 whitespace-nowrap">
+                    {header.replace(/\*\*/g, '')}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((row: string[], rowIdx: number) => (
+                <tr key={rowIdx} className="border-b border-zinc-100 dark:border-zinc-800 last:border-0 hover:bg-surface/50 dark:hover:bg-zinc-900/50">
+                  {row.map((cell: string, cellIdx: number) => (
+                    <td key={cellIdx} className="px-3 sm:px-4 py-2.5 sm:py-3 text-navy-light dark:text-zinc-400">
+                      {cell.replace(/\*\*/g, '')}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   }
@@ -793,12 +853,12 @@ const SidebarItem: React.FC<{ item: NavItem; depth: number; selectedId: string; 
 };
 
 const ToastContainer: React.FC<{ toasts: Toast[]; onRemove: (id: string) => void }> = ({ toasts, onRemove }) => (
-  <div className="fixed bottom-6 right-6 z-[400] flex flex-col gap-2 pointer-events-none">
+  <div className="fixed bottom-4 sm:bottom-6 left-4 right-4 sm:left-auto sm:right-6 z-[400] flex flex-col gap-2 pointer-events-none">
     {toasts.map(toast => (
-      <div key={toast.id} className="pointer-events-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-2xl p-4 min-w-[200px] flex items-center gap-3 animate-in slide-in-from-right-4">
-        <Check size={14} className="text-green-500" />
-        <span className="text-xs font-bold flex-1">{toast.message}</span>
-        <button onClick={() => onRemove(toast.id)} className="text-zinc-400 p-1"><X size={14} /></button>
+      <div key={toast.id} className="pointer-events-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-2xl p-3 sm:p-4 min-w-0 sm:min-w-[200px] flex items-center gap-2 sm:gap-3 animate-in slide-in-from-bottom-4 sm:slide-in-from-right-4">
+        <Check size={14} className="text-green-500 shrink-0" />
+        <span className="text-xs font-bold flex-1 truncate">{toast.message}</span>
+        <button onClick={() => onRemove(toast.id)} className="text-zinc-400 p-1 shrink-0"><X size={14} /></button>
       </div>
     ))}
   </div>
@@ -807,14 +867,14 @@ const ToastContainer: React.FC<{ toasts: Toast[]; onRemove: (id: string) => void
 const SettingsModal: React.FC<{ isOpen: boolean; onClose: () => void; prefs: UserPreferences; setPrefs: (p: UserPreferences) => void }> = ({ isOpen, onClose, prefs, setPrefs }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/60 backdrop-blur-md" onClick={onClose}>
-      <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 p-8" onClick={e => e.stopPropagation()}>
-        <h2 className="text-xl font-bold mb-8 flex items-center gap-2 text-zinc-900 dark:text-zinc-50"><Settings size={20} /> Preferences</h2>
-        <div className="space-y-8">
-           <section><label className="text-[10px] font-bold uppercase text-zinc-400 mb-3 block">Theme</label><div className="grid grid-cols-3 gap-2">{(['light', 'dark', 'system'] as const).map(t => <button key={t} onClick={() => setPrefs({...prefs, theme: t})} className={`p-4 rounded-xl border flex flex-col items-center gap-2 ${prefs.theme === t ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950 text-indigo-600' : 'border-zinc-200 dark:border-zinc-800 text-zinc-400'}`}>{t === 'light' ? <Sun size={18} /> : t === 'dark' ? <Moon size={18} /> : <Monitor size={18} />}<span className="text-[10px] font-bold uppercase">{t}</span></button>)}</div></section>
-           <section><label className="text-[10px] font-bold uppercase text-zinc-400 mb-3 block">Canvas Style</label><div className="flex gap-2">{(['clean', 'sketchy'] as const).map(s => <button key={s} onClick={() => setPrefs({...prefs, whiteboardStyle: s})} className={`flex-1 p-3 rounded-xl border text-[10px] font-bold uppercase ${prefs.whiteboardStyle === s ? 'border-indigo-500 text-indigo-600' : 'border-zinc-200 dark:border-zinc-800'}`}>{s}</button>)}</div></section>
+    <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={onClose}>
+      <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-xl sm:rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 p-5 sm:p-8" onClick={e => e.stopPropagation()}>
+        <h2 className="text-lg sm:text-xl font-bold mb-6 sm:mb-8 flex items-center gap-2 text-zinc-900 dark:text-zinc-50"><Settings size={20} /> Preferences</h2>
+        <div className="space-y-6 sm:space-y-8">
+           <section><label className="text-[10px] font-bold uppercase text-zinc-400 mb-3 block">Theme</label><div className="grid grid-cols-3 gap-2">{(['light', 'dark', 'system'] as const).map(t => <button key={t} onClick={() => setPrefs({...prefs, theme: t})} className={`p-3 sm:p-4 rounded-lg sm:rounded-xl border flex flex-col items-center gap-1.5 sm:gap-2 ${prefs.theme === t ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950 text-indigo-600' : 'border-zinc-200 dark:border-zinc-800 text-zinc-400'}`}>{t === 'light' ? <Sun size={18} /> : t === 'dark' ? <Moon size={18} /> : <Monitor size={18} />}<span className="text-[9px] sm:text-[10px] font-bold uppercase">{t}</span></button>)}</div></section>
+           <section><label className="text-[10px] font-bold uppercase text-zinc-400 mb-3 block">Canvas Style</label><div className="flex gap-2">{(['clean', 'sketchy'] as const).map(s => <button key={s} onClick={() => setPrefs({...prefs, whiteboardStyle: s})} className={`flex-1 p-2.5 sm:p-3 rounded-lg sm:rounded-xl border text-[10px] font-bold uppercase ${prefs.whiteboardStyle === s ? 'border-indigo-500 text-indigo-600' : 'border-zinc-200 dark:border-zinc-800'}`}>{s}</button>)}</div></section>
         </div>
-        <div className="mt-10 flex justify-end"><Button onClick={onClose}>Done</Button></div>
+        <div className="mt-8 sm:mt-10 flex justify-end"><Button onClick={onClose}>Done</Button></div>
       </div>
     </div>
   );
@@ -852,11 +912,11 @@ const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: { nodes?: any
 
   return (
     <div className="fixed inset-0 z-[100] bg-white dark:bg-zinc-950 flex flex-col animate-in fade-in duration-300">
-      <header className="h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 shrink-0 z-10 bg-white dark:bg-zinc-950">
-        <div className="flex items-center gap-4"><Button variant="ghost" onClick={onClose}><X size={20} /></Button><span className="font-bold flex items-center gap-2"><Layout size={18} className="text-indigo-500" /> Architecture Editor</span></div>
-        <Button variant="accent" onClick={onClose}><Save size={16} /> Save Diagram</Button>
+      <header className="h-12 sm:h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 shrink-0 z-10 bg-white dark:bg-zinc-950">
+        <div className="flex items-center gap-2 sm:gap-4"><Button variant="ghost" onClick={onClose} className="p-1"><X size={20} /></Button><span className="font-bold flex items-center gap-2 text-sm sm:text-base"><Layout size={18} className="text-indigo-500" /> <span className="hidden sm:inline">Architecture</span> Editor</span></div>
+        <Button variant="accent" onClick={onClose} className="px-2 sm:px-3"><Save size={16} /> <span className="hidden sm:inline">Save Diagram</span><span className="sm:hidden">Save</span></Button>
       </header>
-      <div className="flex-1">
+      <div className="flex-1 touch-pan-y">
         <TurboEdgeGradient />
         <ReactFlow
           nodes={nodes}
@@ -869,10 +929,13 @@ const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: { nodes?: any
           nodesConnectable={true}
           elementsSelectable={true}
           defaultEdgeOptions={{ type: 'turbo' }}
+          panOnScroll={false}
+          zoomOnScroll={false}
+          preventScrolling={false}
         >
           <Background />
-          <Controls />
-          <MiniMap />
+          <Controls className="!left-2 !bottom-2 sm:!left-4 sm:!bottom-4" />
+          <MiniMap className="!hidden sm:!block" />
         </ReactFlow>
       </div>
     </div>
@@ -881,9 +944,9 @@ const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: { nodes?: any
 
 const WhiteboardEditor: React.FC<{ onClose: () => void; style: 'clean' | 'sketchy' }> = ({ onClose, style }) => (
   <div className="fixed inset-0 z-[100] bg-white dark:bg-zinc-950 flex flex-col animate-in slide-in-from-bottom duration-300">
-    <header className="h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 shrink-0 z-10 bg-white dark:bg-zinc-950">
-      <div className="flex items-center gap-4"><Button variant="ghost" onClick={onClose}><X size={20} /></Button><span className="font-bold flex items-center gap-2"><Box size={18} className="text-amber-500" /> Whiteboard ({style})</span></div>
-      <Button variant="accent" onClick={onClose}><Save size={16} /> Save</Button>
+    <header className="h-12 sm:h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 shrink-0 z-10 bg-white dark:bg-zinc-950">
+      <div className="flex items-center gap-2 sm:gap-4"><Button variant="ghost" onClick={onClose} className="p-1"><X size={20} /></Button><span className="font-bold flex items-center gap-2 text-sm sm:text-base"><Box size={18} className="text-amber-500" /> Whiteboard</span></div>
+      <Button variant="accent" onClick={onClose} className="px-2 sm:px-3"><Save size={16} /> Save</Button>
     </header>
     <div className="flex-1 tldraw__editor"><Tldraw /></div>
   </div>
