@@ -511,8 +511,8 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
     server: {
-      port: 6969,
-      strictPort: false, // Auto-find next available port if 6969 is taken
+      port: 1307,
+      strictPort: false, // Auto-find next available port if 1307 is taken
       host: '0.0.0.0',
     },
     plugins: [

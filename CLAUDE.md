@@ -8,7 +8,7 @@ A file-based documentation platform that works for **BOTH** AI coding agents and
 
 - **Claude reads docs directly** - just use the Read tool on `.docs/{path}.mdx`
 - **Claude creates docs via MCP** - use `create_doc`, `update_doc` tools
-- **Humans view docs** - open in the Vite viewer at `http://localhost:6969`
+- **Humans view docs** - open in the Vite viewer at `http://localhost:1307`
 - **Git-versioned** - docs are committed with your code
 
 This dual-access model means BOTH Claude Code and humans can track how the codebase works.
@@ -129,7 +129,7 @@ bun run start
 
 # Start frontend viewer (for humans) - in another terminal
 cd frontend && bun install && bun run dev
-# Opens http://localhost:6969
+# Opens http://localhost:1307
 ```
 
 ---
@@ -149,7 +149,7 @@ catryna-wikinelli/
 │       ├── search.ts         # Full-text search
 │       ├── diagrams.ts       # React Flow & tldraw
 │       └── coverage.ts       # Documentation coverage
-├── frontend/                 # Vite viewer for humans (port 6969)
+├── frontend/                 # Vite viewer for humans (port 1307)
 ├── package.json
 ├── tsconfig.json
 └── .mcp.json                 # Local MCP config (for this repo)

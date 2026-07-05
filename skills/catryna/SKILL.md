@@ -80,6 +80,6 @@ many thin per-file stubs.
 
 ## Human viewer
 
-Humans browse the same `.docs/` in the Catryna viewer (React app, port 6969,
+Humans browse the same `.docs/` in the Catryna viewer (React app, port 1307,
 `cd <catryna-install>/frontend && bun run dev`). Mermaid/React Flow diagrams
 you create render there — favor a diagram when explaining flows or topology.

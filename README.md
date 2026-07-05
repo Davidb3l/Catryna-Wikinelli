@@ -23,7 +23,7 @@
 Catryna bridges the gap between AI coding agents and human developers:
 - **Claude reads docs directly** from `.docs/` folder (no MCP needed)
 - **Claude writes docs** via MCP tools (`create_doc`, `update_doc`)
-- **Humans view docs** in a beautiful React viewer at `localhost:6969`
+- **Humans view docs** in a beautiful React viewer at `localhost:1307`
 - **Git-versioned** - docs travel with your codebase
 
 ### 📚 Smart Documentation Viewer
@@ -68,7 +68,7 @@ That's it. The plugin ships:
 - **The `catryna` Agent Skill** — teaches Claude to search `.docs/` before
   coding and update docs after changing the code they describe.
 - **`/catryna:viewer`** — slash command that starts the human docs viewer on
-  `localhost:6969`.
+  `localhost:1307`.
 
 Works in any repo, for any Claude Code session, with zero per-project config.
 
@@ -96,7 +96,7 @@ bun run start
 **Terminal 2 - Frontend Viewer (for humans):**
 ```bash
 cd frontend && bun run dev
-# Opens http://localhost:6969
+# Opens http://localhost:1307
 ```
 
 ### Add to Claude Code
@@ -126,7 +126,7 @@ Restart Claude Code, then use `/mcp` to verify the server is connected.
 ```
 ┌─────────────────┐         ┌─────────────────┐
 │   Claude Code   │         │  Human Viewer   │
-│                 │         │  localhost:6969 │
+│                 │         │  localhost:1307 │
 └────────┬────────┘         └────────┬────────┘
          │                           │
          │ MCP: create_doc           │ HTTP: /api/docs
