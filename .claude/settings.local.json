@@ -1,11 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(timeout 5 bun run:*)",
-      "WebSearch",
-      "WebFetch(domain:github.com)",
-      "WebFetch(domain:www.npmjs.com)",
-      "Bash(git add:*)"
+      "Bash(git clone *)"
     ]
   }
 }
