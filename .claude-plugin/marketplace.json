@@ -1,0 +1,15 @@
+{
+  "name": "catryna-wikinelli",
+  "owner": {
+    "name": "Catryna Wikinelli",
+    "email": "info@anchorsanvils.com"
+  },
+  "plugins": [
+    {
+      "name": "catryna",
+      "source": "./",
+      "version": "1.0.0",
+      "description": "Living documentation for agents + humans. Ships the Catryna MCP server (create/update/search .docs/ MDX docs, coverage reports) and an Agent Skill that teaches Claude to search project docs before coding and keep them updated after changes. Local-first, git-versioned, no database."
+    }
+  ]
+}

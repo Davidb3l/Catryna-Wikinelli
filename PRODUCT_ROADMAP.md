@@ -183,9 +183,13 @@ convention unless coverage/drift delivers *visible* value.
       not cwd-bound.
 - [ ] Tests for the storage round-trip + search; minimal CI.
 - [ ] Escape/serialize frontmatter properly (use a YAML lib).
-- [ ] Package: `bunx catryna` + a Claude Code plugin/skill for one-command
-      install (reuse the Hayvenhurst plugin pattern: skill + SessionStart
-      hook + marketplace.json).
+- [x] Claude Code plugin + skill + marketplace for one-command install
+      (DONE 2026-07-05: `.claude-plugin/{marketplace,plugin}.json`,
+      `skills/catryna/SKILL.md`, `commands/viewer.md`,
+      `scripts/run-server.sh` self-healing launcher; install =
+      `/plugin marketplace add Davidb3l/Catryna-Wikinelli` →
+      `/plugin install catryna@catryna-wikinelli`).
+- [ ] `bunx catryna` CLI packaging (npm publish) for non-Claude agents.
 - [ ] Audit `frontend/services/geminiService.ts` for client-side API key.
 
 ### Phase 1 — The wedge: `catryna drift` (2–4 weeks — THIS IS THE PRODUCT)

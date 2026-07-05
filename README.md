@@ -52,7 +52,27 @@ Catryna bridges the gap between AI coding agents and human developers:
 - [Bun](https://bun.sh) v1.0+
 - Git
 
-### Installation
+### ⚡ One-command install (Claude Code plugin — recommended)
+
+Inside Claude Code:
+
+```
+/plugin marketplace add Davidb3l/Catryna-Wikinelli
+/plugin install catryna@catryna-wikinelli
+```
+
+That's it. The plugin ships:
+- **The Catryna MCP server** — auto-registered, self-installs its deps on
+  first run, and stores docs in the `.docs/` folder of **whatever project
+  you're working in** (per-project docs, one install).
+- **The `catryna` Agent Skill** — teaches Claude to search `.docs/` before
+  coding and update docs after changing the code they describe.
+- **`/catryna:viewer`** — slash command that starts the human docs viewer on
+  `localhost:6969`.
+
+Works in any repo, for any Claude Code session, with zero per-project config.
+
+### Manual installation (non-Claude agents / development)
 
 ```bash
 # Clone the repository
