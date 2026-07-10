@@ -1,13 +1,16 @@
 {
   "name": "catryna-wikinelli",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "type": "module",
   "bin": {
+    "catryna": "./src/cli.ts",
     "catryna-mcp": "./src/index.ts"
   },
   "scripts": {
     "start": "bun run src/index.ts",
-    "dev": "bun run --watch src/index.ts"
+    "dev": "bun run --watch src/index.ts",
+    "doctor": "bun run src/cli.ts doctor",
+    "test": "bun test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.0",

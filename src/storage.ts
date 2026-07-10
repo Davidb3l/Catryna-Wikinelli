@@ -52,14 +52,30 @@ async function ensureDocsFolder(): Promise<void> {
 }
 
 /**
- * Load the index file
+ * Read and parse the docs index for a given working directory WITHOUT creating
+ * it. Throws on a missing or malformed `_index.json` (ENOENT / SyntaxError).
+ *
+ * This is the read-only counterpart to `loadIndex()` (which creates an empty
+ * index as a side effect on a miss). `catryna doctor` needs a read-only probe —
+ * it must never write another repo's `.docs/` just to answer a health check —
+ * so it goes through here. Parameterized by `cwd` so it can inspect any repo,
+ * not just the one captured at module load.
+ */
+export async function readIndexAt(cwd: string = process.cwd()): Promise<DocIndex> {
+  const indexFile = join(cwd, ".docs", "_index.json");
+  const content = await readFile(indexFile, "utf-8");
+  return JSON.parse(content) as DocIndex;
+}
+
+/**
+ * Load the index file, creating an empty one if it doesn't exist yet. Used by
+ * the MCP write tools, which legitimately materialize the store on first use.
  */
 export async function loadIndex(): Promise<DocIndex> {
   try {
-    const content = await readFile(INDEX_FILE, "utf-8");
-    return JSON.parse(content);
+    return await readIndexAt();
   } catch {
-    // Index doesn't exist, create empty
+    // Index doesn't exist (or is unreadable), create empty
     const emptyIndex: DocIndex = {
       version: 1,
       docs: [],
