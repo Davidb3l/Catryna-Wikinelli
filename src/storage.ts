@@ -97,6 +97,32 @@ export async function saveIndex(index: DocIndex): Promise<void> {
 }
 
 /**
+ * Serialize every read-modify-write of `_index.json`.
+ *
+ * `createDoc`/`updateDoc`/`deleteDoc` each do `loadIndex()` → mutate → `saveIndex()`.
+ * Those steps `await` in between, so two concurrent MCP write calls could
+ * interleave — both read the same index, both save their own mutation, and the
+ * second overwrite drops the first entry (the `.mdx` file survives on disk, but
+ * vanishes from the index). This promise-chain mutex forces each mutation to
+ * run only after the previous one has fully settled, so every mutation loads
+ * the latest persisted index. The store is single-process (SUITE_CONTRACTS's
+ * single-machine model), so an in-process lock is sufficient — no file lock.
+ *
+ * A rejected mutation must not wedge the chain: the tail always continues via a
+ * settled (resolved) link, while the original result — value or rejection — is
+ * returned to the caller unchanged.
+ */
+let indexMutationChain: Promise<unknown> = Promise.resolve();
+function withIndexLock<T>(mutate: () => Promise<T>): Promise<T> {
+  const result = indexMutationChain.then(mutate, mutate);
+  indexMutationChain = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+/**
  * Convert doc path to file path
  * e.g., "modules/auth" -> ".docs/modules/auth.mdx"
  */
@@ -313,10 +339,13 @@ export async function createDoc(
   const mdxContent = blocksToMdx(metadata, blocks);
   await writeFile(filePath, mdxContent);
 
-  // Update index
-  const index = await loadIndex();
-  index.docs.push(metadata);
-  await saveIndex(index);
+  // Update index under the serialization lock so a concurrent write can't
+  // clobber this entry (the .mdx write above is per-path, so it stays outside).
+  await withIndexLock(async () => {
+    const index = await loadIndex();
+    index.docs.push(metadata);
+    await saveIndex(index);
+  });
 
   // The doc is now durable — announce it on the suite spine (§2, best-effort).
   await emitEvent("doc.created", [docUri(path)], { path, title, id: metadata.id });
@@ -379,37 +408,50 @@ export async function updateDoc(
     relatedFiles?: string[];
   }
 ): Promise<DocMetadata | null> {
-  const index = await loadIndex();
-  const metaIndex = index.docs.findIndex(d => d.path === path);
+  // Serialize the whole read-modify-write: the file's frontmatter embeds `meta`
+  // (which comes from the freshly-loaded index), so the .mdx write belongs
+  // inside the lock too. Loading INSIDE the lock guarantees we see the latest
+  // persisted index rather than a snapshot a concurrent write already replaced.
+  const meta = await withIndexLock<DocMetadata | null>(async () => {
+    const index = await loadIndex();
+    const metaIndex = index.docs.findIndex(d => d.path === path);
 
-  if (metaIndex === -1) {
+    if (metaIndex === -1) {
+      return null;
+    }
+
+    const m = { ...index.docs[metaIndex] };
+    m.updatedAt = Date.now();
+
+    if (updates.title) m.title = updates.title;
+    if (updates.tags) m.tags = updates.tags;
+    if (updates.relatedFiles) m.relatedFiles = updates.relatedFiles;
+
+    // Preserve existing blocks when the caller isn't replacing them. Read the
+    // file directly (not getDoc) to avoid a redundant index load inside the lock.
+    let blocks: Block[];
+    if (updates.blocks) {
+      blocks = updates.blocks;
+    } else {
+      try {
+        const existing = await readFile(docPathToFilePath(path), "utf-8");
+        blocks = parseMdx(existing).blocks;
+      } catch {
+        blocks = [];
+      }
+    }
+
+    // Write updated file, then the index entry, then persist the index.
+    await writeFile(docPathToFilePath(path), blocksToMdx(m, blocks));
+    index.docs[metaIndex] = m;
+    await saveIndex(index);
+
+    return m;
+  });
+
+  if (!meta) {
     return null;
   }
-
-  const meta = { ...index.docs[metaIndex] };
-  meta.updatedAt = Date.now();
-
-  if (updates.title) meta.title = updates.title;
-  if (updates.tags) meta.tags = updates.tags;
-  if (updates.relatedFiles) meta.relatedFiles = updates.relatedFiles;
-
-  // Get existing blocks if not updating
-  let blocks: Block[];
-  if (updates.blocks) {
-    blocks = updates.blocks;
-  } else {
-    const doc = await getDoc(path);
-    blocks = doc?.blocks || [];
-  }
-
-  // Write updated file
-  const filePath = docPathToFilePath(path);
-  const mdxContent = blocksToMdx(meta, blocks);
-  await writeFile(filePath, mdxContent);
-
-  // Update index
-  index.docs[metaIndex] = meta;
-  await saveIndex(index);
 
   // The update is now durable — announce it on the suite spine (§2, best-effort).
   await emitEvent("doc.updated", [docUri(path)], { path, title: meta.title, id: meta.id });
@@ -421,26 +463,29 @@ export async function updateDoc(
  * Delete a document
  */
 export async function deleteDoc(path: string): Promise<boolean> {
-  const index = await loadIndex();
-  const metaIndex = index.docs.findIndex(d => d.path === path);
+  // Serialized read-modify-write, so a concurrent create/update can't resurrect
+  // this entry or lose its own by racing on the shared index.
+  return withIndexLock(async () => {
+    const index = await loadIndex();
+    const metaIndex = index.docs.findIndex(d => d.path === path);
 
-  if (metaIndex === -1) {
-    return false;
-  }
+    if (metaIndex === -1) {
+      return false;
+    }
 
-  // Delete file
-  try {
-    const filePath = docPathToFilePath(path);
-    await unlink(filePath);
-  } catch {
-    // File might not exist
-  }
+    // Delete file
+    try {
+      await unlink(docPathToFilePath(path));
+    } catch {
+      // File might not exist
+    }
 
-  // Update index
-  index.docs.splice(metaIndex, 1);
-  await saveIndex(index);
+    // Update index
+    index.docs.splice(metaIndex, 1);
+    await saveIndex(index);
 
-  return true;
+    return true;
+  });
 }
 
 /**
