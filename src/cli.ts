@@ -3,26 +3,32 @@
  * `catryna` — the CLI companion to the Catryna MCP server.
  *
  * This is a SEPARATE entry from the MCP server (`src/index.ts`, still run by
- * scripts/run-server.sh). Its first and only subcommand today is `doctor`,
- * which answers the suite discovery handshake (SUITE_CONTRACTS §3) so peers
- * like the Sirius Suite Hub stop classifying Catryna as absent.
+ * scripts/run-server.sh). Subcommands:
+ *   - `doctor` — the suite discovery handshake (SUITE_CONTRACTS §3).
+ *   - `verify` — record HEAD as a doc's drift baseline (`verifiedCommit`).
+ *   - `drift`  — report docs whose anchored code changed since verification
+ *                (PRODUCT_ROADMAP Phase 1, the wedge; a CI gate).
  *
  * Arg parsing is hand-rolled (no yargs/commander) to match the suite's style.
- * Bun runs .ts directly, so `bunx catryna doctor --json` needs no build step.
+ * Bun runs .ts directly, so `bunx catryna drift --json` needs no build step.
  *
  * CLI conventions (§4):
  *   1. `--json` ⇒ exactly one JSON object on stdout; all logs to stderr.
- *   2. Exit codes: 0 ok · 1 operational failure · 2 usage error.
+ *   2. Exit codes: 0 ok · 1 operational failure · 2 usage error ·
+ *      3 soft-blocked (drift found — the `drift` CI gate).
  */
 import { fileURLToPath } from "node:url";
 
 import { runDoctor, type DoctorEnv } from "./doctor";
+import { runDrift, runVerify } from "./drift";
 
 const USAGE = `catryna — living documentation for agents + humans
 
 Usage:
-  catryna doctor [--json]   Suite discovery health check (SUITE_CONTRACTS §3)
-  catryna --help            Show this help
+  catryna doctor [--json]          Suite discovery health check (SUITE_CONTRACTS §3)
+  catryna verify <path> [--json]   Record HEAD as a doc's drift baseline
+  catryna drift [--json]           Report docs whose anchored code drifted (CI gate)
+  catryna --help                   Show this help
 
 The MCP server is a separate entry (catryna-mcp / scripts/run-server.sh).`;
 
@@ -76,6 +82,24 @@ export async function main(argv: string[]): Promise<number> {
   switch (sub) {
     case "doctor": {
       const run = await runDoctor({ json, env: await buildEnv() });
+      if (run.stderr) process.stderr.write(run.stderr);
+      process.stdout.write(run.stdout);
+      return run.code;
+    }
+    case "verify": {
+      const path = positionals[1];
+      if (!path) {
+        // Usage error: verify needs a doc path. Keep stdout clean under --json.
+        process.stderr.write(`catryna: verify requires a <path>\n\n${USAGE}\n`);
+        return 2;
+      }
+      const run = await runVerify({ json, cwd: process.cwd(), path });
+      if (run.stderr) process.stderr.write(run.stderr);
+      process.stdout.write(run.stdout);
+      return run.code;
+    }
+    case "drift": {
+      const run = await runDrift({ json, cwd: process.cwd() });
       if (run.stderr) process.stderr.write(run.stderr);
       process.stdout.write(run.stdout);
       return run.code;
