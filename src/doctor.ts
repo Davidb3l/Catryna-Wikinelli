@@ -16,17 +16,22 @@
  *   - `mcp`          — Catryna ships a stdio MCP server (`src/index.ts`).
  *   - `events.emit`  — the MCP write tools append `doc.*` facts to the suite
  *                      event spine (`.suite/events/`, SUITE_CONTRACTS §2).
+ *   - `ui`           — Catryna ships a real human viewer: the Vite React app in
+ *                      `frontend/`, launched by the `catryna:viewer` skill,
+ *                      serving `.docs/` on :1307. Per §3.2 a tool that serves a
+ *                      web UI advertises `"ui"` AND a top-level `ui` URL naming
+ *                      the address it serves on. Doctor answers standalone and
+ *                      can't itself confirm the viewer process is up — but §3.2
+ *                      is explicit that an advertised-but-currently-unreachable
+ *                      UI is a *degraded UI, not an absent tool*. The hub runs
+ *                      its own reachability probe (Sirius's `probeUi`) to
+ *                      resolve up/down, so advertising the address is correct
+ *                      and truthful even when the viewer isn't running. The URL
+ *                      MUST be loopback so the hub's `isLoopbackUrl` accepts it.
  *
  * NOT advertised: `events.consume` / `drift` / `verify` are Phase-1 roadmap,
  * unimplemented; advertising them would make a peer gate on a feature that
- * isn't there (Catryna doesn't yet CONSUME `code.changed`). And `ui` is
- * intentionally omitted (both the
- * capability AND the top-level `ui` field): per §3.2 a tool advertises `ui`
- * only if it also emits a LIVE url for a UI it is currently serving. Catryna's
- * human viewer is a separate Vite app (frontend/, :1307) that exists only while
- * separately running — exactly hayven's situation with its graph viewer —
- * whereas doctor answers standalone and can't know the viewer is up. Publishing
- * a `ui` that is usually unreachable would mislead the hub, so we omit it.
+ * isn't there (Catryna doesn't yet CONSUME `code.changed`).
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -34,9 +39,33 @@ import { join } from "node:path";
 import { readIndexAt } from "./storage";
 
 /** Capabilities Catryna actually implements today (see file header). */
-export const CAPABILITIES: readonly string[] = ["mcp", "events.emit"];
+export const CAPABILITIES: readonly string[] = ["mcp", "events.emit", "ui"];
 
 export const SCHEMA_VERSION = 1;
+
+/** The viewer's default port when `CATRYNA_VIEWER_PORT` is unset/invalid. */
+export const DEFAULT_VIEWER_PORT = 1307;
+
+/**
+ * The port the human viewer (frontend/, the `catryna:viewer` skill) serves on,
+ * honoring `CATRYNA_VIEWER_PORT` (SUITE_CONTRACTS §3.2: the `ui` URL reflects
+ * the tool's own port-override env var). `frontend/vite.config.ts` MUST agree
+ * with this parse — else doctor advertises a UI at an address the viewer never
+ * bound. Robust like amt's `ui_port()`: anything empty, non-numeric, out of
+ * 1..65535, or 0 falls back to the default.
+ */
+export function viewerPort(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.CATRYNA_VIEWER_PORT?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return DEFAULT_VIEWER_PORT;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) return DEFAULT_VIEWER_PORT;
+  return n;
+}
+
+/** The loopback URL doctor advertises for the human viewer (§3.2). */
+export function viewerUrl(env: NodeJS.ProcessEnv = process.env): string {
+  return `http://localhost:${viewerPort(env)}`;
+}
 
 /** One §3 check row: a stable snake_case name, its state, and a human detail. */
 export interface DoctorCheck {
@@ -200,8 +229,9 @@ export async function collectReport(env: DoctorEnv): Promise<DoctorReport> {
 
 /**
  * The SUITE_CONTRACTS §3 handshake envelope. `report` is free-form, additive
- * detail — a consumer only needs the top-level shape. No `ui` field (see the
- * file header). Health is in `ok`, never in the exit code.
+ * detail — a consumer only needs the top-level shape. The top-level `ui` names
+ * where the human viewer serves (§3.2, see the file header). Health is in `ok`,
+ * never in the exit code.
  */
 export function buildEnvelope(report: DoctorReport): Record<string, unknown> {
   return {
@@ -210,6 +240,7 @@ export function buildEnvelope(report: DoctorReport): Record<string, unknown> {
     schemaVersion: SCHEMA_VERSION,
     ok: report.ok,
     capabilities: [...CAPABILITIES],
+    ui: viewerUrl(),
     checks: report.checks.map((c) => ({ name: c.name, ok: c.ok, detail: c.detail })),
     report: {
       docs_path: report.docsPath,
@@ -233,6 +264,9 @@ export function envelopeForFailure(version: string, err: Error): Record<string, 
     schemaVersion: SCHEMA_VERSION,
     ok: false,
     capabilities: [...CAPABILITIES],
+    // The viewer address is a constant independent of the failed checks, so it
+    // stays truthful even here (§3.2: an unreachable UI is degraded, not absent).
+    ui: viewerUrl(),
     checks: [
       {
         name: "doctor_ran",

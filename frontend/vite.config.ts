@@ -509,10 +509,25 @@ function parseMdx(content: string): { metadata: Record<string, any>; blocks: any
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
+
+  // SUITE_CONTRACTS §3.2: `catryna doctor` advertises the viewer at
+  // http://localhost:<CATRYNA_VIEWER_PORT, default 1307>, so the viewer MUST
+  // actually bind that exact port — otherwise the advertised `ui` URL lies.
+  // Keep this parse in lockstep with `viewerPort()` in src/doctor.ts (empty,
+  // non-numeric, out of 1..65535, or 0 falls back to the default).
+  const DEFAULT_VIEWER_PORT = 1307;
+  const rawPort = process.env.CATRYNA_VIEWER_PORT?.trim();
+  const viewerPort =
+    rawPort && /^\d+$/.test(rawPort) && Number(rawPort) >= 1 && Number(rawPort) <= 65535
+      ? Number(rawPort)
+      : DEFAULT_VIEWER_PORT;
+
   return {
     server: {
-      port: 1307,
-      strictPort: false, // Auto-find next available port if 1307 is taken
+      port: viewerPort,
+      // strictPort: fail loudly if the advertised port is taken, rather than
+      // silently moving off the address doctor told the hub to frame.
+      strictPort: true,
       host: '0.0.0.0',
     },
     plugins: [

@@ -2,9 +2,10 @@
  * Tests for the `catryna doctor` suite handshake (SUITE_CONTRACTS §3).
  *
  * Each test targets an assertion peers actually depend on: the envelope shape,
- * `tool === "catryna"`, the deliberate omission of `ui`, the `ok:false` path,
- * and that `--json` stdout parses as a single JSON object. The real CLI is also
- * spawned end-to-end so we prove nothing leaks onto stdout alongside the JSON.
+ * `tool === "catryna"`, the `ui` capability + loopback URL (§3.2), the
+ * `ok:false` path, and that `--json` stdout parses as a single JSON object. The
+ * real CLI is also spawned end-to-end so we prove nothing leaks onto stdout
+ * alongside the JSON.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
@@ -19,9 +20,32 @@ import {
   envelopeForFailure,
   renderHuman,
   runDoctor,
+  viewerPort,
+  viewerUrl,
+  DEFAULT_VIEWER_PORT,
   type DoctorCheck,
   type DoctorEnv,
 } from "./doctor";
+
+/**
+ * Mirrors the consumer's `isLoopbackUrl` (Sirius Forester web/src/discovery.ts):
+ * `classify()` counts `ui` only when the hostname is loopback. Kept local so the
+ * test stays self-contained (no cross-repo import).
+ */
+function isLoopbackUrl(raw: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  return (
+    u.hostname === "localhost" ||
+    u.hostname === "127.0.0.1" ||
+    u.hostname === "::1" ||
+    u.hostname === "[::1]"
+  );
+}
 
 // A real MCP entry path that exists, so the mcp_entry check passes by default.
 const REAL_MCP_ENTRY = fileURLToPath(new URL("./index.ts", import.meta.url));
@@ -75,7 +99,7 @@ describe("envelope shape", () => {
     expect(env0.ok).toBe(true);
     // version comes from the injected env (package.json in prod), not hardcoded.
     expect(env0.version).toBe("9.9.9");
-    expect(env0.capabilities).toEqual(["mcp", "events.emit"]);
+    expect(env0.capabilities).toEqual(["mcp", "events.emit", "ui"]);
 
     const checks = env0.checks as DoctorCheck[];
     expect(Array.isArray(checks)).toBe(true);
@@ -96,10 +120,49 @@ describe("envelope shape", () => {
     expect(env0.tool).not.toBe("amt");
   });
 
-  test("omits the `ui` capability AND the top-level `ui` field (§3.2)", async () => {
+  test("advertises the `ui` capability AND a loopback top-level `ui` URL (§3.2)", async () => {
     const env0 = buildEnvelope(await collectReport(envFor(goodDocs)));
-    expect(env0.capabilities).not.toContain("ui");
-    expect(env0).not.toHaveProperty("ui");
+    // §3.2: a tool that serves a web UI includes "ui" in capabilities AND sets
+    // a top-level `ui` to the URL it serves on. Catryna ships the frontend/
+    // viewer (the `catryna:viewer` skill), so it advertises both.
+    expect(env0.capabilities).toContain("ui");
+    expect(env0.ui).toBe(`http://localhost:${DEFAULT_VIEWER_PORT}`);
+    expect(env0.ui).toBe("http://localhost:1307");
+    // MUST be loopback or the hub's classify() won't count the UI.
+    expect(isLoopbackUrl(env0.ui as string)).toBe(true);
+  });
+
+  test("viewerPort/viewerUrl: default, override, and robust fallback (§3.2)", () => {
+    // Default when the env var is unset.
+    expect(viewerPort({})).toBe(1307);
+    expect(viewerUrl({})).toBe("http://localhost:1307");
+
+    // A valid override is honored (the tool owns its port).
+    expect(viewerPort({ CATRYNA_VIEWER_PORT: "4242" })).toBe(4242);
+    expect(viewerUrl({ CATRYNA_VIEWER_PORT: "4242" })).toBe("http://localhost:4242");
+    // Whitespace is trimmed.
+    expect(viewerPort({ CATRYNA_VIEWER_PORT: "  8080  " })).toBe(8080);
+
+    // Bogus values fall back to the default (parse must not lie).
+    for (const bad of ["0", "nope", "99999", "-1", "", "   ", "12.5", "80x"]) {
+      expect(viewerPort({ CATRYNA_VIEWER_PORT: bad })).toBe(1307);
+      expect(viewerUrl({ CATRYNA_VIEWER_PORT: bad })).toBe("http://localhost:1307");
+    }
+
+    // Boundaries: 1 and 65535 valid; 65536 out of range.
+    expect(viewerPort({ CATRYNA_VIEWER_PORT: "1" })).toBe(1);
+    expect(viewerPort({ CATRYNA_VIEWER_PORT: "65535" })).toBe(65535);
+    expect(viewerPort({ CATRYNA_VIEWER_PORT: "65536" })).toBe(1307);
+
+    // Every advertised URL is loopback.
+    expect(isLoopbackUrl(viewerUrl({}))).toBe(true);
+    expect(isLoopbackUrl(viewerUrl({ CATRYNA_VIEWER_PORT: "4242" }))).toBe(true);
+  });
+
+  test("envelopeForFailure still carries the `ui` field (degraded, not absent)", () => {
+    const env0 = envelopeForFailure("9.9.9", new Error("boom"));
+    expect(env0.capabilities).toContain("ui");
+    expect(env0.ui).toBe("http://localhost:1307");
   });
 
   test("advertises events.emit (implemented) but not unimplemented Phase-1 caps", async () => {
@@ -230,8 +293,22 @@ describe("end-to-end: the real CLI binary", () => {
     expect(parsed.tool).toBe("catryna");
     expect(parsed.schemaVersion).toBe(1);
     expect(parsed.ok).toBe(true);
-    expect(parsed.capabilities).toEqual(["mcp", "events.emit"]);
-    expect(parsed).not.toHaveProperty("ui");
+    expect(parsed.capabilities).toEqual(["mcp", "events.emit", "ui"]);
+    expect(parsed.ui).toBe("http://localhost:1307");
+  });
+
+  test("`CATRYNA_VIEWER_PORT` moves the advertised `ui` URL end-to-end", async () => {
+    const proc = Bun.spawn(["bun", "run", CLI_PATH, "doctor", "--json"], {
+      cwd: goodDocs,
+      env: { ...process.env, CATRYNA_VIEWER_PORT: "4242" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdout = await new Response(proc.stdout).text();
+    const code = await proc.exited;
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout.trim());
+    expect(parsed.ui).toBe("http://localhost:4242");
   });
 
   test("no subcommand → usage on stderr, empty stdout, exit 2", async () => {
