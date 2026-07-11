@@ -20,6 +20,18 @@ export interface DocMetadata {
   title: string;
   tags: string[];
   relatedFiles: string[];
+  /**
+   * Suite URIs cited as *evidence* backing this doc (SUITE_CONTRACTS §1) — e.g.
+   * a `sirius:receipt/89` receipt that verified it. Foreign schemes are stored
+   * OPAQUELY (§1 rule 2): accepted, persisted, and displayed verbatim, never
+   * validated or resolved. Any string is a valid entry.
+   */
+  evidence: string[];
+  /**
+   * Suite URIs this doc otherwise *references* — e.g. the `amt:decision/7` that
+   * governs it. Same opaque-storage contract as `evidence`.
+   */
+  refs: string[];
   createdAt: number;
   updatedAt: number;
   createdBy: string;
@@ -74,7 +86,17 @@ export async function readIndexAt(cwd: string = process.cwd()): Promise<DocIndex
  */
 export async function loadIndex(): Promise<DocIndex> {
   try {
-    return await readIndexAt();
+    const index = await readIndexAt();
+    // Backward-compat: index entries written before the suite-URI fields
+    // existed lack `evidence`/`refs`. Normalize them to `[]` on read so every
+    // DocMetadata leaving this function carries the arrays — no downstream
+    // code has to guard against `undefined`. (§1: an old doc loads fine, never
+    // throws.)
+    for (const d of index.docs) {
+      if (!Array.isArray(d.evidence)) d.evidence = [];
+      if (!Array.isArray(d.refs)) d.refs = [];
+    }
+    return index;
   } catch {
     // Index doesn't exist (or is unreadable), create empty
     const emptyIndex: DocIndex = {
@@ -141,6 +163,8 @@ title: "${metadata.title}"
 path: "${metadata.path}"
 tags: [${metadata.tags.map(t => `"${t}"`).join(", ")}]
 relatedFiles: [${metadata.relatedFiles.map(f => `"${f}"`).join(", ")}]
+evidence: [${(metadata.evidence ?? []).map(u => `"${u}"`).join(", ")}]
+refs: [${(metadata.refs ?? []).map(u => `"${u}"`).join(", ")}]
 createdAt: ${metadata.createdAt}
 updatedAt: ${metadata.updatedAt}
 createdBy: "${metadata.createdBy}"
@@ -227,8 +251,9 @@ function parseMdx(content: string): { metadata: Partial<DocMetadata>; blocks: Bl
         const [, key, value] = match;
         if (key === "id" || key === "title" || key === "path" || key === "createdBy") {
           metadata[key] = value.replace(/^["']|["']$/g, "");
-        } else if (key === "tags" || key === "relatedFiles") {
-          // Parse array: ["a", "b"]
+        } else if (key === "tags" || key === "relatedFiles" || key === "evidence" || key === "refs") {
+          // Parse array: ["a", "b"]. `evidence`/`refs` hold suite URIs stored
+          // opaquely (§1 rule 2) — parsed as plain strings, never validated.
           const arrayMatch = value.match(/\[(.*)\]/);
           if (arrayMatch) {
             metadata[key] = arrayMatch[1]
@@ -315,7 +340,11 @@ export async function createDoc(
   title: string,
   blocks: Block[],
   tags: string[] = [],
-  relatedFiles: string[] = []
+  relatedFiles: string[] = [],
+  // Suite URIs, stored opaquely (SUITE_CONTRACTS §1). Trailing + optional so
+  // existing positional callers (e.g. src/tools/diagrams.ts) are unaffected.
+  evidence: string[] = [],
+  refs: string[] = []
 ): Promise<DocMetadata> {
   await ensureDocsFolder();
 
@@ -326,6 +355,8 @@ export async function createDoc(
     title,
     tags,
     relatedFiles,
+    evidence,
+    refs,
     createdAt: now,
     updatedAt: now,
     createdBy: "claude-code",
@@ -406,6 +437,10 @@ export async function updateDoc(
     blocks?: Block[];
     tags?: string[];
     relatedFiles?: string[];
+    // Suite URIs, stored opaquely (§1). "Only if provided" semantics, like
+    // tags/relatedFiles: omitting a field preserves the existing value.
+    evidence?: string[];
+    refs?: string[];
   }
 ): Promise<DocMetadata | null> {
   // Serialize the whole read-modify-write: the file's frontmatter embeds `meta`
@@ -426,6 +461,8 @@ export async function updateDoc(
     if (updates.title) m.title = updates.title;
     if (updates.tags) m.tags = updates.tags;
     if (updates.relatedFiles) m.relatedFiles = updates.relatedFiles;
+    if (updates.evidence) m.evidence = updates.evidence;
+    if (updates.refs) m.refs = updates.refs;
 
     // Preserve existing blocks when the caller isn't replacing them. Read the
     // file directly (not getDoc) to avoid a redundant index load inside the lock.

@@ -18,8 +18,10 @@ export function registerDocTools(server: McpServer): void {
       content: z.array(BlockSchema).describe("Array of content blocks. SUPPORTED TYPES: heading, text, code, mermaid, callout, table, divider, markdown, react-flow, whiteboard. For full markdown docs use: {type:'markdown', data:{content:'# Your markdown...'}}"),
       tags: z.array(z.string()).optional().describe("Tags for categorization"),
       relatedFiles: z.array(z.string()).optional().describe("Source files this doc covers"),
+      evidence: z.array(z.string()).optional().describe("Suite URIs cited as evidence backing this doc, e.g. 'sirius:receipt/89'. Accepts any suite scheme (catryna:/amt:/hayven:/sirius:); stored OPAQUELY — not validated or resolved."),
+      refs: z.array(z.string()).optional().describe("Suite URIs this doc references, e.g. 'amt:decision/7'. Accepts any suite scheme (catryna:/amt:/hayven:/sirius:); stored OPAQUELY — not validated or resolved."),
     },
-    async ({ path, title, content, tags, relatedFiles }) => {
+    async ({ path, title, content, tags, relatedFiles, evidence, refs }) => {
       try {
         // Check if doc already exists
         const existing = await getDoc(path);
@@ -29,7 +31,7 @@ export function registerDocTools(server: McpServer): void {
           };
         }
 
-        const metadata = await createDoc(path, title, content, tags, relatedFiles);
+        const metadata = await createDoc(path, title, content, tags, relatedFiles, evidence, refs);
 
         return {
           content: [{ type: "text", text: JSON.stringify({
@@ -78,6 +80,8 @@ export function registerDocTools(server: McpServer): void {
             blocks: doc.blocks,
             tags: doc.metadata.tags,
             relatedFiles: doc.metadata.relatedFiles,
+            evidence: doc.metadata.evidence,
+            refs: doc.metadata.refs,
             createdAt: doc.metadata.createdAt,
             updatedAt: doc.metadata.updatedAt,
           },
@@ -126,14 +130,18 @@ export function registerDocTools(server: McpServer): void {
       content: z.array(BlockSchema).optional().describe("New content blocks. SUPPORTED TYPES: heading, text, code, mermaid, callout, table, divider, markdown, react-flow, whiteboard"),
       tags: z.array(z.string()).optional().describe("New tags"),
       relatedFiles: z.array(z.string()).optional().describe("New related files"),
+      evidence: z.array(z.string()).optional().describe("Replacement suite URIs cited as evidence, e.g. 'sirius:receipt/89'. Accepts any suite scheme (catryna:/amt:/hayven:/sirius:); stored OPAQUELY — not validated or resolved. Omit to preserve existing."),
+      refs: z.array(z.string()).optional().describe("Replacement suite URIs this doc references, e.g. 'amt:decision/7'. Accepts any suite scheme (catryna:/amt:/hayven:/sirius:); stored OPAQUELY — not validated or resolved. Omit to preserve existing."),
     },
-    async ({ path, title, content, tags, relatedFiles }) => {
+    async ({ path, title, content, tags, relatedFiles, evidence, refs }) => {
       try {
         const updated = await updateDoc(path, {
           title,
           blocks: content,
           tags,
           relatedFiles,
+          evidence,
+          refs,
         });
 
         if (!updated) {
