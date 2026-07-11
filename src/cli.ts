@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { runConsumeCli } from "./consume";
 import { runDoctor, type DoctorEnv } from "./doctor";
 import { runDrift, runVerify } from "./drift";
+import { runRepair } from "./tools/drift";
 
 const USAGE = `catryna — living documentation for agents + humans
 
@@ -31,6 +32,7 @@ Usage:
   catryna doctor [--json]          Suite discovery health check (SUITE_CONTRACTS §3)
   catryna verify <path> [--json]   Record HEAD as a doc's drift baseline
   catryna drift [--json]           Report docs whose anchored code drifted (CI gate)
+  catryna repair [<path>] [--json] Repair context for drifted docs (hand to the agent)
   catryna consume [--json]         Consume code.changed → mark docs drift-suspect (spine tail)
   catryna --help                   Show this help
 
@@ -104,6 +106,15 @@ export async function main(argv: string[]): Promise<number> {
     }
     case "drift": {
       const run = await runDrift({ json, cwd: process.cwd() });
+      if (run.stderr) process.stderr.write(run.stderr);
+      process.stdout.write(run.stdout);
+      return run.code;
+    }
+    case "repair": {
+      // Optional positional doc path; default "all". A CONTEXT REPORT, not a
+      // gate — it never fails on found drift (repairing is the point).
+      const target = positionals[1] ?? "all";
+      const run = await runRepair({ json, cwd: process.cwd(), target });
       if (run.stderr) process.stderr.write(run.stderr);
       process.stdout.write(run.stdout);
       return run.code;
