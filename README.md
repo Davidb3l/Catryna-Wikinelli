@@ -1,58 +1,21 @@
-<div align="center">
+# Catryna Wikinelli
 
-# 🐱 Catryna Wikinelli
+**A local-first code wiki that your AI coding agent writes and your team reads — docs live as MDX files in a `.docs/` folder, versioned with your code.**
 
-**Meow! Your local-first, AI-powered documentation companion**
+Every project accumulates knowledge that lives nowhere: why the auth flow works the way it does, which module owns what, the diagram someone drew once on a whiteboard. Wikis in Notion or Confluence drift out of date because updating them is a separate chore from writing code. Catryna fixes the incentive problem: your coding agent (Claude Code, or anything that speaks MCP) creates and updates the docs *as part of the coding session*, and because the docs are plain files in your repo, the agent also reads them back before touching code — so the knowledge actually gets used, and stale docs get caught in review like any other diff.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Built with Bun](https://img.shields.io/badge/Built%20with-Bun-fbf0df?logo=bun)](https://bun.sh)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript)](https://www.typescriptlang.org)
+## How it works
 
-*Living documentation that purrs along with your codebase* 🐾
+- Docs are `.mdx` files with YAML frontmatter in `.docs/` at your project root — no database, no cloud, git-versioned with your code.
+- **Agents read docs directly** as files (`Read .docs/backend/storage.mdx`) — no tool round-trip needed.
+- **Agents write docs via MCP tools** (`create_doc`, `update_doc`, `search_docs`, coverage reports, diagrams).
+- **Humans browse the same docs** in a local React viewer at `http://localhost:1307`, with search, Mermaid/React Flow diagrams, tldraw whiteboards, and a doc-coverage report.
 
-[Features](#-features) • [Quick Start](#-quick-start) • [How It Works](#-how-it-works) • [MCP Tools](#-mcp-tools) • [Contributing](#-contributing)
+## Quickstart
 
-</div>
+**Prerequisites:** [Bun](https://bun.sh) v1.0+ and Git.
 
----
-
-## ✨ Features
-
-### 🤖 Built for AI + Humans
-Catryna bridges the gap between AI coding agents and human developers:
-- **Claude reads docs directly** from `.docs/` folder (no MCP needed)
-- **Claude writes docs** via MCP tools (`create_doc`, `update_doc`)
-- **Humans view docs** in a beautiful React viewer at `localhost:1307`
-- **Git-versioned** - docs travel with your codebase
-
-### 📚 Smart Documentation Viewer
-- **Block-based editor** with rich content types (text, code, diagrams, whiteboards)
-- **Full-text search** with fuzzy matching (Ctrl+K)
-- **Version history** with diff viewer and one-click revert
-- **Code embeds** that link directly to your editor (VS Code, Cursor, IntelliJ)
-
-### 🎨 Interactive Visuals
-- **React Flow** diagrams for system architecture
-- **tldraw** whiteboards for sketching ideas
-- **Mermaid** support for code-defined diagrams
-- Clean or sketchy whiteboard styles
-
-### 🏠 Local-First & Simple
-- **File-based storage** - docs are `.mdx` files in `.docs/` folder
-- **No database required** - just files and a JSON index
-- **No cloud dependencies** - works offline
-- **Git-friendly** - docs are versioned with your code
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-- [Bun](https://bun.sh) v1.0+
-- Git
-
-### ⚡ One-command install (Claude Code plugin — recommended)
+### Claude Code plugin (recommended)
 
 Inside Claude Code:
 
@@ -61,213 +24,97 @@ Inside Claude Code:
 /plugin install catryna@catryna-wikinelli
 ```
 
-That's it. The plugin ships:
-- **The Catryna MCP server** — auto-registered, self-installs its deps on
-  first run, and stores docs in the `.docs/` folder of **whatever project
-  you're working in** (per-project docs, one install).
-- **The `catryna` Agent Skill** — teaches Claude to search `.docs/` before
-  coding and update docs after changing the code they describe.
-- **`/catryna:viewer`** — slash command that starts the human docs viewer on
-  `localhost:1307`.
+This registers the MCP server (it installs its own dependencies on first run and stores docs in the `.docs/` folder of whichever project you're working in), an Agent Skill that teaches Claude to search `.docs/` before coding and update docs after changing code, and a `/catryna:viewer` command that starts the human viewer.
 
-Works in any repo, for any Claude Code session, with zero per-project config.
+Restart Claude Code, then run `/mcp` — you should see `catryna` connected.
 
-### Manual installation (non-Claude agents / development)
+### Manual install (other MCP clients / development)
 
 ```bash
-# Clone the repository
 git clone https://github.com/Davidb3l/Catryna-Wikinelli.git
 cd Catryna-Wikinelli
-
-# Install dependencies
 bun install
-
-# Install frontend dependencies
-cd frontend && bun install && cd ..
 ```
 
-### Running
-
-**Terminal 1 - MCP Server (for Claude Code):**
-```bash
-bun run start
-```
-
-**Terminal 2 - Frontend Viewer (for humans):**
-```bash
-cd frontend && bun run dev
-# Opens http://localhost:1307
-```
-
-### Add to Claude Code
-
-Create `.mcp.json` in your project root (or add to `~/.claude.json` for global):
+Register the server with your MCP client. For Claude Code, add `.mcp.json` to your project root (or the same block to `~/.claude.json` for all projects):
 
 ```json
 {
   "mcpServers": {
     "catryna": {
       "command": "bun",
-      "args": ["run", "/path/to/Catryna-Wikinelli/src/index.ts"],
-      "cwd": "/path/to/Catryna-Wikinelli"
+      "args": ["run", "/path/to/Catryna-Wikinelli/src/index.ts"]
     }
   }
 }
 ```
 
-> ⚠️ **Note:** `.claude/settings.json` is ignored! Use `.mcp.json` or `~/.claude.json`.
+The server stores docs in `.docs/` under the directory it's launched from (your project), creating it on first write.
 
-Restart Claude Code, then use `/mcp` to verify the server is connected.
+### Human viewer
 
----
-
-## 🔄 How It Works
-
-```
-┌─────────────────┐         ┌─────────────────┐
-│   Claude Code   │         │  Human Viewer   │
-│                 │         │  localhost:1307 │
-└────────┬────────┘         └────────┬────────┘
-         │                           │
-         │ MCP: create_doc           │ HTTP: /api/docs
-         │ MCP: update_doc           │
-         │ Read: .docs/*.mdx         │
-         │                           │
-         ▼                           ▼
-┌─────────────────────────────────────────────┐
-│              .docs/ folder                  │
-│  ├── _index.json      (doc index)          │
-│  ├── getting-started.mdx                   │
-│  ├── modules/                              │
-│  │   └── auth.mdx                          │
-│  └── architecture/                         │
-│      └── database.mdx                      │
-└─────────────────────────────────────────────┘
+```bash
+cd Catryna-Wikinelli/frontend
+bun install
+bun run dev   # http://localhost:1307
 ```
 
-**Key insight:** Docs are stored as files, so Claude can read them directly. MCP tools are only needed for creating/updating docs.
+The viewer scans for sibling projects with `.docs/` folders (set `PROJECTS_ROOT` to point it elsewhere) and lets you switch between them.
 
+## What a session looks like
+
+```
+> search_docs query="storage"
+  { results: [{ file: ".docs/backend/storage.mdx", title: "Storage Layer",
+    snippet: "...file-based storage resolves .docs/ from cwd..." }], count: 1 }
+
+> Read .docs/backend/storage.mdx        # plain file read, no MCP call
+
+  ... make code changes ...
+
+> update_doc path="backend/storage" content=[...]
+  { success: true, file: ".docs/backend/storage.mdx" }
+
+> get_doc_coverage
+  { documentedModules: 12, totalModules: 18, coveragePercent: 67,
+    undocumentedFiles: ["src/tools/diagrams.ts", ...] }
+```
+
+Each doc is an MDX file your whole team can read, diff, and edit by hand:
+
+```mdx
+---
+title: "Storage Layer"
+path: "backend/storage"
+tags: ["backend"]
+relatedFiles: ["src/storage.ts"]
 ---
 
-## 🔧 MCP Tools
+# Storage Layer
+Docs are written as blocks (text, code, mermaid, react-flow, whiteboard, ...)
+```
+
+## MCP tools
 
 | Tool | Description |
 |------|-------------|
-| `create_doc` | Create a new doc → `.docs/{path}.mdx` |
-| `get_doc` | Retrieve a document by path |
-| `list_docs` | List all docs with optional filtering |
-| `update_doc` | Update an existing document |
-| `delete_doc` | Delete a document |
-| `search_docs` | Full-text search across docs |
-| `create_diagram` | Create a React Flow diagram |
-| `create_whiteboard` | Create a tldraw whiteboard |
-| `get_undocumented_modules` | List source files without docs |
-| `get_doc_coverage` | Get documentation coverage report |
+| `create_doc` / `update_doc` / `delete_doc` | Write docs as `.docs/{path}.mdx` |
+| `get_doc` / `list_docs` | Fetch one doc as blocks / browse and filter all docs |
+| `search_docs` | Full-text search, returns paths + snippets |
+| `create_mermaid_diagram` / `create_diagram` | Mermaid or React Flow architecture diagrams |
+| `create_whiteboard` | tldraw freeform canvas |
+| `get_doc_coverage` / `get_undocumented_modules` | Which source files have docs, which don't |
 
-### Example Usage in Claude Code
+## Docs
 
-```
-# List existing docs
-> list_docs
+This repo documents itself with Catryna — browse [`.docs/`](.docs/) for real examples:
 
-# Read a doc directly (no MCP needed!)
-> Read .docs/modules/auth.mdx
+- [`.docs/getting-started.mdx`](.docs/getting-started.mdx) — intro walkthrough
+- [`.docs/architecture/overview.mdx`](.docs/architecture/overview.mdx) — system architecture
+- [`.docs/backend/`](.docs/backend/) — MCP server, storage, and tools internals
+- [`skills/catryna/SKILL.md`](skills/catryna/SKILL.md) — the Agent Skill shipped with the plugin
+- [`CLAUDE.md`](CLAUDE.md) — block types reference and troubleshooting
 
-# Create a new doc
-> create_doc path="modules/auth" title="Authentication" content=[...]
+## Status & license
 
-# Search for docs
-> search_docs query="authentication"
-```
-
----
-
-## 🏗 Architecture
-
-```
-catryna-wikinelli/
-├── .docs/                    # Documentation files (git-tracked)
-│   ├── _index.json           # Index of all docs
-│   └── *.mdx                 # Individual doc files
-├── src/
-│   ├── index.ts              # MCP server entry point
-│   ├── storage.ts            # File-based storage layer
-│   └── tools/
-│       ├── docs.ts           # Document CRUD tools
-│       ├── search.ts         # Full-text search
-│       ├── diagrams.ts       # React Flow & tldraw
-│       └── coverage.ts       # Documentation coverage
-├── frontend/                 # Vite + React viewer
-│   ├── App.tsx               # Main app component
-│   ├── hooks/useDocs.ts      # Data fetching hooks
-│   └── vite.config.ts        # Vite config with API plugin
-├── package.json
-└── .mcp.json                 # Claude Code MCP config
-```
-
-### Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Runtime | Bun |
-| MCP SDK | @modelcontextprotocol/sdk |
-| Storage | File-based (.docs/*.mdx) |
-| Frontend | React 19, Vite |
-| Diagrams | React Flow, tldraw |
-| Styling | Tailwind CSS |
-
----
-
-## 📖 Block Types
-
-Docs are stored as MDX files with these block types:
-
-| Type | Description |
-|------|-------------|
-| `heading` | H1-H6 headings |
-| `text` | Rich text paragraphs |
-| `code` | Syntax-highlighted code blocks |
-| `callout` | Info, warning, error boxes |
-| `react-flow` | Interactive architecture diagrams |
-| `whiteboard` | Freeform tldraw canvas |
-| `mermaid` | Code-defined diagrams |
-| `table` | Data tables |
-| `divider` | Horizontal separator |
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome!
-
-```bash
-# Fork and clone
-git clone https://github.com/yourusername/catryna-wikinelli.git
-
-# Create a feature branch
-git checkout -b feature/amazing-feature
-
-# Make your changes and commit
-git commit -m "Add amazing feature"
-
-# Push and create a PR
-git push origin feature/amazing-feature
-```
-
----
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-<div align="center">
-
-**Meow 🐱**
-
-Made with ❤️ by the Catryna Wikinelli contributors
-
-*Purrfect documentation, every time*
-
-</div>
+Early-stage (v1.0.0) and moving fast; issues and PRs welcome. MIT licensed.

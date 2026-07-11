@@ -36,12 +36,15 @@ Create `.mcp.json` in your project root:
   "mcpServers": {
     "catryna": {
       "command": "bun",
-      "args": ["run", "C:/path/to/Catryna-Wikinelli/src/index.ts"],
-      "cwd": "C:/path/to/Catryna-Wikinelli"
+      "args": ["run", "C:/path/to/Catryna-Wikinelli/src/index.ts"]
     }
   }
 }
 ```
+
+> Do **not** set `cwd` to the Catryna install directory — storage resolves
+> `.docs/` from the working directory, so that would write docs into the
+> Catryna repo instead of your project.
 
 **Option B: Global (all projects)**
 
@@ -54,8 +57,7 @@ Add to your global config file:
   "mcpServers": {
     "catryna": {
       "command": "bun",
-      "args": ["run", "/path/to/Catryna-Wikinelli/src/index.ts"],
-      "cwd": "/path/to/Catryna-Wikinelli"
+      "args": ["run", "/path/to/Catryna-Wikinelli/src/index.ts"]
     }
   }
 }
@@ -71,7 +73,7 @@ Close and reopen Claude Code (or the terminal running it) to load the MCP server
 
 ### Step 4: Verify Connection
 
-Run `/mcp` in Claude Code. You should see `catryna` listed with 10 tools.
+Run `/mcp` in Claude Code. You should see `catryna` listed with 11 tools.
 
 ---
 
