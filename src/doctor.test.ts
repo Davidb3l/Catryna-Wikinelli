@@ -8,6 +8,7 @@
  * alongside the JSON.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -143,11 +144,20 @@ describe("envelope shape", () => {
     // Whitespace is trimmed.
     expect(viewerPort({ CATRYNA_VIEWER_PORT: "  8080  " })).toBe(8080);
 
-    // Bogus values fall back to the default (parse must not lie).
-    for (const bad of ["0", "nope", "99999", "-1", "", "   ", "12.5", "80x"]) {
+    // Bogus values fall back to the default (parse must not lie). Includes a
+    // signed "+7" (regex must reject the sign) and a huge all-digit string
+    // (passes the \d+ regex, so the range guard must catch it — deleting
+    // `n > 65535` regresses here).
+    for (const bad of [
+      "0", "nope", "99999", "-1", "", "   ", "12.5", "80x", "+7", "0x10",
+      "1_000", "99999999999999999999",
+    ]) {
       expect(viewerPort({ CATRYNA_VIEWER_PORT: bad })).toBe(1307);
       expect(viewerUrl({ CATRYNA_VIEWER_PORT: bad })).toBe("http://localhost:1307");
     }
+
+    // Leading zeros are honored numerically ("007" → 7), not treated as bogus.
+    expect(viewerPort({ CATRYNA_VIEWER_PORT: "007" })).toBe(7);
 
     // Boundaries: 1 and 65535 valid; 65536 out of range.
     expect(viewerPort({ CATRYNA_VIEWER_PORT: "1" })).toBe(1);
@@ -206,6 +216,23 @@ describe("health / ok:false paths", () => {
     const report = await collectReport(envFor(goodDocs, { bunVersion: null }));
     expect(report.ok).toBe(false);
     expect(report.checks.find((c) => c.name === "bun_present")!.ok).toBe(false);
+  });
+
+  test("doctor is READ-ONLY: probing a repo with no .docs/ never creates it", async () => {
+    // §4 rule 4: a tool never writes another tool's store. Doctor must probe
+    // read-only — if a refactor swapped `readIndexAt` for `loadIndex` (which
+    // materializes an empty store) or otherwise wrote, this leaves a .docs/
+    // behind. Use a fresh dir so the assertion is unambiguous.
+    const pristine = await mkdtemp(join(tmpdir(), "catryna-readonly-"));
+    try {
+      await collectReport(envFor(pristine));
+      expect(existsSync(join(pristine, ".docs"))).toBe(false);
+      // The JSON path (through buildEnvelope/runDoctor) must also stay read-only.
+      await runDoctor({ json: true, env: envFor(pristine) });
+      expect(existsSync(join(pristine, ".docs"))).toBe(false);
+    } finally {
+      await rm(pristine, { recursive: true, force: true });
+    }
   });
 
   test("computeOk: a non-gating failure does not drag health down", () => {
@@ -321,5 +348,86 @@ describe("end-to-end: the real CLI binary", () => {
     const code = await proc.exited;
     expect(code).toBe(2);
     expect(stdout.trim()).toBe("");
+  });
+
+  test("unknown subcommand → usage on stderr, empty stdout, exit 2", async () => {
+    const proc = Bun.spawn(["bun", "run", CLI_PATH, "frobnicate"], {
+      cwd: goodDocs,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdout = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
+    const code = await proc.exited;
+    expect(code).toBe(2); // §4: usage error
+    expect(stdout.trim()).toBe(""); // usage errors keep stdout empty
+    expect(stderr).toContain("unknown command");
+  });
+
+  test("`catryna -h` → USAGE on stdout, exit 0", async () => {
+    const proc = Bun.spawn(["bun", "run", CLI_PATH, "-h"], {
+      cwd: goodDocs,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdout = await new Response(proc.stdout).text();
+    const code = await proc.exited;
+    expect(code).toBe(0);
+    expect(stdout).toContain("catryna");
+    expect(stdout).toContain("doctor");
+  });
+
+  test("`doctor --json` on an UNHEALTHY repo still emits ONLY the JSON (exit 0)", async () => {
+    // The healthy e2e proves the happy path; this proves the FAILURE path keeps
+    // stdout to a single JSON object with no diagnostics leaking onto stdout —
+    // a leak here would make the hub classify Catryna absent (§3.1/§4 rule 1).
+    const proc = Bun.spawn(["bun", "run", CLI_PATH, "doctor", "--json"], {
+      cwd: corruptDocs,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdout = await new Response(proc.stdout).text();
+    const code = await proc.exited;
+    expect(code).toBe(0); // §3.1: unhealthy ≠ absent
+    const trimmed = stdout.trim();
+    const parsed = JSON.parse(trimmed);
+    expect(trimmed).toBe(JSON.stringify(parsed)); // exactly one JSON value
+    expect(parsed.tool).toBe("catryna");
+    expect(parsed.ok).toBe(false);
+  });
+
+  test("`--help` alongside `doctor --json` never leaks USAGE onto stdout", async () => {
+    // Guards main()'s precedence: a present subcommand wins over -h/--help, so
+    // `doctor --json --help` still emits a single JSON object, not the USAGE
+    // banner (which would break the single-JSON-object invariant).
+    const proc = Bun.spawn(["bun", "run", CLI_PATH, "doctor", "--json", "--help"], {
+      cwd: goodDocs,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdout = await new Response(proc.stdout).text();
+    const code = await proc.exited;
+    expect(code).toBe(0);
+    const trimmed = stdout.trim();
+    const parsed = JSON.parse(trimmed); // throws if USAGE leaked alongside JSON
+    expect(trimmed).toBe(JSON.stringify(parsed));
+    expect(parsed.tool).toBe("catryna");
+  });
+
+  test("`--json --help` with NO subcommand keeps stdout clean (§4 rule 1)", async () => {
+    // The real leak case: no subcommand + --json + --help. Help is non-JSON, so
+    // under --json it must NOT reach stdout — it goes to stderr with the
+    // usage-error code, matching a bare `catryna --json`.
+    const proc = Bun.spawn(["bun", "run", CLI_PATH, "--json", "--help"], {
+      cwd: goodDocs,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdout = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
+    const code = await proc.exited;
+    expect(stdout.trim()).toBe(""); // no USAGE banner on stdout under --json
+    expect(code).toBe(2); // §4: usage error
+    expect(stderr).toContain("catryna"); // help/usage went to stderr instead
   });
 });

@@ -61,6 +61,14 @@ export async function main(argv: string[]): Promise<number> {
   const sub = positionals[0];
 
   if (wantsHelp && !sub) {
+    // §4 rule 1: never put non-JSON on stdout under --json. `--json --help`
+    // with no subcommand is contradictory (there's nothing to emit as JSON), so
+    // route the help banner to stderr and use the usage-error code — matching a
+    // bare `catryna --json`. Without --json, help is a normal stdout/exit-0 affordance.
+    if (json) {
+      process.stderr.write(USAGE + "\n");
+      return 2;
+    }
     process.stdout.write(USAGE + "\n");
     return 0;
   }
