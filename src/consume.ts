@@ -36,7 +36,7 @@ import {
   type SpineEvent,
   type SuiteCursor,
 } from "./events";
-import { readIndexAt, setFrontmatterScalars, type DocIndex, type DocMetadata } from "./storage";
+import { effectiveAnchors, readIndexAt, setFrontmatterScalars, type DocIndex, type DocMetadata } from "./storage";
 
 /** One doc newly flagged drift-suspect by a `code.changed` event. */
 export interface SuspectMark {
@@ -62,22 +62,13 @@ export interface ConsumeReport {
 }
 
 /**
- * The anchor files of a doc: its `relatedFiles`, plus — opportunistically and
- * forward-compatibly — any string entries in an `anchors` field (added
- * independently to `DocMetadata`). We read `anchors` without hard-depending on
- * it: any string entry that equals a changed file participates in matching, so
- * once symbol/file anchors land the consumer picks them up with no code change.
+ * The anchor files of a doc — the SAME source of truth `drift.ts` uses:
+ * `effectiveAnchors` (Phase 1) merges structured symbol/line `anchors` with
+ * file-level `relatedFiles`, so a doc anchored ONLY by symbol still participates
+ * in drift-suspect matching. Returns the deduped set of anchored file paths.
  */
 function anchorFilesOf(doc: DocMetadata): string[] {
-  const files: string[] = [];
-  if (Array.isArray(doc.relatedFiles)) {
-    for (const f of doc.relatedFiles) if (typeof f === "string") files.push(f);
-  }
-  const anchors = (doc as { anchors?: unknown }).anchors;
-  if (Array.isArray(anchors)) {
-    for (const a of anchors) if (typeof a === "string") files.push(a);
-  }
-  return files;
+  return [...new Set(effectiveAnchors(doc).map((a) => a.file))];
 }
 
 /** The `files` a `code.changed` event reports (§2 registry: `{files, symbols}`). */

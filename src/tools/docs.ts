@@ -8,6 +8,17 @@ const BlockSchema = z.object({
   data: z.record(z.unknown()),
 });
 
+// Validated anchor (Phase 1): a file, with an optional symbol and/or inclusive
+// line range, that `catryna drift` watches for changes. A bare `relatedFiles`
+// path is a file-level anchor; use this for symbol/line precision.
+const AnchorSchema = z.object({
+  file: z.string().describe("Repo-relative path of the anchored source file"),
+  symbol: z.string().optional().describe("Optional symbol name to narrow drift to (e.g. a function/class)"),
+  lines: z.tuple([z.number(), z.number()]).optional().describe("Optional inclusive [start, end] line range to narrow drift to"),
+});
+const ANCHORS_DESC =
+  "Structured drift anchors: {file, symbol?, lines?}. Additive over relatedFiles — use for symbol/line-level drift precision. `catryna drift` flags a doc when its anchored code changes since verification.";
+
 export function registerDocTools(server: McpServer): void {
   // CREATE DOC
   server.tool(
@@ -20,8 +31,9 @@ export function registerDocTools(server: McpServer): void {
       relatedFiles: z.array(z.string()).optional().describe("Source files this doc covers"),
       evidence: z.array(z.string()).optional().describe("Suite URIs cited as evidence backing this doc, e.g. 'sirius:receipt/89'. Accepts any suite scheme (catryna:/amt:/hayven:/sirius:); stored OPAQUELY — not validated or resolved."),
       refs: z.array(z.string()).optional().describe("Suite URIs this doc references, e.g. 'amt:decision/7'. Accepts any suite scheme (catryna:/amt:/hayven:/sirius:); stored OPAQUELY — not validated or resolved."),
+      anchors: z.array(AnchorSchema).optional().describe(ANCHORS_DESC),
     },
-    async ({ path, title, content, tags, relatedFiles, evidence, refs }) => {
+    async ({ path, title, content, tags, relatedFiles, evidence, refs, anchors }) => {
       try {
         // Check if doc already exists
         const existing = await getDoc(path);
@@ -31,7 +43,7 @@ export function registerDocTools(server: McpServer): void {
           };
         }
 
-        const metadata = await createDoc(path, title, content, tags, relatedFiles, evidence, refs);
+        const metadata = await createDoc(path, title, content, tags, relatedFiles, evidence, refs, anchors);
 
         return {
           content: [{ type: "text", text: JSON.stringify({
@@ -80,6 +92,7 @@ export function registerDocTools(server: McpServer): void {
             blocks: doc.blocks,
             tags: doc.metadata.tags,
             relatedFiles: doc.metadata.relatedFiles,
+            anchors: doc.metadata.anchors,
             evidence: doc.metadata.evidence,
             refs: doc.metadata.refs,
             createdAt: doc.metadata.createdAt,
@@ -132,8 +145,9 @@ export function registerDocTools(server: McpServer): void {
       relatedFiles: z.array(z.string()).optional().describe("New related files"),
       evidence: z.array(z.string()).optional().describe("Replacement suite URIs cited as evidence, e.g. 'sirius:receipt/89'. Accepts any suite scheme (catryna:/amt:/hayven:/sirius:); stored OPAQUELY — not validated or resolved. Omit to preserve existing."),
       refs: z.array(z.string()).optional().describe("Replacement suite URIs this doc references, e.g. 'amt:decision/7'. Accepts any suite scheme (catryna:/amt:/hayven:/sirius:); stored OPAQUELY — not validated or resolved. Omit to preserve existing."),
+      anchors: z.array(AnchorSchema).optional().describe(ANCHORS_DESC + " Omit to preserve existing."),
     },
-    async ({ path, title, content, tags, relatedFiles, evidence, refs }) => {
+    async ({ path, title, content, tags, relatedFiles, evidence, refs, anchors }) => {
       try {
         const updated = await updateDoc(path, {
           title,
@@ -142,6 +156,7 @@ export function registerDocTools(server: McpServer): void {
           relatedFiles,
           evidence,
           refs,
+          anchors,
         });
 
         if (!updated) {
