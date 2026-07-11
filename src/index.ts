@@ -18,6 +18,7 @@ import { registerDocTools } from "./tools/docs";
 import { registerSearchTools } from "./tools/search";
 import { registerDiagramTools } from "./tools/diagrams";
 import { registerCoverageTools } from "./tools/coverage";
+import { registerDriftTools } from "./tools/drift";
 
 // Create MCP server
 const server = new McpServer({
@@ -30,6 +31,7 @@ registerDocTools(server);
 registerSearchTools(server);
 registerDiagramTools(server);
 registerCoverageTools(server);
+registerDriftTools(server);
 
 // Connect to stdio transport
 const transport = new StdioServerTransport();
