@@ -19,6 +19,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { parseMdx } from "./storage";
+
 const STORAGE_PATH = fileURLToPath(new URL("./storage.ts", import.meta.url));
 
 const dirs: string[] = [];
@@ -101,6 +103,68 @@ describe("evidence/refs round-trip through storage", () => {
     const mdx = await readMdx(dir, "x");
     expect(mdx).toContain(`"hayven:node/a/b/c#frag"`);
     expect(mdx).toContain(`"catryna:doc/architecture/auth-flow#claim-2"`);
+  });
+});
+
+describe("adversarial values round-trip losslessly (§1 opaque storage)", () => {
+  // Comma, double-quote, backslash, closing bracket, and a newline — every char
+  // the naive `"${v}"` / split-on-comma serializer corrupts. Opaque suite URIs
+  // and free-text tags/title must survive verbatim AND leave valid JSON on disk
+  // so the frontend's `JSON.parse` reader round-trips too.
+  const advEvidence = [
+    "sirius:receipt/a,b", // comma
+    'hayven:node/x"y', // double-quote
+    "amt:decision/back\\slash", // backslash
+    "catryna:doc/close]bracket", // closing bracket
+    "sirius:receipt/line1\nline2", // newline
+  ];
+  const advRefs = ['amt:decision/has"quote,and,commas', "hayven:claim/plain"];
+  const advTags = ["tag,with,commas", 'tag"with"quotes'];
+  const advTitle = 'A "tricky", title\nwith a newline and \\ backslash';
+
+  test("createDoc → getDoc returns adversarial evidence/refs/tags/title verbatim", async () => {
+    const { dir, exit, stderr, out } = await run(`
+      await createDoc(
+        "adv", ${JSON.stringify(advTitle)},
+        [{ type: "text", data: { content: "z" } }],
+        ${JSON.stringify(advTags)}, [],
+        ${JSON.stringify(advEvidence)}, ${JSON.stringify(advRefs)}
+      );
+      const doc = await getDoc("adv");
+      console.log(JSON.stringify({
+        title: doc.metadata.title,
+        tags: doc.metadata.tags,
+        evidence: doc.metadata.evidence,
+        refs: doc.metadata.refs,
+      }));
+    `);
+    expect(exit, stderr).toBe(0);
+    expect(out.title).toBe(advTitle);
+    expect(out.tags).toEqual(advTags);
+    expect(out.evidence).toEqual(advEvidence);
+    expect(out.refs).toEqual(advRefs);
+
+    // The on-disk frontmatter must be VALID JSON (each field on ONE physical
+    // line) so the frontend parser round-trips it. Fails if serialization stops
+    // JSON-encoding (naive interpolation → invalid JSON / broken lines).
+    const mdx = await readMdx(dir, "adv");
+    const evLine = mdx.match(/^evidence: (.*)$/m);
+    const refLine = mdx.match(/^refs: (.*)$/m);
+    const tagLine = mdx.match(/^tags: (.*)$/m);
+    const titleLine = mdx.match(/^title: (.*)$/m);
+    expect(evLine).not.toBeNull();
+    expect(JSON.parse(evLine![1])).toEqual(advEvidence);
+    expect(JSON.parse(refLine![1])).toEqual(advRefs);
+    expect(JSON.parse(tagLine![1])).toEqual(advTags);
+    expect(JSON.parse(titleLine![1])).toBe(advTitle);
+
+    // And this module's own parser decodes the same file back losslessly. Fails
+    // if parseMdx reverts to split-on-comma / bare quote-strip.
+    const parsed = parseMdx(mdx);
+    expect(parsed.metadata.evidence).toEqual(advEvidence);
+    expect(parsed.metadata.refs).toEqual(advRefs);
+    expect(parsed.metadata.tags).toEqual(advTags);
+    expect(parsed.metadata.title).toBe(advTitle);
   });
 });
 

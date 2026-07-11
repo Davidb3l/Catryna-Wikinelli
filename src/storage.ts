@@ -153,18 +153,87 @@ function docPathToFilePath(docPath: string): string {
 }
 
 /**
+ * Serialize a frontmatter STRING value as a single-line, valid-JSON string.
+ * `JSON.stringify` escapes embedded quotes, backslashes, and newlines (`\n`),
+ * so a value that would otherwise break the line-based YAML block — or produce
+ * invalid JSON the frontend can't parse — round-trips losslessly and stays on
+ * one physical line.
+ */
+function serializeFmScalar(value: string): string {
+  return JSON.stringify(value);
+}
+
+/**
+ * Serialize a frontmatter ARRAY as a single-line, valid-JSON array using the
+ * human-friendly `", "` separator. Each element is JSON-encoded so opaque suite
+ * URIs (§1 rule 2) and free-text tags containing a comma, a double-quote, a
+ * backslash, a `]`, or a newline survive the .mdx round-trip VERBATIM. The
+ * result is valid JSON, so both this module's `parseFmArray` and the frontend's
+ * `JSON.parse` reader round-trip it identically.
+ */
+function serializeFmArray(arr: string[]): string {
+  return `[${arr.map((v) => JSON.stringify(v)).join(", ")}]`;
+}
+
+/**
+ * Decode a frontmatter STRING value. Prefers a valid-JSON string (the format
+ * `serializeFmScalar` writes); falls back to bare quote-stripping for legacy
+ * files written before JSON encoding, or any malformed value.
+ */
+function parseFmScalar(value: string): string {
+  const v = value.trim();
+  if (v.startsWith('"')) {
+    try {
+      const parsed = JSON.parse(v);
+      if (typeof parsed === "string") return parsed;
+    } catch {
+      // Legacy / malformed — fall through to quote-strip.
+    }
+  }
+  return v.replace(/^["']|["']$/g, "");
+}
+
+/**
+ * Decode a frontmatter ARRAY value. Prefers valid JSON (what `serializeFmArray`
+ * writes) so opaque values with commas/quotes/backslashes survive; falls back to
+ * the legacy comma-split for arrays written before JSON encoding (e.g.
+ * single-quoted values). Always returns an array (never undefined).
+ */
+function parseFmArray(value: string): string[] {
+  const v = value.trim();
+  if (v.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(v);
+      if (Array.isArray(parsed)) return parsed.map((x) => String(x));
+    } catch {
+      // Legacy single-quoted / malformed array — fall through to comma-split.
+    }
+  }
+  const arrayMatch = v.match(/\[(.*)\]/);
+  if (arrayMatch) {
+    return arrayMatch[1]
+      .split(",")
+      .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+      .filter((s) => s);
+  }
+  return [];
+}
+
+/**
  * Convert blocks to MDX content with frontmatter
  */
 function blocksToMdx(metadata: DocMetadata, blocks: Block[]): string {
-  // Create YAML frontmatter
+  // Create YAML frontmatter. Free-text / opaque fields are JSON-encoded so any
+  // value round-trips losslessly and the on-disk frontmatter is always valid
+  // JSON (see serializeFmScalar / serializeFmArray).
   const frontmatter = `---
 id: ${metadata.id}
-title: "${metadata.title}"
+title: ${serializeFmScalar(metadata.title)}
 path: "${metadata.path}"
-tags: [${metadata.tags.map(t => `"${t}"`).join(", ")}]
-relatedFiles: [${metadata.relatedFiles.map(f => `"${f}"`).join(", ")}]
-evidence: [${(metadata.evidence ?? []).map(u => `"${u}"`).join(", ")}]
-refs: [${(metadata.refs ?? []).map(u => `"${u}"`).join(", ")}]
+tags: ${serializeFmArray(metadata.tags)}
+relatedFiles: ${serializeFmArray(metadata.relatedFiles)}
+evidence: ${serializeFmArray(metadata.evidence ?? [])}
+refs: ${serializeFmArray(metadata.refs ?? [])}
 createdAt: ${metadata.createdAt}
 updatedAt: ${metadata.updatedAt}
 createdBy: "${metadata.createdBy}"
@@ -230,9 +299,10 @@ function blockToMdx(block: Block): string {
 }
 
 /**
- * Parse MDX file back to metadata and blocks
+ * Parse MDX file back to metadata and blocks. Exported so the frontmatter
+ * round-trip (serialize → parse) is directly testable.
  */
-function parseMdx(content: string): { metadata: Partial<DocMetadata>; blocks: Block[] } {
+export function parseMdx(content: string): { metadata: Partial<DocMetadata>; blocks: Block[] } {
   // Extract frontmatter
   const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
 
@@ -250,17 +320,12 @@ function parseMdx(content: string): { metadata: Partial<DocMetadata>; blocks: Bl
       if (match) {
         const [, key, value] = match;
         if (key === "id" || key === "title" || key === "path" || key === "createdBy") {
-          metadata[key] = value.replace(/^["']|["']$/g, "");
+          metadata[key] = parseFmScalar(value);
         } else if (key === "tags" || key === "relatedFiles" || key === "evidence" || key === "refs") {
           // Parse array: ["a", "b"]. `evidence`/`refs` hold suite URIs stored
-          // opaquely (§1 rule 2) — parsed as plain strings, never validated.
-          const arrayMatch = value.match(/\[(.*)\]/);
-          if (arrayMatch) {
-            metadata[key] = arrayMatch[1]
-              .split(",")
-              .map(s => s.trim().replace(/^["']|["']$/g, ""))
-              .filter(s => s);
-          }
+          // opaquely (§1 rule 2) — decoded as plain strings, never validated.
+          // JSON-decoded so commas/quotes/backslashes inside a value survive.
+          metadata[key] = parseFmArray(value);
         } else if (key === "createdAt" || key === "updatedAt") {
           metadata[key] = parseInt(value, 10);
         }
@@ -372,9 +437,18 @@ export async function createDoc(
 
   // Update index under the serialization lock so a concurrent write can't
   // clobber this entry (the .mdx write above is per-path, so it stays outside).
+  // Enforce the "at most one entry per path" invariant IN the lock: two
+  // concurrent createDoc("x") each load a fresh index and would otherwise both
+  // push, leaving two entries for "x" (getDoc/updateDoc/deleteDoc then see only
+  // the first, dangling the second). Replace an existing same-path entry instead.
   await withIndexLock(async () => {
     const index = await loadIndex();
-    index.docs.push(metadata);
+    const existingIdx = index.docs.findIndex(d => d.path === path);
+    if (existingIdx === -1) {
+      index.docs.push(metadata);
+    } else {
+      index.docs[existingIdx] = metadata;
+    }
     await saveIndex(index);
   });
 

@@ -60,6 +60,26 @@ describe("index read-modify-write is serialized", () => {
     for (let i = 0; i < 20; i++) expect(paths.has("m/doc" + i)).toBe(true);
   });
 
+  test("concurrent same-path createDoc yields exactly one index entry", async () => {
+    // Two+ concurrent createDoc for the SAME path each load a fresh index inside
+    // the lock; without an in-lock same-path dedupe they both push, leaving
+    // duplicate entries (later getDoc/updateDoc/deleteDoc see only the first and
+    // dangle the rest). The invariant is "at most one entry per path".
+    const { dir, code, stderr } = await runInProject(`
+      await Promise.all(
+        Array.from({ length: 8 }, (_, i) =>
+          createDoc("dup/same", "Title " + i, [{ type: "text", data: { content: "x" + i } }])
+        )
+      );
+    `);
+    dirs.push(dir);
+    expect(code, stderr).toBe(0);
+
+    const index = await readIndex(dir);
+    const sameEntries = index.docs.filter((d) => d.path === "dup/same");
+    expect(sameEntries.length).toBe(1);
+  });
+
   test("concurrent createDoc + updateDoc: no entry lost", async () => {
     const { dir, code, stderr } = await runInProject(`
       // Seed a doc, then fire a batch of new creates concurrently with an update
