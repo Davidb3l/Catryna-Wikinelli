@@ -404,3 +404,44 @@ describe("catryna drift (end-to-end through the CLI)", () => {
     expect(humanRun.stderr).toContain("not a git repository");
   });
 });
+
+describe("catryna drift --since (global baseline override)", () => {
+  test("baselines unverified docs at a commit; date path; garbage errors", async () => {
+    const dir = await initRepo({ "src/a.ts": "v1\n" });
+    const old = await git(dir, ["rev-parse", "HEAD"]);
+    // A doc anchored to src/a.ts with NO verifiedCommit — the Virixia case.
+    await seedDocs(dir, [{ path: "m/a", relatedFiles: ["src/a.ts"] }]);
+    await writeFileAt(dir, "src/a.ts", "v2 changed\n");
+    await git(dir, ["add", "-A"]);
+    await git(dir, ["commit", "-q", "-m", "change a"]);
+
+    // Plain drift → unverified (no baseline), no drift signal.
+    const plain = await computeDrift(dir, { emit: false });
+    expect(plain.unverified.map((d) => d.path)).toEqual(["m/a"]);
+    expect(plain.drifted).toEqual([]);
+
+    // --since <old commit> → drifted, and the report echoes the resolved baseline.
+    const sinceCommit = await computeDrift(dir, { since: old, emit: false });
+    expect(sinceCommit.drifted.map((d) => d.path)).toEqual(["m/a"]);
+    expect(sinceCommit.unverified).toEqual([]);
+    expect(sinceCommit.baseline).toBe(old);
+
+    // --since HEAD → clean (nothing changed since HEAD).
+    const sinceHead = await computeDrift(dir, { since: "HEAD", emit: false });
+    expect(sinceHead.clean.map((d) => d.path)).toEqual(["m/a"]);
+    expect(sinceHead.drifted).toEqual([]);
+
+    // Date path: a near-future date (before git's 2038 timestamp cliff)
+    // resolves to HEAD, since every commit precedes it.
+    const head = await git(dir, ["rev-parse", "HEAD"]);
+    const sinceDate = await computeDrift(dir, { since: "2030-01-01", emit: false });
+    expect(sinceDate.baseline).toBe(head);
+    expect(sinceDate.clean.map((d) => d.path)).toEqual(["m/a"]);
+
+    // Garbage --since must ERROR (not silently baseline at "now" via approxidate).
+    const garbage = await computeDrift(dir, { since: "nonsense-xyz", emit: false });
+    expect(garbage.error).toBeTruthy();
+    expect(garbage.drifted).toEqual([]);
+    expect(garbage.clean).toEqual([]);
+  });
+});

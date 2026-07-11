@@ -31,7 +31,10 @@ const USAGE = `catryna — living documentation for agents + humans
 Usage:
   catryna doctor [--json]          Suite discovery health check (SUITE_CONTRACTS §3)
   catryna verify <path> [--json]   Record HEAD as a doc's drift baseline
-  catryna drift [--json]           Report docs whose anchored code drifted (CI gate)
+  catryna drift [--since <commit|date>] [--json]
+                                   Report docs whose anchored code drifted (CI gate).
+                                   --since sets a baseline (commit/tag/date) for docs
+                                   with no verifiedCommit — e.g. --since 2026-02-18.
   catryna repair [<path>] [--json] Repair context for drifted docs (hand to the agent)
   catryna consume [--json]         Consume code.changed → mark docs drift-suspect (spine tail)
   catryna --help                   Show this help
@@ -66,7 +69,24 @@ async function buildEnv(): Promise<DoctorEnv> {
  */
 export async function main(argv: string[]): Promise<number> {
   // Global flags may appear before or after the subcommand (amt-style).
-  const args = argv.slice();
+  // First lift out `--since <rev>` / `--since=<rev>` (drift's baseline override)
+  // so its VALUE isn't parsed as a positional/subcommand.
+  const raw = argv.slice();
+  let since: string | undefined;
+  const args: string[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const a = raw[i];
+    if (a === "--since") {
+      since = raw[i + 1];
+      i++;
+      continue;
+    }
+    if (a.startsWith("--since=")) {
+      since = a.slice("--since=".length);
+      continue;
+    }
+    args.push(a);
+  }
   const json = args.includes("--json");
   const wantsHelp = args.includes("--help") || args.includes("-h");
   const positionals = args.filter((a) => !a.startsWith("-"));
@@ -105,7 +125,7 @@ export async function main(argv: string[]): Promise<number> {
       return run.code;
     }
     case "drift": {
-      const run = await runDrift({ json, cwd: process.cwd() });
+      const run = await runDrift({ json, cwd: process.cwd(), since });
       if (run.stderr) process.stderr.write(run.stderr);
       process.stdout.write(run.stdout);
       return run.code;

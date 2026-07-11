@@ -512,8 +512,36 @@ export interface DriftReport {
    * `DocDriftResult.precision` is then `"git"`).
    */
   hayven: boolean;
+  /**
+   * The resolved commit used as a GLOBAL baseline override for this run (from
+   * `--since`), when set. Overrides every doc's own `verifiedCommit` so the
+   * report answers "what drifted since <commit>" — the way to get a drift
+   * signal on a corpus that was never `catryna verify`'d. Non-destructive:
+   * nothing is written; it only changes the diff range. Absent on a normal run.
+   */
+  baseline?: string;
   /** Set only when the run could not proceed (e.g. not a git repository). */
   error?: string;
+}
+
+/**
+ * Resolve a `--since` value to a commit SHA. Accepts a commit-ish (SHA, tag,
+ * ref, `HEAD~50`) OR a date (`2026-02-18`) → the last commit on HEAD at/before
+ * that date. Returns null when nothing resolves (the caller reports the error).
+ */
+export async function resolveRev(cwd: string, rev: string): Promise<string | null> {
+  const asCommit = await runGit(cwd, ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`]);
+  const sha = asCommit.stdout.trim();
+  if (asCommit.ok && sha) return sha;
+  // Not a commit-ish. Try it as a DATE (newest commit on HEAD at/before it) —
+  // but ONLY when it actually looks like an ISO date. git's approxidate parser
+  // is so lenient it turns arbitrary garbage ("nonsense") into "now", which
+  // would silently baseline at HEAD and report a false "all clean"; the shape
+  // gate makes genuinely-invalid input resolve to null (→ a reported error).
+  if (!/^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?/.test(rev.trim())) return null;
+  const asDate = await runGit(cwd, ["rev-list", "-1", `--before=${rev}`, "HEAD"]);
+  const dsha = asDate.stdout.trim();
+  return asDate.ok && dsha ? dsha : null;
 }
 
 /** Read the doc index read-only; an absent/broken `.docs/` yields no docs. */
@@ -540,7 +568,7 @@ async function readDocs(cwd: string): Promise<DocMetadata[]> {
  */
 export async function computeDrift(
   cwd: string,
-  opts: { emit?: boolean; hayven?: HayvenClient } = {},
+  opts: { emit?: boolean; hayven?: HayvenClient; since?: string } = {},
 ): Promise<DriftReport> {
   const emit = opts.emit ?? true;
   const hv = opts.hayven ?? realHayven;
@@ -559,6 +587,30 @@ export async function computeDrift(
   }
 
   const head = await gitHead(cwd);
+
+  // --since: a GLOBAL baseline override. Resolve it once; if it doesn't resolve,
+  // report the error rather than silently diffing against nothing.
+  let baselineOverride: string | null = null;
+  if (opts.since) {
+    baselineOverride = await resolveRev(cwd, opts.since);
+    if (!baselineOverride) {
+      return {
+        gitRepo: true,
+        head,
+        drifted: [],
+        unverified: [],
+        clean: [],
+        broken: [],
+        hayven: false,
+        error: `could not resolve --since "${opts.since}" to a commit`,
+      };
+    }
+  }
+  // The effective baseline for a doc: the global override wins, else the doc's
+  // own recorded verification commit (empty = unverified).
+  const baselineFor = (doc: DocMetadata): string =>
+    baselineOverride ?? (typeof doc.verifiedCommit === "string" ? doc.verifiedCommit : "");
+
   const docs = await readDocs(cwd);
 
   // Effective anchors per doc (structured ∪ file-level from relatedFiles). A doc
@@ -571,7 +623,7 @@ export async function computeDrift(
   // hayven when at least one doc has a SYMBOL anchor WITH a baseline — a purely
   // file-level corpus stays zero-dependency and never spawns the daemon.
   const symbolAnchorsWithBaseline = anchored.flatMap(({ doc, anchors }) =>
-    doc.verifiedCommit ? anchors.filter((a) => a.symbol).map((a) => ({ doc, a })) : [],
+    baselineFor(doc) ? anchors.filter((a) => a.symbol).map((a) => ({ doc, a })) : [],
   );
   const useHayven =
     symbolAnchorsWithBaseline.length > 0 ? await hv.doctorOk(cwd) : false;
@@ -582,9 +634,9 @@ export async function computeDrift(
   if (useHayven) {
     const symsByBaseline = new Map<string, Set<string>>();
     for (const { doc, a } of symbolAnchorsWithBaseline) {
-      const set = symsByBaseline.get(doc.verifiedCommit) ?? new Set<string>();
+      const set = symsByBaseline.get(baselineFor(doc)) ?? new Set<string>();
       set.add(a.symbol!);
-      symsByBaseline.set(doc.verifiedCommit, set);
+      symsByBaseline.set(baselineFor(doc), set);
     }
     for (const [baseline, syms] of symsByBaseline) {
       affectedByBaseline.set(baseline, await buildHayvenAffected(cwd, baseline, [...syms], hv));
@@ -598,7 +650,9 @@ export async function computeDrift(
 
   for (const { doc, anchors } of anchored) {
     const relatedFiles = Array.isArray(doc.relatedFiles) ? doc.relatedFiles : [];
-    const verifiedCommit = typeof doc.verifiedCommit === "string" ? doc.verifiedCommit : "";
+    // The baseline this doc is measured against: the --since override if set,
+    // else the doc's own verifiedCommit ("" = unverified).
+    const verifiedCommit = baselineFor(doc);
     const anchorFiles = [...new Set(anchors.map((a) => a.file))];
 
     // BROKEN first — highest severity and baseline-independent: an anchored file
@@ -755,7 +809,16 @@ export async function computeDrift(
     }
   }
 
-  return { gitRepo: true, head, drifted, unverified, clean, broken, hayven: useHayven };
+  return {
+    gitRepo: true,
+    head,
+    drifted,
+    unverified,
+    clean,
+    broken,
+    hayven: useHayven,
+    ...(baselineOverride ? { baseline: baselineOverride } : {}),
+  };
 }
 
 /** The result of a `catryna verify` run. */
@@ -832,6 +895,8 @@ export function buildDriftJson(report: DriftReport): Record<string, unknown> {
     command: "drift",
     gitRepo: report.gitRepo,
     head: report.head,
+    // The global --since baseline override, when used (else absent).
+    ...(report.baseline ? { baseline: report.baseline } : {}),
     // Whether Hayvenhurst symbol-precision was used this run (§3 gating).
     hayven: report.hayven,
     summary: {
@@ -870,11 +935,13 @@ export function buildDriftJson(report: DriftReport): Record<string, unknown> {
 /** The human report for `catryna drift`. */
 export function renderDriftHuman(report: DriftReport): string {
   const lines: string[] = [];
-  if (!report.gitRepo) {
+  if (!report.gitRepo || report.error) {
     return `catryna drift\n\n  ${report.error ?? "not a git repository"}\n`;
   }
 
-  lines.push("catryna drift", `  HEAD: ${short(report.head ?? "")}`, "");
+  lines.push("catryna drift", `  HEAD: ${short(report.head ?? "")}`);
+  if (report.baseline) lines.push(`  baseline (--since): ${short(report.baseline)}`);
+  lines.push("");
 
   if (
     report.broken.length === 0 &&
@@ -921,15 +988,16 @@ export function renderDriftHuman(report: DriftReport): string {
  * `--json`: one JSON object, always exit 0. Human: exit 3 on drift (CI gate),
  * 1 on operational failure (not a git repo), else 0.
  */
-export async function runDrift(opts: { json: boolean; cwd: string }): Promise<CliRun> {
-  const report = await computeDrift(opts.cwd);
+export async function runDrift(opts: { json: boolean; cwd: string; since?: string }): Promise<CliRun> {
+  const report = await computeDrift(opts.cwd, opts.since ? { since: opts.since } : {});
 
   if (opts.json) {
     return { stdout: JSON.stringify(buildDriftJson(report)) + "\n", stderr: "", code: 0 };
   }
 
-  if (!report.gitRepo) {
-    // Operational failure in a shell context — can't run the check here.
+  if (!report.gitRepo || report.error) {
+    // Operational failure in a shell context (not a git repo, or an unresolved
+    // --since) — can't run the check here.
     return { stdout: "", stderr: renderDriftHuman(report), code: 1 };
   }
   // Soft-block (§4 code 3) when drift OR a broken anchor is found so CI fails;
