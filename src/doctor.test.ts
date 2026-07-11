@@ -75,7 +75,7 @@ describe("envelope shape", () => {
     expect(env0.ok).toBe(true);
     // version comes from the injected env (package.json in prod), not hardcoded.
     expect(env0.version).toBe("9.9.9");
-    expect(env0.capabilities).toEqual(["mcp"]);
+    expect(env0.capabilities).toEqual(["mcp", "events.emit"]);
 
     const checks = env0.checks as DoctorCheck[];
     expect(Array.isArray(checks)).toBe(true);
@@ -102,10 +102,12 @@ describe("envelope shape", () => {
     expect(env0).not.toHaveProperty("ui");
   });
 
-  test("does not advertise unimplemented Phase-1 capabilities", async () => {
+  test("advertises events.emit (implemented) but not unimplemented Phase-1 caps", async () => {
     const env0 = buildEnvelope(await collectReport(envFor(goodDocs)));
     const caps = env0.capabilities as string[];
-    for (const forbidden of ["events.emit", "events.consume", "drift", "verify"]) {
+    expect(caps).toContain("events.emit"); // the spine producer is real now
+    // Still-unimplemented: consuming code.changed, and the drift/verify product.
+    for (const forbidden of ["events.consume", "drift", "verify"]) {
       expect(caps).not.toContain(forbidden);
     }
   });
@@ -228,7 +230,7 @@ describe("end-to-end: the real CLI binary", () => {
     expect(parsed.tool).toBe("catryna");
     expect(parsed.schemaVersion).toBe(1);
     expect(parsed.ok).toBe(true);
-    expect(parsed.capabilities).toEqual(["mcp"]);
+    expect(parsed.capabilities).toEqual(["mcp", "events.emit"]);
     expect(parsed).not.toHaveProperty("ui");
   });
 

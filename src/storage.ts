@@ -8,6 +8,7 @@
 
 import { readFile, writeFile, mkdir, unlink, readdir, stat } from "node:fs/promises";
 import { join, dirname, basename } from "node:path";
+import { emitEvent, docUri } from "./events";
 
 // Get the .docs folder path relative to where the server runs
 const DOCS_ROOT = join(process.cwd(), ".docs");
@@ -317,6 +318,9 @@ export async function createDoc(
   index.docs.push(metadata);
   await saveIndex(index);
 
+  // The doc is now durable — announce it on the suite spine (§2, best-effort).
+  await emitEvent("doc.created", [docUri(path)], { path, title, id: metadata.id });
+
   return metadata;
 }
 
@@ -406,6 +410,9 @@ export async function updateDoc(
   // Update index
   index.docs[metaIndex] = meta;
   await saveIndex(index);
+
+  // The update is now durable — announce it on the suite spine (§2, best-effort).
+  await emitEvent("doc.updated", [docUri(path)], { path, title: meta.title, id: meta.id });
 
   return meta;
 }

@@ -15,6 +15,9 @@ build/
 *.sqlite
 .catryna/
 
+# Suite event spine (local telemetry — SUITE_CONTRACTS §2)
+.suite/
+
 # Environment
 .env
 .env.local

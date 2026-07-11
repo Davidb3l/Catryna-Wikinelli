@@ -13,11 +13,14 @@
  * Capabilities are deliberately conservative. A capability string is a promise
  * a peer will act on, so it is advertised only when the feature exists TODAY:
  *
- *   - `mcp`  — Catryna ships a stdio MCP server (`src/index.ts`).
+ *   - `mcp`          — Catryna ships a stdio MCP server (`src/index.ts`).
+ *   - `events.emit`  — the MCP write tools append `doc.*` facts to the suite
+ *                      event spine (`.suite/events/`, SUITE_CONTRACTS §2).
  *
- * NOT advertised: `events.emit` / `events.consume` / `drift` / `verify` are
- * Phase-1 roadmap, unimplemented; advertising them would make a peer gate on a
- * feature that isn't there. And `ui` is intentionally omitted (both the
+ * NOT advertised: `events.consume` / `drift` / `verify` are Phase-1 roadmap,
+ * unimplemented; advertising them would make a peer gate on a feature that
+ * isn't there (Catryna doesn't yet CONSUME `code.changed`). And `ui` is
+ * intentionally omitted (both the
  * capability AND the top-level `ui` field): per §3.2 a tool advertises `ui`
  * only if it also emits a LIVE url for a UI it is currently serving. Catryna's
  * human viewer is a separate Vite app (frontend/, :1307) that exists only while
@@ -31,7 +34,7 @@ import { join } from "node:path";
 import { readIndexAt } from "./storage";
 
 /** Capabilities Catryna actually implements today (see file header). */
-export const CAPABILITIES: readonly string[] = ["mcp"];
+export const CAPABILITIES: readonly string[] = ["mcp", "events.emit"];
 
 export const SCHEMA_VERSION = 1;
 
