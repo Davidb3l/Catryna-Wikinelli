@@ -16,6 +16,11 @@
  *   - `mcp`          — Catryna ships a stdio MCP server (`src/index.ts`).
  *   - `events.emit`  — the MCP write tools append `doc.*` facts to the suite
  *                      event spine (`.suite/events/`, SUITE_CONTRACTS §2).
+ *   - `drift`        — `catryna drift` detects git-diff doc drift and emits
+ *                      `doc.drifted` (PRODUCT_ROADMAP Phase 1; git-diff baseline,
+ *                      no Hayvenhurst dependency). Real today, so advertised.
+ *   - `verify`       — `catryna verify <path>` records a doc's drift baseline
+ *                      (`verifiedCommit`) and emits `doc.verified`.
  *   - `ui`           — Catryna ships a real human viewer: the Vite React app in
  *                      `frontend/`, launched by the `catryna:viewer` skill,
  *                      serving `.docs/` on :1307. Per §3.2 a tool that serves a
@@ -29,9 +34,9 @@
  *                      and truthful even when the viewer isn't running. The URL
  *                      MUST be loopback so the hub's `isLoopbackUrl` accepts it.
  *
- * NOT advertised: `events.consume` / `drift` / `verify` are Phase-1 roadmap,
- * unimplemented; advertising them would make a peer gate on a feature that
- * isn't there (Catryna doesn't yet CONSUME `code.changed`).
+ * NOT advertised: `events.consume` remains unimplemented (Catryna doesn't yet
+ * CONSUME `code.changed` for real-time drift-suspect marking — Phase 1 tail /
+ * Phase 2); advertising it would make a peer gate on a feature that isn't there.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -39,7 +44,7 @@ import { join } from "node:path";
 import { readIndexAt } from "./storage";
 
 /** Capabilities Catryna actually implements today (see file header). */
-export const CAPABILITIES: readonly string[] = ["mcp", "events.emit", "ui"];
+export const CAPABILITIES: readonly string[] = ["mcp", "events.emit", "drift", "verify", "ui"];
 
 export const SCHEMA_VERSION = 1;
 

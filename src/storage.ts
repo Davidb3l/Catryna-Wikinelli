@@ -32,6 +32,23 @@ export interface DocMetadata {
    * governs it. Same opaque-storage contract as `evidence`.
    */
   refs: string[];
+  /**
+   * The git commit SHA this doc was last VERIFIED against — the drift baseline
+   * (PRODUCT_ROADMAP Phase 1). This is deliberately NOT `updatedAt`: editing a
+   * doc's prose does not re-verify it against code; only `catryna verify` sets
+   * this, recording the repo HEAD at the moment a human/agent confirmed the doc
+   * matches the code. `catryna drift` diffs `relatedFiles` over
+   * `verifiedCommit..HEAD`. Empty string ("") means NEVER verified — a doc with
+   * no baseline is reported `unverified`, never silently "clean". Backward-compat
+   * (§ storage): absent in a legacy index/frontmatter → normalized to "" on read.
+   */
+  verifiedCommit: string;
+  /**
+   * ISO-8601 UTC timestamp of the last `catryna verify` for this doc, or "" if
+   * never verified. Paired with `verifiedCommit`; surfaced in the `doc.verified`
+   * spine event (SUITE_CONTRACTS §2) and the trust surface (Phase 2).
+   */
+  verifiedAt: string;
   createdAt: number;
   updatedAt: number;
   createdBy: string;
@@ -95,6 +112,12 @@ export async function loadIndex(): Promise<DocIndex> {
     for (const d of index.docs) {
       if (!Array.isArray(d.evidence)) d.evidence = [];
       if (!Array.isArray(d.refs)) d.refs = [];
+      // Drift baseline fields (Phase 1). A legacy index written before they
+      // existed lacks them; normalize to "" (= never verified) so every
+      // DocMetadata leaving here carries strings and `drift` can read the
+      // baseline without guarding against `undefined`.
+      if (typeof d.verifiedCommit !== "string") d.verifiedCommit = "";
+      if (typeof d.verifiedAt !== "string") d.verifiedAt = "";
     }
     return index;
   } catch {
@@ -220,6 +243,36 @@ function parseFmArray(value: string): string[] {
 }
 
 /**
+ * Surgically set frontmatter SCALAR fields in a raw .mdx string, PRESERVING the
+ * document body verbatim.
+ *
+ * Unlike updateDoc's path (parseMdx → blocksToMdx), which re-serializes the body
+ * through the simplified block parser and can mangle rich MDX (the known lossy
+ * round-trip debt), this rewrites ONLY the requested `key: value` lines inside
+ * the leading `---` frontmatter block and leaves every body byte untouched.
+ * `catryna verify` uses it so recording a drift baseline never risks the doc's
+ * prose. Each value is JSON-encoded (serializeFmScalar) so it stays on one
+ * physical line and round-trips through parseMdx / the frontend reader.
+ *
+ * A key already present is replaced in place; a missing key is appended to the
+ * frontmatter block. If the file has no frontmatter block at all, the content is
+ * returned unchanged (the index stays the queryable source of truth).
+ */
+export function setFrontmatterScalars(content: string, fields: Record<string, string>): string {
+  const fmMatch = content.match(/^(---\n)([\s\S]*?)(\n---\n)/);
+  if (!fmMatch) return content;
+  const [, open, body, close] = fmMatch;
+  const lines = body.split("\n");
+  for (const [key, value] of Object.entries(fields)) {
+    const encoded = `${key}: ${serializeFmScalar(value)}`;
+    const idx = lines.findIndex((l) => l === `${key}:` || l.startsWith(`${key}: `));
+    if (idx === -1) lines.push(encoded);
+    else lines[idx] = encoded;
+  }
+  return open + lines.join("\n") + close + content.slice(fmMatch[0].length);
+}
+
+/**
  * Convert blocks to MDX content with frontmatter
  */
 function blocksToMdx(metadata: DocMetadata, blocks: Block[]): string {
@@ -234,6 +287,8 @@ tags: ${serializeFmArray(metadata.tags)}
 relatedFiles: ${serializeFmArray(metadata.relatedFiles)}
 evidence: ${serializeFmArray(metadata.evidence ?? [])}
 refs: ${serializeFmArray(metadata.refs ?? [])}
+verifiedCommit: ${serializeFmScalar(metadata.verifiedCommit ?? "")}
+verifiedAt: ${serializeFmScalar(metadata.verifiedAt ?? "")}
 createdAt: ${metadata.createdAt}
 updatedAt: ${metadata.updatedAt}
 createdBy: "${metadata.createdBy}"
@@ -324,7 +379,14 @@ export function parseMdx(content: string): { metadata: Partial<DocMetadata>; blo
       const match = line.match(/^(\w+):\s*(.*)$/);
       if (match) {
         const [, key, value] = match;
-        if (key === "id" || key === "title" || key === "path" || key === "createdBy") {
+        if (
+          key === "id" ||
+          key === "title" ||
+          key === "path" ||
+          key === "createdBy" ||
+          key === "verifiedCommit" ||
+          key === "verifiedAt"
+        ) {
           metadata[key] = parseFmScalar(value);
         } else if (key === "tags" || key === "relatedFiles" || key === "evidence" || key === "refs") {
           // Parse array: ["a", "b"]. `evidence`/`refs` hold suite URIs stored
@@ -514,6 +576,10 @@ export async function createDoc(
     relatedFiles,
     evidence,
     refs,
+    // A fresh doc has no verification baseline: it has never been confirmed
+    // against code. `catryna verify` sets these later. "" = never verified.
+    verifiedCommit: "",
+    verifiedAt: "",
     createdAt: now,
     updatedAt: now,
     createdBy: "claude-code",
@@ -658,6 +724,63 @@ export async function updateDoc(
 
   // The update is now durable — announce it on the suite spine (§2, best-effort).
   await emitEvent("doc.updated", [docUri(path)], { path, title: meta.title, id: meta.id });
+
+  return meta;
+}
+
+/**
+ * Record that a doc was VERIFIED against a git commit — the drift baseline
+ * (PRODUCT_ROADMAP Phase 1). Sets `verifiedCommit` + `verifiedAt` in BOTH the
+ * index (the queryable source `catryna drift` reads) and the .mdx frontmatter,
+ * then emits `doc.verified` on the suite spine (§2, best-effort).
+ *
+ * Deliberately does NOT touch `updatedAt`: verification asserts "this doc still
+ * matches the code at commit X", which is orthogonal to editing its prose. The
+ * frontmatter write is SURGICAL (setFrontmatterScalars) so it preserves the body
+ * verbatim — verifying a rich doc never risks the lossy block round-trip.
+ *
+ * Returns the updated metadata, or null if no doc has that `path`.
+ */
+export async function recordVerification(
+  path: string,
+  commit: string,
+  verifiedAt: string,
+): Promise<DocMetadata | null> {
+  const meta = await withIndexLock<DocMetadata | null>(async () => {
+    const index = await loadIndex();
+    const i = index.docs.findIndex((d) => d.path === path);
+    if (i === -1) return null;
+
+    const m = { ...index.docs[i] };
+    m.verifiedCommit = commit;
+    m.verifiedAt = verifiedAt;
+
+    // Surgically rewrite the .mdx frontmatter, body untouched. Best-effort on
+    // the file: the index is the source of truth for these fields, so a
+    // missing/unreadable .mdx still records the baseline in the index.
+    try {
+      const raw = await readFile(docPathToFilePath(path), "utf-8");
+      await writeFile(
+        docPathToFilePath(path),
+        setFrontmatterScalars(raw, { verifiedCommit: commit, verifiedAt }),
+      );
+    } catch {
+      // File gone/unreadable — the index entry below still carries the baseline.
+    }
+
+    index.docs[i] = m;
+    await saveIndex(index);
+    return m;
+  });
+
+  if (!meta) return null;
+
+  // Durable in our store — announce it (§2, best-effort; trust = "verified").
+  await emitEvent("doc.verified", [docUri(path)], {
+    path,
+    verifiedAt: meta.verifiedAt,
+    trust: "verified",
+  });
 
   return meta;
 }
