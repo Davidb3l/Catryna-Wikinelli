@@ -285,6 +285,11 @@ function blockToMdx(block: Block): string {
     }
     case "divider":
       return "---";
+    case "raw":
+      // A source line captured verbatim by parseMdx (e.g. a single-line
+      // <ReactFlow …/> / <Table …/> component). Re-emit it exactly, unchanged,
+      // so the parse → re-serialize round-trip is byte-faithful.
+      return String(block.data.content || "");
     case "markdown":
       // Raw markdown content - just output directly
       return String(block.data.content || "");
@@ -333,65 +338,152 @@ export function parseMdx(content: string): { metadata: Partial<DocMetadata>; blo
     }
   }
 
-  // Parse body into blocks (simplified - mainly for headings and text)
+  // Parse body into blocks.
+  //
+  // FIDELITY CONTRACT: this parse feeds updateDoc's metadata-only path, which
+  // preserves existing content by re-serializing these blocks through
+  // blocksToMdx/blockToMdx. So the parse MUST group and reconstruct blocks such
+  // that blockToMdx re-emits byte-identical body text — otherwise a title-only
+  // update churns the .mdx (blank lines injected, callouts split). Two multi-line
+  // constructs need care:
+  //   1. A `<Callout …>…</Callout>` spanning several lines is reconstructed as a
+  //      SINGLE `callout` block whose inner content is joined with "\n", exactly
+  //      mirroring blockToMdx's `<Callout type="…">\n${content}\n</Callout>` emit.
+  //   2. Consecutive prose lines are grouped into ONE `text` block (joined with
+  //      "\n") rather than one block per line, so a wrapped paragraph round-trips
+  //      as a single block instead of exploding with blank lines between lines.
+  // See src/roundtrip.test.ts.
   const blocks: Block[] = [];
   const lines = body.trim().split("\n");
-  let currentBlock: Block | null = null;
+
   let inCodeBlock = false;
   let codeBlockLang = "";
   let codeContent: string[] = [];
 
+  let inCallout = false;
+  let calloutType = "info";
+  let calloutContent: string[] = [];
+
+  // Pending prose lines for the current paragraph. Flushed as one `text` block
+  // (joined with "\n") at the next blank line, structural line, or EOF.
+  let textBuffer: string[] = [];
+  const flushText = () => {
+    if (textBuffer.length > 0) {
+      blocks.push({ type: "text", data: { content: textBuffer.join("\n") } });
+      textBuffer = [];
+    }
+  };
+  const flushCode = () => {
+    if (codeBlockLang === "mermaid") {
+      blocks.push({ type: "mermaid", data: { content: codeContent.join("\n") } });
+    } else {
+      blocks.push({ type: "code", data: { language: codeBlockLang, content: codeContent.join("\n") } });
+    }
+  };
+
   for (const line of lines) {
-    // Check for code block
-    if (line.startsWith("```")) {
-      if (!inCodeBlock) {
-        inCodeBlock = true;
-        codeBlockLang = line.slice(3).trim();
-        codeContent = [];
-      } else {
-        // End of code block
-        if (codeBlockLang === "mermaid") {
-          blocks.push({ type: "mermaid", data: { content: codeContent.join("\n") } });
-        } else {
-          blocks.push({ type: "code", data: { language: codeBlockLang, content: codeContent.join("\n") } });
-        }
+    // Inside a fenced code block: collect verbatim until the closing fence.
+    if (inCodeBlock) {
+      if (line.startsWith("```")) {
+        flushCode();
         inCodeBlock = false;
         codeBlockLang = "";
+        codeContent = [];
+      } else {
+        codeContent.push(line);
       }
       continue;
     }
 
-    if (inCodeBlock) {
-      codeContent.push(line);
+    // Inside a multi-line callout: collect raw lines until the closing tag, then
+    // reconstruct ONE callout block (content joined with "\n" to match blockToMdx).
+    if (inCallout) {
+      if (line.includes("</Callout>")) {
+        const beforeClose = line.replace("</Callout>", "");
+        if (beforeClose.trim()) calloutContent.push(beforeClose);
+        blocks.push({ type: "callout", data: { type: calloutType, content: calloutContent.join("\n") } });
+        inCallout = false;
+        calloutContent = [];
+      } else {
+        calloutContent.push(line);
+      }
       continue;
     }
 
-    // Check for heading
+    // Opening code fence.
+    if (line.startsWith("```")) {
+      flushText();
+      inCodeBlock = true;
+      codeBlockLang = line.slice(3).trim();
+      codeContent = [];
+      continue;
+    }
+
+    // Callout — single-line (`<Callout …>text</Callout>`) or the start of a
+    // multi-line one. Reconstructed as a `callout` block either way.
+    if (line.startsWith("<Callout")) {
+      flushText();
+      const typeMatch = line.match(/type="(\w+)"/);
+      calloutType = typeMatch ? typeMatch[1] : "info";
+      if (line.includes("</Callout>")) {
+        const content = line.replace(/<Callout[^>]*>/, "").replace("</Callout>", "").trim();
+        blocks.push({ type: "callout", data: { type: calloutType, content } });
+      } else {
+        inCallout = true;
+        calloutContent = [];
+        const afterTag = line.replace(/<Callout[^>]*>/, "");
+        if (afterTag.trim()) calloutContent.push(afterTag);
+      }
+      continue;
+    }
+
+    // Heading.
     const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
     if (headingMatch) {
+      flushText();
       blocks.push({ type: "heading", data: { level: headingMatch[1].length, content: headingMatch[2] } });
       continue;
     }
 
-    // Check for divider
+    // Divider.
     if (line === "---") {
+      flushText();
       blocks.push({ type: "divider", data: {} });
       continue;
     }
 
-    // Check for MDX components
+    // Single-line MDX components. blockToMdx emits each on one line; preserve the
+    // line verbatim as `raw` (blockToMdx's `raw` case re-emits it unchanged).
     if (line.startsWith("<CodeEmbed") || line.startsWith("<ReactFlow") ||
-        line.startsWith("<Whiteboard") || line.startsWith("<Callout") ||
-        line.startsWith("<Table")) {
-      // Store as raw for now
+        line.startsWith("<Whiteboard") || line.startsWith("<Table")) {
+      flushText();
       blocks.push({ type: "raw", data: { content: line } });
       continue;
     }
 
-    // Regular text
-    if (line.trim()) {
-      blocks.push({ type: "text", data: { content: line } });
+    // Stray closing tags on their own line (defensive — a well-formed multi-line
+    // callout is already consumed above; this drops orphans without emitting text).
+    if (line.trim() === "</Callout>" || line.trim() === "</ReactFlow>" || line.trim() === "</Whiteboard>") {
+      continue;
     }
+
+    // Blank line: paragraph boundary — flush the current prose block.
+    if (!line.trim()) {
+      flushText();
+      continue;
+    }
+
+    // Regular prose — accumulate into the current paragraph.
+    textBuffer.push(line);
+  }
+
+  // Flush any construct still open at EOF.
+  flushText();
+  if (inCallout) {
+    blocks.push({ type: "callout", data: { type: calloutType, content: calloutContent.join("\n") } });
+  }
+  if (inCodeBlock) {
+    flushCode();
   }
 
   return { metadata, blocks };
