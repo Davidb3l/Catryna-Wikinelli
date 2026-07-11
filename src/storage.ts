@@ -14,12 +14,44 @@ import { emitEvent, docUri } from "./events";
 const DOCS_ROOT = join(process.cwd(), ".docs");
 const INDEX_FILE = join(DOCS_ROOT, "_index.json");
 
+/**
+ * A VALIDATED anchor from a doc to a precise region of code (PRODUCT_ROADMAP
+ * Phase 1 — "validated anchors: file + optional symbol/line-range"). Structured
+ * successor to the bare `relatedFiles: string[]`:
+ *
+ *   - `file`            — repo-relative path the anchor points at (required).
+ *   - `symbol`          — optional symbol name inside `file` (e.g. a function).
+ *                         Narrows drift to that symbol via git-diff, or — when
+ *                         the Hayvenhurst daemon is present — via the code graph
+ *                         (`impact` of changed symbols), see src/drift.ts.
+ *   - `lines`           — optional inclusive [start, end] line range (1-based,
+ *                         relative to the doc's `verifiedCommit` baseline).
+ *                         Narrows drift to whether changed hunks overlap it.
+ *
+ * A bare `relatedFiles` path is equivalent to a FILE-LEVEL anchor (`{file}` with
+ * no `symbol`/`lines`) — see `effectiveAnchors`, which merges the two so legacy
+ * docs (relatedFiles only) keep drifting at file level with zero migration.
+ */
+export interface DocAnchor {
+  file: string;
+  symbol?: string;
+  lines?: [number, number];
+}
+
 export interface DocMetadata {
   id: string;
   path: string;
   title: string;
   tags: string[];
   relatedFiles: string[];
+  /**
+   * Structured, validated anchors (Phase 1). ADDITIVE over `relatedFiles`: a doc
+   * may declare file-level anchors as bare `relatedFiles` paths, symbol/line
+   * anchors here, or both — `effectiveAnchors(meta)` merges them for drift.
+   * Backward-compat (§ storage): absent in a legacy index/frontmatter →
+   * normalized to `[]` on read (like `evidence`/`refs`).
+   */
+  anchors: DocAnchor[];
   /**
    * Suite URIs cited as *evidence* backing this doc (SUITE_CONTRACTS §1) — e.g.
    * a `sirius:receipt/89` receipt that verified it. Foreign schemes are stored
@@ -118,6 +150,12 @@ export async function loadIndex(): Promise<DocIndex> {
       // baseline without guarding against `undefined`.
       if (typeof d.verifiedCommit !== "string") d.verifiedCommit = "";
       if (typeof d.verifiedAt !== "string") d.verifiedAt = "";
+      // Validated anchors (Phase 1). A legacy index written before they existed
+      // lacks the field; normalize to [] and re-validate any present entries so
+      // a hand-edited/garbage anchor never reaches drift as a malformed object.
+      d.anchors = Array.isArray(d.anchors)
+        ? d.anchors.map(normalizeAnchor).filter((a): a is DocAnchor => a !== null)
+        : [];
     }
     return index;
   } catch {
@@ -243,6 +281,92 @@ function parseFmArray(value: string): string[] {
 }
 
 /**
+ * Coerce an unknown value into a well-formed `DocAnchor`, or `null` if it can't
+ * be one. Central validator for anchors arriving from ANY untrusted edge — a
+ * hand-edited `_index.json`, hand-written frontmatter, or an MCP tool payload —
+ * so the rest of the system only ever sees `{file, symbol?, lines?}` in canonical
+ * shape (`file` a non-empty string; `lines` a sorted 2-tuple of numbers).
+ */
+export function normalizeAnchor(x: unknown): DocAnchor | null {
+  if (!x || typeof x !== "object") return null;
+  const o = x as Record<string, unknown>;
+  if (typeof o.file !== "string" || o.file.length === 0) return null;
+  const anchor: DocAnchor = { file: o.file };
+  if (typeof o.symbol === "string" && o.symbol.length > 0) anchor.symbol = o.symbol;
+  if (
+    Array.isArray(o.lines) &&
+    o.lines.length === 2 &&
+    typeof o.lines[0] === "number" &&
+    typeof o.lines[1] === "number" &&
+    Number.isFinite(o.lines[0]) &&
+    Number.isFinite(o.lines[1])
+  ) {
+    const a = o.lines[0] as number;
+    const b = o.lines[1] as number;
+    anchor.lines = a <= b ? [a, b] : [b, a];
+  }
+  return anchor;
+}
+
+/**
+ * Serialize an anchor array as a single-line, valid-JSON array for frontmatter.
+ * Objects (unlike the string arrays `serializeFmArray` handles) round-trip as
+ * plain JSON so `parseAnchors` / the frontend `JSON.parse` reader both decode it
+ * identically. Each entry is re-normalized so only canonical anchors are written.
+ */
+function serializeAnchors(anchors: DocAnchor[]): string {
+  const clean = anchors.map(normalizeAnchor).filter((a): a is DocAnchor => a !== null);
+  return JSON.stringify(clean);
+}
+
+/**
+ * Decode a frontmatter anchors value (the single-line JSON `serializeAnchors`
+ * writes). Any malformed entry is dropped, never thrown — an absent/garbage
+ * field yields `[]`, matching the evidence/refs "always an array" contract.
+ */
+export function parseAnchors(value: string): DocAnchor[] {
+  const v = value.trim();
+  if (!v.startsWith("[")) return [];
+  try {
+    const parsed = JSON.parse(v);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(normalizeAnchor).filter((a): a is DocAnchor => a !== null);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The effective drift anchors for a doc: its structured `anchors` UNION a
+ * file-level anchor for every `relatedFiles` path not already covered by an
+ * anchor's `file`. This is the single place the two anchoring styles reconcile,
+ * so drift logic (src/drift.ts) reads ONE list:
+ *
+ *   - A legacy doc (relatedFiles only, no anchors) → one file-level anchor per
+ *     relatedFile → IDENTICAL to the pre-anchor file-level drift behavior.
+ *   - A doc that upgrades a file to a symbol anchor (adds `{file, symbol}`) is
+ *     NOT also given a redundant file-level anchor for that same file — the
+ *     precise anchor supersedes it (otherwise symbol precision would be drowned
+ *     by whole-file drift). `relatedFiles` paths for OTHER files still anchor.
+ */
+export function effectiveAnchors(
+  meta: Pick<DocMetadata, "anchors" | "relatedFiles">,
+): DocAnchor[] {
+  const anchors: DocAnchor[] = Array.isArray(meta.anchors)
+    ? meta.anchors.map(normalizeAnchor).filter((a): a is DocAnchor => a !== null)
+    : [];
+  const anchoredFiles = new Set(anchors.map((a) => a.file));
+  const related = Array.isArray(meta.relatedFiles) ? meta.relatedFiles : [];
+  for (const f of related) {
+    if (typeof f === "string" && f.length > 0 && !anchoredFiles.has(f)) {
+      anchors.push({ file: f });
+      anchoredFiles.add(f);
+    }
+  }
+  return anchors;
+}
+
+/**
  * Surgically set frontmatter SCALAR fields in a raw .mdx string, PRESERVING the
  * document body verbatim.
  *
@@ -285,6 +409,7 @@ title: ${serializeFmScalar(metadata.title)}
 path: "${metadata.path}"
 tags: ${serializeFmArray(metadata.tags)}
 relatedFiles: ${serializeFmArray(metadata.relatedFiles)}
+anchors: ${serializeAnchors(metadata.anchors ?? [])}
 evidence: ${serializeFmArray(metadata.evidence ?? [])}
 refs: ${serializeFmArray(metadata.refs ?? [])}
 verifiedCommit: ${serializeFmScalar(metadata.verifiedCommit ?? "")}
@@ -393,6 +518,10 @@ export function parseMdx(content: string): { metadata: Partial<DocMetadata>; blo
           // opaquely (§1 rule 2) — decoded as plain strings, never validated.
           // JSON-decoded so commas/quotes/backslashes inside a value survive.
           metadata[key] = parseFmArray(value);
+        } else if (key === "anchors") {
+          // Validated anchors — a single-line JSON array of {file, symbol?,
+          // lines?} objects (Phase 1). Malformed entries are dropped, not fatal.
+          metadata.anchors = parseAnchors(value);
         } else if (key === "createdAt" || key === "updatedAt") {
           metadata[key] = parseInt(value, 10);
         }
@@ -563,7 +692,11 @@ export async function createDoc(
   // Suite URIs, stored opaquely (SUITE_CONTRACTS §1). Trailing + optional so
   // existing positional callers (e.g. src/tools/diagrams.ts) are unaffected.
   evidence: string[] = [],
-  refs: string[] = []
+  refs: string[] = [],
+  // Validated anchors (Phase 1). Trailing + optional so existing positional
+  // callers are unaffected; each entry is normalized so only canonical anchors
+  // are persisted.
+  anchors: DocAnchor[] = []
 ): Promise<DocMetadata> {
   await ensureDocsFolder();
 
@@ -574,6 +707,7 @@ export async function createDoc(
     title,
     tags,
     relatedFiles,
+    anchors: anchors.map(normalizeAnchor).filter((a): a is DocAnchor => a !== null),
     evidence,
     refs,
     // A fresh doc has no verification baseline: it has never been confirmed
@@ -669,6 +803,10 @@ export async function updateDoc(
     blocks?: Block[];
     tags?: string[];
     relatedFiles?: string[];
+    // Validated anchors (Phase 1). "Only if provided" semantics, like
+    // tags/relatedFiles: omitting preserves the existing value; entries are
+    // normalized so a malformed anchor can't be written.
+    anchors?: DocAnchor[];
     // Suite URIs, stored opaquely (§1). "Only if provided" semantics, like
     // tags/relatedFiles: omitting a field preserves the existing value.
     evidence?: string[];
@@ -693,6 +831,11 @@ export async function updateDoc(
     if (updates.title) m.title = updates.title;
     if (updates.tags) m.tags = updates.tags;
     if (updates.relatedFiles) m.relatedFiles = updates.relatedFiles;
+    if (updates.anchors) {
+      m.anchors = updates.anchors
+        .map(normalizeAnchor)
+        .filter((a): a is DocAnchor => a !== null);
+    }
     if (updates.evidence) m.evidence = updates.evidence;
     if (updates.refs) m.refs = updates.refs;
 
