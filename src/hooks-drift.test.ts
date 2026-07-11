@@ -143,7 +143,7 @@ describe("Stop hook (drift-check.sh) — informational + non-blocking", () => {
     const { stdout, stderr, code } = await runHook(dir);
     expect(code).toBe(0); // never blocks the session
     expect(stderr).toContain("catryna:");
-    expect(stderr).toContain("1 doc drifted");
+    expect(stderr).toContain("1 doc no longer matches");
     expect(stderr).toContain("catryna repair");
     expect(stdout).toBe(""); // reminder goes to stderr, not stdout
   });
@@ -152,7 +152,21 @@ describe("Stop hook (drift-check.sh) — informational + non-blocking", () => {
     const dir = await driftedRepo(2);
     const { stderr, code } = await runHook(dir);
     expect(code).toBe(0);
-    expect(stderr).toContain("2 docs drifted");
+    expect(stderr).toContain("2 docs no longer match");
+  });
+
+  test("broken anchor (deleted file) → hook nags (not silent), exit 0", async () => {
+    // Regression: the hook used to read only summary.drifted, so a session that
+    // deleted/renamed an anchored file ended SILENT while `drift` failed CI.
+    const dir = await driftedRepo(1);
+    // Delete the anchored source file so the doc's anchor is BROKEN, not drifted.
+    await rm(join(dir, "src", "f0.ts"), { force: true });
+    await git(dir, ["add", "-A"]);
+    await git(dir, ["commit", "-qm", "rm anchored file"]);
+    const { stderr, code } = await runHook(dir);
+    expect(code).toBe(0);
+    expect(stderr).toContain("catryna:");
+    expect(stderr).toContain("no longer match");
   });
 
   test("no drift (all verified at HEAD) → SILENT, exit 0", async () => {

@@ -426,6 +426,33 @@ describe("catryna consume (end-to-end through the CLI)", () => {
     expect(code).toBe(0);
     expect(stdout).toContain("no suite spine");
   });
+
+  test("verify CLEARS the drift-suspect marker consume set (re-baseline = reconciled)", async () => {
+    // Regression: recordVerification used to leave driftSuspect* set, so once a
+    // doc was marked it stayed suspect forever and consume suppressed every
+    // future code.changed on it (alreadySuspect). Verifying must reset it.
+    const dir = await tempDir();
+    const g = async (...a: string[]) => {
+      await Bun.spawn(["git", ...a], { cwd: dir, stdout: "ignore", stderr: "ignore" }).exited;
+    };
+    await g("init", "-q");
+    await g("config", "user.email", "t@t.co");
+    await g("config", "user.name", "t");
+    await g("commit", "--allow-empty", "-qm", "init");
+    await seedDocs(dir, [{ path: "modules/a", relatedFiles: ["src/a.ts"] }]);
+    await writeSpine(dir, "2026-07-11", [codeChanged(["src/a.ts"])]);
+
+    await runCli(dir, ["consume"]); // → marks modules/a suspect
+    const marked = (await readIndex(dir)).docs.find((d) => d.path === "modules/a");
+    expect(marked.driftSuspectSince.length).toBeGreaterThan(0);
+
+    const { code } = await runCli(dir, ["verify", "modules/a"]); // → clears it
+    expect(code).toBe(0);
+    const cleared = (await readIndex(dir)).docs.find((d) => d.path === "modules/a");
+    expect(cleared.driftSuspectSince).toBe("");
+    expect(cleared.driftSuspectReason).toBe("");
+    expect(cleared.verifiedCommit.length).toBeGreaterThan(0);
+  });
 });
 
 describe("buildConsumeJson shape", () => {

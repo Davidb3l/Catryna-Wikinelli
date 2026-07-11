@@ -31,25 +31,30 @@ command -v bun >/dev/null 2>&1 || exit 0
 CLI="${CLAUDE_PLUGIN_ROOT:-.}/src/cli.ts"
 [ -f "$CLI" ] || exit 0
 
-# `drift --json` prints exactly one JSON object and always exits 0; we only read
-# summary.drifted. Any failure degrades to a silent exit 0.
+# `drift --json` prints exactly one JSON object and always exits 0; we read
+# summary.drifted AND summary.broken (a deleted/renamed anchor is the highest-
+# severity, most-actionable drift class). Any failure degrades to a silent exit 0.
 json=$(bun run "$CLI" drift --json 2>/dev/null) || exit 0
 
-# summary.drifted is the FIRST `"drifted":<number>` in the object. The top-level
-# `"drifted":[` array key has a `[` (not a digit) after the colon, so requiring
-# a digit excludes it — leaving only the summary count. The optional whitespace
-# class tolerates a pretty-printed `"drifted": N` too, so this survives a future
-# formatting change in buildDriftJson (which today emits no-space JSON).
-count=$(printf '%s' "$json" | grep -o '"drifted":[[:space:]]*[0-9][0-9]*' | head -n1 | grep -o '[0-9][0-9]*')
+# summary.<key> is the FIRST `"<key>":<number>` in the object. The top-level
+# `"drifted":[` / `"broken":[` array keys have a `[` (not a digit) after the
+# colon, so requiring a digit excludes them — leaving only the summary counts.
+# The optional whitespace class also tolerates a pretty-printed `"key": N`.
+first_count() {
+  printf '%s' "$json" | grep -o "\"$1\":[[:space:]]*[0-9][0-9]*" | head -n1 | grep -o '[0-9][0-9]*'
+}
+drifted=$(first_count drifted); broken=$(first_count broken)
+drifted=${drifted:-0}; broken=${broken:-0}
 
-# No parseable count (e.g. gitRepo:false, empty output) → nothing to say.
-[ -n "$count" ] || exit 0
-[ "$count" -gt 0 ] 2>/dev/null || exit 0
+# No parseable counts (e.g. gitRepo:false, empty output) → nothing to say.
+case "$drifted$broken" in *[!0-9]*|"") exit 0 ;; esac
+count=$((drifted + broken))
+[ "$count" -gt 0 ] || exit 0
 
 if [ "$count" -eq 1 ]; then
-  log "catryna: 1 doc drifted from the code it documents — run \`catryna repair\` (or update the affected doc, then \`catryna verify\`)."
+  log "catryna: 1 doc no longer matches the code it documents (drifted or a broken anchor) — run \`catryna repair\` (or update the affected doc, then \`catryna verify\`)."
 else
-  log "catryna: $count docs drifted from the code they document — run \`catryna repair\` (or update the affected docs, then \`catryna verify\`)."
+  log "catryna: $count docs no longer match the code they document (drifted or broken anchors) — run \`catryna repair\` (or update the affected docs, then \`catryna verify\`)."
 fi
 
 # Informational only — never block the session.

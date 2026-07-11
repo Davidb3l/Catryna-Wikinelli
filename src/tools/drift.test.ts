@@ -246,7 +246,31 @@ describe("buildRepairContext — targeting + edge cases (in-process)", () => {
     await seedDocs(dir, [{ path: "m/a", relatedFiles: ["src/a.ts"], verifiedCommit: head }]);
     const res = await buildRepairContext(dir, "all");
     expect(res.repairs).toEqual([]);
-    expect(String(buildRepairJson(res).guidance)).toContain("No drifted docs");
+    expect(String(buildRepairJson(res).guidance)).toContain("No drifted or broken docs");
+  });
+
+  test("broken anchor (deleted file) → included as a broken repair", async () => {
+    // Regression: repair used to iterate only report.drifted, so a broken doc
+    // (deleted/renamed anchor) got a false "nothing to repair ✓" while drift
+    // failed CI on it. It must surface as a broken repair the agent can act on.
+    const dir = await initRepo({ "src/gone.ts": "export const g = 1;\n" });
+    const head = await git(dir, ["rev-parse", "HEAD"]);
+    await seedDocs(dir, [{ path: "m/gone", relatedFiles: ["src/gone.ts"], verifiedCommit: head }]);
+    await rm(join(dir, "src", "gone.ts"), { force: true });
+    await git(dir, ["add", "-A"]);
+    await git(dir, ["commit", "-qm", "rm gone.ts"]);
+
+    const res = await buildRepairContext(dir, "all");
+    expect(res.repairs.length).toBe(1);
+    expect(res.repairs[0].path).toBe("m/gone");
+    expect(res.repairs[0].broken).toBe(true);
+    expect(res.repairs[0].brokenFiles).toContain("src/gone.ts");
+    const json = buildRepairJson(res) as { summary: { broken: number } };
+    expect(json.summary.broken).toBe(1);
+    // Targeting the broken doc by name must NOT report it as unknown.
+    const one = await buildRepairContext(dir, "m/gone");
+    expect(one.repairs.length).toBe(1);
+    expect(one.notDrifted).toBeUndefined();
   });
 
   test("not a git repo → degrades cleanly (gitRepo:false, error set)", async () => {

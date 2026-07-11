@@ -929,6 +929,12 @@ export async function recordVerification(
     const m = { ...index.docs[i] };
     m.verifiedCommit = commit;
     m.verifiedAt = verifiedAt;
+    // Re-baselining reconciles the doc against HEAD, so it is no longer
+    // drift-suspect: clear the consumer-set marker. Without this it sticks
+    // forever, and `consume` then suppresses every future code.changed on this
+    // doc as "already suspect" — the real-time signal goes permanently dark.
+    m.driftSuspectSince = "";
+    m.driftSuspectReason = "";
 
     // Surgically rewrite the .mdx frontmatter, body untouched. Best-effort on
     // the file: the index is the source of truth for these fields, so a
@@ -937,7 +943,12 @@ export async function recordVerification(
       const raw = await readFile(docPathToFilePath(path), "utf-8");
       await writeFile(
         docPathToFilePath(path),
-        setFrontmatterScalars(raw, { verifiedCommit: commit, verifiedAt }),
+        setFrontmatterScalars(raw, {
+          verifiedCommit: commit,
+          verifiedAt,
+          driftSuspectSince: "",
+          driftSuspectReason: "",
+        }),
       );
     } catch {
       // File gone/unreadable — the index entry below still carries the baseline.

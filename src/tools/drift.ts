@@ -60,6 +60,14 @@ export interface DocRepairContext {
   changedFiles: string[];
   /** Per-file git diffs since `since`. */
   diffs: ChangedFileDiff[];
+  /**
+   * True when this is a BROKEN-anchor repair (an anchored file was deleted or
+   * renamed away) rather than a code-drift repair. Broken docs have no diff to
+   * show — the fix is to update the doc's anchors/content to the new reality.
+   */
+  broken?: boolean;
+  /** For a broken repair: the anchored files that no longer exist. */
+  brokenFiles?: string[];
   /** Edge-case note carried over from the drift result (e.g. baseline missing). */
   note?: string;
 }
@@ -111,10 +119,30 @@ export async function buildRepairContext(
   }
 
   const wantAll = target === "all" || target === "";
-  const drifted = report.drifted.filter((d) => wantAll || d.path === target);
+  const pick = (d: { path: string }) => wantAll || d.path === target;
 
   const repairs: DocRepairContext[] = [];
-  for (const d of drifted) {
+
+  // BROKEN anchors first — highest severity ("red = anchors broken"). The
+  // anchored file is gone, so there is no diff to show: surface the doc, the
+  // missing files, and the note so the agent fixes the anchors/content and
+  // re-verifies. (Without this the whole repair/Stop-hook surface is blind to
+  // the most actionable drift class while `catryna drift` fails CI on it.)
+  for (const d of report.broken.filter(pick)) {
+    repairs.push({
+      path: d.path,
+      since: d.verifiedCommit,
+      head: report.head,
+      currentContent: await readDocRaw(cwd, d.path),
+      changedFiles: [],
+      diffs: [],
+      broken: true,
+      brokenFiles: d.brokenFiles ?? [],
+      ...(d.note ? { note: d.note } : {}),
+    });
+  }
+
+  for (const d of report.drifted.filter(pick)) {
     const currentContent = await readDocRaw(cwd, d.path);
     const diffs: ChangedFileDiff[] = [];
     for (const file of d.changedFiles) {
@@ -138,10 +166,13 @@ export async function buildRepairContext(
 
   let notDrifted: string[] | undefined;
   if (!wantAll && repairs.length === 0) {
-    // Requested a specific doc that isn't drifted — is it even a known doc?
-    const known = [...report.drifted, ...report.unverified, ...report.clean].some(
-      (d) => d.path === target,
-    );
+    // Requested a specific doc that isn't drifted/broken — is it even known?
+    const known = [
+      ...report.drifted,
+      ...report.broken,
+      ...report.unverified,
+      ...report.clean,
+    ].some((d) => d.path === target);
     notDrifted = known ? [target] : [];
   }
 
@@ -157,9 +188,11 @@ export async function buildRepairContext(
 const REPAIR_GUIDANCE =
   "For each repair: read `currentContent` alongside the anchored-file `diffs`, " +
   "then call the `update_doc` MCP tool (or edit .docs/<path>.mdx) to reconcile " +
-  "the doc with the code. Do NOT rewrite anchors you did not review. After the " +
-  "doc matches the code, run `catryna verify <path>` (or the `verify_doc` tool) " +
-  "to re-baseline it so it reports clean.";
+  "the doc with the code. A repair marked `broken:true` means an anchored file " +
+  "was deleted or renamed (see `brokenFiles`) — update the doc's `anchors` (and " +
+  "content) to the new location instead of a code diff. Do NOT rewrite anchors " +
+  "you did not review. After the doc matches the code, run `catryna verify " +
+  "<path>` (or the `verify_doc` tool) to re-baseline it so it reports clean.";
 
 /** The JSON body for `propose_doc_repair` / `catryna repair --json`. */
 export function buildRepairJson(r: RepairContextResult): Record<string, unknown> {
@@ -169,12 +202,17 @@ export function buildRepairJson(r: RepairContextResult): Record<string, unknown>
     gitRepo: r.gitRepo,
     head: r.head,
     requested: r.requested,
-    summary: { repairs: r.repairs.length },
-    guidance: r.repairs.length > 0 ? REPAIR_GUIDANCE : "No drifted docs to repair.",
+    summary: {
+      repairs: r.repairs.length,
+      broken: r.repairs.filter((d) => d.broken).length,
+      drifted: r.repairs.filter((d) => !d.broken).length,
+    },
+    guidance: r.repairs.length > 0 ? REPAIR_GUIDANCE : "No drifted or broken docs to repair.",
     repairs: r.repairs.map((d) => ({
       path: d.path,
       since: d.since,
       head: d.head,
+      ...(d.broken ? { broken: true, brokenFiles: d.brokenFiles ?? [] } : {}),
       changedFiles: d.changedFiles,
       currentContent: d.currentContent,
       diffs: d.diffs,
@@ -206,17 +244,25 @@ export function renderRepairHuman(r: RepairContextResult): string {
         `  no drifted doc "${r.requested}" to repair (unknown, or not anchored yet — see \`catryna drift\`)`,
       );
     } else {
-      lines.push("  no drifted docs — nothing to repair ✓");
+      lines.push("  no drifted or broken docs — nothing to repair ✓");
     }
     return lines.join("\n") + "\n";
   }
 
-  lines.push(
-    `  ${r.repairs.length} drifted doc(s) — repair context (hand to the agent):`,
-    "",
-  );
+  const brokenN = r.repairs.filter((d) => d.broken).length;
+  const driftedN = r.repairs.length - brokenN;
+  const parts = [
+    driftedN > 0 ? `${driftedN} drifted` : "",
+    brokenN > 0 ? `${brokenN} broken` : "",
+  ].filter(Boolean);
+  lines.push(`  ${parts.join(" + ")} doc(s) — repair context (hand to the agent):`, "");
   for (const d of r.repairs) {
-    lines.push(`  ▸ ${d.path}   (drifted since ${short(d.since)})`);
+    if (d.broken) {
+      const gone = (d.brokenFiles ?? []).join(", ");
+      lines.push(`  ▸ ${d.path}   (BROKEN — anchored file gone${gone ? `: ${gone}` : ""})`);
+    } else {
+      lines.push(`  ▸ ${d.path}   (drifted since ${short(d.since)})`);
+    }
     if (d.note) lines.push(`      note: ${d.note}`);
     for (const f of d.diffs) {
       const n = f.diff ? f.diff.split("\n").filter((l) => l.startsWith("@@")).length : 0;
