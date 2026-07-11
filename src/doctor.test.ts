@@ -100,7 +100,14 @@ describe("envelope shape", () => {
     expect(env0.ok).toBe(true);
     // version comes from the injected env (package.json in prod), not hardcoded.
     expect(env0.version).toBe("9.9.9");
-    expect(env0.capabilities).toEqual(["mcp", "events.emit", "drift", "verify", "ui"]);
+    expect(env0.capabilities).toEqual([
+      "mcp",
+      "events.emit",
+      "events.consume",
+      "drift",
+      "verify",
+      "ui",
+    ]);
 
     const checks = env0.checks as DoctorCheck[];
     expect(Array.isArray(checks)).toBe(true);
@@ -175,15 +182,16 @@ describe("envelope shape", () => {
     expect(env0.ui).toBe("http://localhost:1307");
   });
 
-  test("advertises the implemented caps (incl. Phase-1 drift/verify) but not unimplemented ones", async () => {
+  test("advertises the implemented caps (incl. Phase-1 drift/verify/consume)", async () => {
     const env0 = buildEnvelope(await collectReport(envFor(goodDocs)));
     const caps = env0.capabilities as string[];
     expect(caps).toContain("events.emit"); // the spine producer is real
     // Phase-1 drift/verify are IMPLEMENTED now (CLI subcommands), so advertised.
     expect(caps).toContain("drift");
     expect(caps).toContain("verify");
-    // Still-unimplemented: CONSUMING code.changed for real-time drift marking.
-    expect(caps).not.toContain("events.consume");
+    // CONSUMING code.changed for real-time drift-suspect marking is real now
+    // (`catryna consume`), so advertised — a peer may rely on Catryna reacting.
+    expect(caps).toContain("events.consume");
   });
 });
 
@@ -321,7 +329,14 @@ describe("end-to-end: the real CLI binary", () => {
     expect(parsed.tool).toBe("catryna");
     expect(parsed.schemaVersion).toBe(1);
     expect(parsed.ok).toBe(true);
-    expect(parsed.capabilities).toEqual(["mcp", "events.emit", "drift", "verify", "ui"]);
+    expect(parsed.capabilities).toEqual([
+      "mcp",
+      "events.emit",
+      "events.consume",
+      "drift",
+      "verify",
+      "ui",
+    ]);
     expect(parsed.ui).toBe("http://localhost:1307");
   });
 
