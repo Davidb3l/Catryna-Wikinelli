@@ -8,6 +8,8 @@
  *   - `verify` — record HEAD as a doc's drift baseline (`verifiedCommit`).
  *   - `drift`  — report docs whose anchored code changed since verification
  *                (PRODUCT_ROADMAP Phase 1, the wedge; a CI gate).
+ *   - `consume` — tail the suite spine, consuming hayven `code.changed` events
+ *                to mark anchored docs drift-suspect in real time (§2 consumer).
  *
  * Arg parsing is hand-rolled (no yargs/commander) to match the suite's style.
  * Bun runs .ts directly, so `bunx catryna drift --json` needs no build step.
@@ -19,6 +21,7 @@
  */
 import { fileURLToPath } from "node:url";
 
+import { runConsumeCli } from "./consume";
 import { runDoctor, type DoctorEnv } from "./doctor";
 import { runDrift, runVerify } from "./drift";
 
@@ -28,6 +31,7 @@ Usage:
   catryna doctor [--json]          Suite discovery health check (SUITE_CONTRACTS §3)
   catryna verify <path> [--json]   Record HEAD as a doc's drift baseline
   catryna drift [--json]           Report docs whose anchored code drifted (CI gate)
+  catryna consume [--json]         Consume code.changed → mark docs drift-suspect (spine tail)
   catryna --help                   Show this help
 
 The MCP server is a separate entry (catryna-mcp / scripts/run-server.sh).`;
@@ -100,6 +104,12 @@ export async function main(argv: string[]): Promise<number> {
     }
     case "drift": {
       const run = await runDrift({ json, cwd: process.cwd() });
+      if (run.stderr) process.stderr.write(run.stderr);
+      process.stdout.write(run.stdout);
+      return run.code;
+    }
+    case "consume": {
+      const run = await runConsumeCli({ json, cwd: process.cwd() });
       if (run.stderr) process.stderr.write(run.stderr);
       process.stdout.write(run.stdout);
       return run.code;

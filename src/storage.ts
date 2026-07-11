@@ -81,6 +81,24 @@ export interface DocMetadata {
    * spine event (SUITE_CONTRACTS §2) and the trust surface (Phase 2).
    */
   verifiedAt: string;
+  /**
+   * Real-time DRIFT-SUSPECT marker — the consumer side of the suite spine
+   * (SUITE_CONTRACTS §2; PRODUCT_ROADMAP Phase 1). `catryna consume` sets this
+   * when a hayven `code.changed` event touches a file this doc anchors
+   * (`relatedFiles`), a CHEAP, event-driven hint that the doc MAY now contradict
+   * the code — reacting BETWEEN full `catryna drift` runs (which stays the
+   * authoritative git-diff check). ISO-8601 UTC of the marking, or "" when the
+   * doc is not currently suspect. Backward-compat (§ storage): absent in a
+   * legacy index/frontmatter → normalized to "" on read, exactly like
+   * `verifiedCommit`/`evidence`/`refs`. Additive and non-gating — a tool that
+   * never consumes simply leaves it "".
+   */
+  driftSuspectSince: string;
+  /**
+   * Human reason paired with `driftSuspectSince` — e.g. which changed file(s)
+   * tripped the marker. "" when not suspect. Same backward-compat normalization.
+   */
+  driftSuspectReason: string;
   createdAt: number;
   updatedAt: number;
   createdBy: string;
@@ -156,6 +174,12 @@ export async function loadIndex(): Promise<DocIndex> {
       d.anchors = Array.isArray(d.anchors)
         ? d.anchors.map(normalizeAnchor).filter((a): a is DocAnchor => a !== null)
         : [];
+      // Drift-suspect marker (Phase 1 spine consumer). A legacy index written
+      // before it existed lacks these; normalize to "" (= not suspect) so every
+      // DocMetadata leaving here carries strings and consumers/readers never
+      // guard against `undefined`.
+      if (typeof d.driftSuspectSince !== "string") d.driftSuspectSince = "";
+      if (typeof d.driftSuspectReason !== "string") d.driftSuspectReason = "";
     }
     return index;
   } catch {
@@ -414,6 +438,8 @@ evidence: ${serializeFmArray(metadata.evidence ?? [])}
 refs: ${serializeFmArray(metadata.refs ?? [])}
 verifiedCommit: ${serializeFmScalar(metadata.verifiedCommit ?? "")}
 verifiedAt: ${serializeFmScalar(metadata.verifiedAt ?? "")}
+driftSuspectSince: ${serializeFmScalar(metadata.driftSuspectSince ?? "")}
+driftSuspectReason: ${serializeFmScalar(metadata.driftSuspectReason ?? "")}
 createdAt: ${metadata.createdAt}
 updatedAt: ${metadata.updatedAt}
 createdBy: "${metadata.createdBy}"
@@ -510,7 +536,9 @@ export function parseMdx(content: string): { metadata: Partial<DocMetadata>; blo
           key === "path" ||
           key === "createdBy" ||
           key === "verifiedCommit" ||
-          key === "verifiedAt"
+          key === "verifiedAt" ||
+          key === "driftSuspectSince" ||
+          key === "driftSuspectReason"
         ) {
           metadata[key] = parseFmScalar(value);
         } else if (key === "tags" || key === "relatedFiles" || key === "evidence" || key === "refs") {
@@ -714,6 +742,10 @@ export async function createDoc(
     // against code. `catryna verify` sets these later. "" = never verified.
     verifiedCommit: "",
     verifiedAt: "",
+    // A fresh doc is not drift-suspect: nothing has changed under it yet.
+    // `catryna consume` sets these when a code.changed event lands. "" = clean.
+    driftSuspectSince: "",
+    driftSuspectReason: "",
     createdAt: now,
     updatedAt: now,
     createdBy: "claude-code",

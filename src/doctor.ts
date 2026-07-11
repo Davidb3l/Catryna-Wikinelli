@@ -16,6 +16,11 @@
  *   - `mcp`          — Catryna ships a stdio MCP server (`src/index.ts`).
  *   - `events.emit`  — the MCP write tools append `doc.*` facts to the suite
  *                      event spine (`.suite/events/`, SUITE_CONTRACTS §2).
+ *   - `events.consume` — `catryna consume` tails the spine, consuming hayven's
+ *                      `code.changed` events to mark anchored docs drift-suspect
+ *                      in real time (PRODUCT_ROADMAP Phase 1). Real today, so
+ *                      advertised — a peer MAY now rely on Catryna reacting to
+ *                      `code.changed`.
  *   - `drift`        — `catryna drift` detects git-diff doc drift and emits
  *                      `doc.drifted` (PRODUCT_ROADMAP Phase 1; git-diff baseline,
  *                      no Hayvenhurst dependency). Real today, so advertised.
@@ -34,9 +39,7 @@
  *                      and truthful even when the viewer isn't running. The URL
  *                      MUST be loopback so the hub's `isLoopbackUrl` accepts it.
  *
- * NOT advertised: `events.consume` remains unimplemented (Catryna doesn't yet
- * CONSUME `code.changed` for real-time drift-suspect marking — Phase 1 tail /
- * Phase 2); advertising it would make a peer gate on a feature that isn't there.
+ * Every capability advertised here exists TODAY; nothing is aspirational.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -44,7 +47,14 @@ import { join } from "node:path";
 import { readIndexAt } from "./storage";
 
 /** Capabilities Catryna actually implements today (see file header). */
-export const CAPABILITIES: readonly string[] = ["mcp", "events.emit", "drift", "verify", "ui"];
+export const CAPABILITIES: readonly string[] = [
+  "mcp",
+  "events.emit",
+  "events.consume",
+  "drift",
+  "verify",
+  "ui",
+];
 
 export const SCHEMA_VERSION = 1;
 
