@@ -17,7 +17,7 @@
  * foreign `sirius:*` line, to prove the foreign event is ignored.
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,6 +81,9 @@ async function writeSpine(dir: string, day: string, lines: string[]): Promise<vo
 interface SeedDoc {
   path: string;
   relatedFiles: string[];
+  /** Structured symbol/line anchors (Phase 1). Written into the index so
+   *  effectiveAnchors sees them — the seam symbol-precise marking relies on. */
+  anchors?: { file: string; symbol?: string; lines?: [number, number] }[];
   /** Pre-existing suspect timestamp (to test the "already suspect" branch). */
   driftSuspectSince?: string;
 }
@@ -95,6 +98,7 @@ async function seedDocs(dir: string, docs: SeedDoc[]): Promise<void> {
     title: `Doc ${i}`,
     tags: [] as string[],
     relatedFiles: d.relatedFiles,
+    anchors: d.anchors ?? [],
     evidence: [] as string[],
     refs: [] as string[],
     verifiedCommit: "",
@@ -120,7 +124,7 @@ async function seedDocs(dir: string, docs: SeedDoc[]): Promise<void> {
     await writeFile(
       file,
       `---\nid: ${m.id}\ntitle: ${JSON.stringify(m.title)}\npath: ${JSON.stringify(m.path)}\n` +
-        `tags: []\nrelatedFiles: ${JSON.stringify(m.relatedFiles)}\nevidence: []\nrefs: []\n` +
+        `tags: []\nrelatedFiles: ${JSON.stringify(m.relatedFiles)}\nanchors: ${JSON.stringify(m.anchors)}\nevidence: []\nrefs: []\n` +
         `verifiedCommit: ""\nverifiedAt: ""\n${suspectLines}` +
         `createdAt: ${m.createdAt}\nupdatedAt: ${m.updatedAt}\ncreatedBy: "test"\n---\n\n` +
         `# ${m.title}\n\nBody paragraph that must survive marking.\n`,
@@ -133,6 +137,17 @@ async function readIndex(dir: string): Promise<{ docs: any[] }> {
 }
 async function readMdx(dir: string, path: string): Promise<string> {
   return readFile(join(dir, ".docs", `${path}.mdx`), "utf-8");
+}
+
+/** Every parsed line across all `.suite/events/*.jsonl` buckets (emit target). */
+async function readSpineEvents(dir: string): Promise<any[]> {
+  const evDir = join(dir, ".suite", "events");
+  const out: any[] = [];
+  for (const f of (await readdir(evDir)).filter((x) => x.endsWith(".jsonl"))) {
+    const raw = await readFile(join(evDir, f), "utf-8");
+    for (const l of raw.split("\n")) if (l.trim()) out.push(JSON.parse(l));
+  }
+  return out;
 }
 
 interface CliOut {
@@ -215,6 +230,82 @@ describe("computeMarks — pure classification (§2)", () => {
     expect(plan.codeChangedCount).toBe(2);
     expect(new Set(plan.changedFiles)).toEqual(new Set(["src/a.ts", "src/c.ts"]));
     expect(plan.marked.map((m) => m.path).sort()).toEqual(["m/a", "m/c"]);
+  });
+});
+
+describe("computeMarks — enrich-only symbols (file decides, symbols only enrich)", () => {
+  const FILE = "daemon/src/graph/ingest.ts";
+  const NODE_ID = "daemon/graph/ingest/runIngest";
+
+  /** A doc anchored to a specific SYMBOL in a file (structured anchor). */
+  function symDoc(path: string, file: string, symbol: string, driftSuspectSince = ""): DocMetadata {
+    return { ...doc(path, [], driftSuspectSince), anchors: [{ file, symbol }] };
+  }
+  /** A code.changed with explicit files/symbols/refs (bypasses the file-path-ref default). */
+  function changed(files: string[], symbols: string[], refs: string[] = []): SpineEvent {
+    return parse(line("hayven", "code.changed", { files, symbols }, refs));
+  }
+
+  test("symbol IS in the changed set → marks, with a symbol-enriched reason + node ref", () => {
+    const events = [changed([FILE], [NODE_ID])];
+    const plan = computeMarks(events, [symDoc("m/a", FILE, "runIngest")]);
+    expect(plan.marked.map((m) => m.path)).toEqual(["m/a"]);
+    // Enriched: the reason names the specific symbol, and its node URI is carried.
+    expect(plan.marked[0].anchors).toEqual([`symbol runIngest in ${FILE}`]);
+    expect(plan.marked[0].nodeRefs).toEqual([`hayven:node/${NODE_ID}`]);
+  });
+
+  test("file changed but the anchored symbol is NOT in the set → still MARKS (file-level reason)", () => {
+    // Enrich-only: symbols never SUPPRESS. The file changed, so the doc marks —
+    // just without symbol enrichment (that symbol wasn't reported changed).
+    const events = [changed([FILE], ["daemon/graph/ingest/somethingElse"])];
+    const plan = computeMarks(events, [symDoc("m/a", FILE, "runIngest")]);
+    expect(plan.marked.map((m) => m.path)).toEqual(["m/a"]);
+    expect(plan.marked[0].anchors).toEqual([FILE]); // plain file reason, no enrichment
+    expect(plan.marked[0].nodeRefs).toEqual([]);
+  });
+
+  test("M1 fixed — a DELETED symbol (absent from the event's survivors) still MARKS on file", () => {
+    // hayven emits survivors after re-ingest, so a deleted symbol never appears in
+    // `symbols`; the doc anchored to it is the one most needing a flag → must mark.
+    const events = [changed([FILE], ["daemon/graph/ingest/survivor"])];
+    const plan = computeMarks(events, [symDoc("m/gone", FILE, "gone")]);
+    expect(plan.marked.map((m) => m.path)).toEqual(["m/gone"]);
+    expect(plan.marked[0].anchors).toEqual([FILE]); // file-level, since `gone` isn't reported
+  });
+
+  test("H1 fixed — MIXED drain: an event WITH symbols for X + one with NO symbols for Y; a {Y, bar} doc still MARKS", () => {
+    const X = "src/x.ts";
+    const Y = "src/y.ts";
+    // Event 1 carries symbols (for X). Event 2 is symbol-less (e.g. a >4096 overflow
+    // truncation) for Y. Global "have symbols" must NOT suppress the Y-anchored doc.
+    const events = [changed([X], ["mod/x/foo"]), changed([Y], [])];
+    const plan = computeMarks(events, [symDoc("m/b", Y, "bar")]);
+    expect(plan.marked.map((m) => m.path)).toEqual(["m/b"]);
+    expect(plan.marked[0].anchors).toEqual([Y]); // file-level; `bar` wasn't reported
+    expect(plan.marked[0].nodeRefs).toEqual([]);
+  });
+
+  test("a FILE-LEVEL anchor marks on file change (unchanged), even amid other symbols", () => {
+    const events = [changed([FILE, "src/a.ts"], ["daemon/graph/ingest/runIngest"])];
+    const plan = computeMarks(events, [doc("m/f", ["src/a.ts"])]);
+    expect(plan.marked.map((m) => m.path)).toEqual(["m/f"]);
+    expect(plan.marked[0].anchors).toEqual(["src/a.ts"]);
+  });
+
+  test("a hayven:node/<id> ref enriches the symbol name (no data.symbols needed)", () => {
+    const events = [changed([FILE], [], [`hayven:node/${NODE_ID}`])];
+    const plan = computeMarks(events, [symDoc("m/a", FILE, "runIngest")]);
+    expect(plan.marked.map((m) => m.path)).toEqual(["m/a"]);
+    expect(plan.marked[0].anchors).toEqual([`symbol runIngest in ${FILE}`]);
+    expect(plan.marked[0].nodeRefs).toEqual([`hayven:node/${NODE_ID}`]);
+  });
+
+  test("an event with only files (no symbols) marks a symbol anchor on file match", () => {
+    const events = [changed([FILE], [])];
+    const plan = computeMarks(events, [symDoc("m/a", FILE, "runIngest")]);
+    expect(plan.marked.map((m) => m.path)).toEqual(["m/a"]);
+    expect(plan.marked[0].anchors).toEqual([FILE]); // file-level, no enrichment
   });
 });
 
@@ -394,6 +485,80 @@ describe("runConsume — end-to-end marking (in-process, cwd-injected)", () => {
   });
 });
 
+describe("runConsume — emits doc.drifted on the spine when it newly marks (§2 flow)", () => {
+  test("symbol-precise mark → doc.drifted with catryna:doc + hayven:node refs, since = code.changed ts", async () => {
+    const dir = await tempDir();
+    await seedDocs(dir, [
+      { path: "modules/auth", relatedFiles: [], anchors: [{ file: "src/auth.ts", symbol: "mint" }] },
+    ]);
+    // Controlled event: the node id's bare name is `mint` (matches the anchor).
+    await writeSpine(dir, "2026-07-11", [
+      line("hayven", "code.changed", { files: ["src/auth.ts"], symbols: ["core/auth/mint"] }, [
+        "hayven:node/core/auth/mint",
+      ]),
+    ]);
+
+    const report = await runConsume({ cwd: dir, now: () => "2099-01-01T00:00:00.000Z" });
+    expect(report.marked.map((m) => m.path)).toEqual(["modules/auth"]);
+
+    const drifted = (await readSpineEvents(dir)).filter((e) => e.type === "doc.drifted");
+    expect(drifted.length).toBe(1);
+    const ev = drifted[0];
+    expect(ev.source).toBe("catryna");
+    expect(ev.refs).toContain("catryna:doc/modules/auth");
+    // Symbol-precise → the changed node's URI rides along so peers can trace it.
+    expect(ev.refs).toContain("hayven:node/core/auth/mint");
+    expect(ev.data.path).toBe("modules/auth");
+    expect(ev.data.anchors).toEqual(["symbol mint in src/auth.ts"]);
+    // `since` is the CODE-CHANGE time (the event's ts), NOT the consume now().
+    expect(ev.data.since).toBe("2026-07-11T18:42:11.000Z");
+
+    // driftSuspectSince stays the run's now() — only the emitted `since` differs.
+    const idx = await readIndex(dir);
+    expect(idx.docs.find((d) => d.path === "modules/auth").driftSuspectSince).toBe(
+      "2099-01-01T00:00:00.000Z",
+    );
+  });
+
+  test("file-level mark → doc.drifted with ONLY the catryna:doc ref (no hayven:node)", async () => {
+    const dir = await tempDir();
+    await seedDocs(dir, [{ path: "modules/a", relatedFiles: ["src/a.ts"] }]);
+    await writeSpine(dir, "2026-07-11", [codeChanged(["src/a.ts"])]);
+
+    await runConsume({ cwd: dir });
+    const drifted = (await readSpineEvents(dir)).filter((e) => e.type === "doc.drifted");
+    expect(drifted.length).toBe(1);
+    expect(drifted[0].refs).toEqual(["catryna:doc/modules/a"]); // no node refs for a file match
+    expect(drifted[0].data.anchors).toEqual(["src/a.ts"]);
+    expect(drifted[0].data.since).toBe("2026-07-11T18:42:11.000Z");
+  });
+
+  test("nothing newly marked (unrelated code.changed) → NO doc.drifted emitted", async () => {
+    const dir = await tempDir();
+    await seedDocs(dir, [{ path: "modules/a", relatedFiles: ["src/a.ts"] }]);
+    await writeSpine(dir, "2026-07-11", [codeChanged(["src/UNRELATED.ts"])]);
+
+    const report = await runConsume({ cwd: dir });
+    expect(report.marked).toEqual([]);
+    const drifted = (await readSpineEvents(dir)).filter((e) => e.type === "doc.drifted");
+    expect(drifted).toEqual([]);
+  });
+
+  test("an ALREADY-suspect doc is not re-announced (idempotent: no doc.drifted)", async () => {
+    const dir = await tempDir();
+    await seedDocs(dir, [
+      { path: "m/a", relatedFiles: ["src/a.ts"], driftSuspectSince: "2026-01-01T00:00:00.000Z" },
+    ]);
+    await writeSpine(dir, "2026-07-11", [codeChanged(["src/a.ts"])]);
+
+    const report = await runConsume({ cwd: dir });
+    expect(report.alreadySuspect).toEqual(["m/a"]);
+    expect(report.marked).toEqual([]);
+    const drifted = (await readSpineEvents(dir)).filter((e) => e.type === "doc.drifted");
+    expect(drifted).toEqual([]);
+  });
+});
+
 describe("catryna consume (end-to-end through the CLI)", () => {
   test("--json emits exactly ONE JSON object, exits 0, and marks the doc", async () => {
     const dir = await tempDir();
@@ -461,7 +626,7 @@ describe("buildConsumeJson shape", () => {
       spinePresent: true,
       codeChangedConsumed: 2,
       eventsConsumed: 3,
-      marked: [{ path: "m/a", anchors: ["src/a.ts"] }],
+      marked: [{ path: "m/a", anchors: ["src/a.ts"], nodeRefs: [] }],
       alreadySuspect: ["m/b"],
       cursor: { file: "2026-07-11.jsonl", offset: 512 },
     };

@@ -17,6 +17,8 @@ import {
   docUri,
   emitEvent,
   eventsDir,
+  hayvenNodeName,
+  parseHayvenNodeRef,
   SPINE_VERSION,
 } from "./events";
 
@@ -56,6 +58,35 @@ describe("envelope + helpers (pure)", () => {
   test("bucketFor is the event's UTC day", () => {
     expect(bucketFor("2026-07-11T23:59:59.999Z")).toBe("2026-07-11.jsonl");
     expect(bucketFor("2026-01-02T00:00:00.000Z")).toBe("2026-01-02.jsonl");
+  });
+});
+
+describe("hayven node helpers (pure)", () => {
+  test("hayvenNodeName is the last /-delimited segment of a node id", () => {
+    expect(hayvenNodeName("daemon/graph/ingest/runIngest")).toBe("runIngest");
+    // Method segments keep their dot.
+    expect(hayvenNodeName("auth/login/Session.refresh")).toBe("Session.refresh");
+    // A bare name (no slash) is returned unchanged.
+    expect(hayvenNodeName("runIngest")).toBe("runIngest");
+    // A trailing slash yields the empty final segment.
+    expect(hayvenNodeName("a/b/")).toBe("");
+  });
+
+  test("parseHayvenNodeRef strips the hayven:node/ prefix, else null", () => {
+    expect(parseHayvenNodeRef("hayven:node/daemon/graph/ingest/runIngest")).toBe(
+      "daemon/graph/ingest/runIngest",
+    );
+    expect(parseHayvenNodeRef("hayven:node/runIngest")).toBe("runIngest");
+    // Foreign / non-node URIs are not node refs.
+    expect(parseHayvenNodeRef("catryna:doc/modules/auth")).toBeNull();
+    expect(parseHayvenNodeRef("sirius:receipt/1")).toBeNull();
+    expect(parseHayvenNodeRef("runIngest")).toBeNull();
+  });
+
+  test("the ref and data.symbols paths agree on the bare name", () => {
+    // A hayven:node/<id> ref reduces to the SAME bare name as <id> in data.symbols.
+    const id = "daemon/graph/ingest/runIngest";
+    expect(hayvenNodeName(parseHayvenNodeRef(`hayven:node/${id}`)!)).toBe(hayvenNodeName(id));
   });
 });
 

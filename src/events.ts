@@ -48,6 +48,32 @@ export function docUri(path: string): string {
   return `catryna:doc/${path}`;
 }
 
+/** The `hayven:node/` URI prefix (§1): a hayven code-graph node reference. */
+const HAYVEN_NODE_PREFIX = "hayven:node/";
+
+/**
+ * The bare symbol NAME of a hayven node id — its last `/`-delimited segment.
+ * Hayven node ids look like `daemon/graph/ingest/runIngest`, where slashes
+ * structure the graph path; the name a doc anchor matches against is the final
+ * segment (`runIngest`). Method segments keep their dot, e.g.
+ * `auth/login/Session.refresh` → `Session.refresh`. An id with no slash is
+ * already bare and returned unchanged. Pure.
+ */
+export function hayvenNodeName(id: string): string {
+  const i = id.lastIndexOf("/");
+  return i === -1 ? id : id.slice(i + 1);
+}
+
+/**
+ * If `ref` is a hayven node URI (`hayven:node/<id>`), return the bare `<id>`
+ * (everything after the prefix); otherwise `null`. Per the matching contract a
+ * `hayven:node/<id>` ref is equivalent to `<id>` appearing in an event's
+ * `data.symbols` — the consumer unions the two. Pure.
+ */
+export function parseHayvenNodeRef(ref: string): string | null {
+  return ref.startsWith(HAYVEN_NODE_PREFIX) ? ref.slice(HAYVEN_NODE_PREFIX.length) : null;
+}
+
 /** The events directory for a working directory (the project root in prod). */
 export function eventsDir(cwd: string = process.cwd()): string {
   return join(cwd, ".suite", "events");

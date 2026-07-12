@@ -29,7 +29,11 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
+  docUri,
   drainSpine,
+  emitEvent,
+  hayvenNodeName,
+  parseHayvenNodeRef,
   readCursor,
   writeCursor,
   type SpineDrain,
@@ -41,8 +45,22 @@ import { effectiveAnchors, readIndexAt, setFrontmatterScalars, type DocIndex, ty
 /** One doc newly flagged drift-suspect by a `code.changed` event. */
 export interface SuspectMark {
   path: string;
-  /** The doc's anchor files that a `code.changed` event touched (deduped). */
+  /**
+   * The matched anchor descriptors that a `code.changed` event touched (deduped).
+   * A file-level anchor contributes its file path (e.g. `src/a.ts`); a
+   * symbol-precise match contributes `symbol <name> in <file>` (e.g.
+   * `symbol runIngest in daemon/src/graph/ingest.ts`) so the reason names the
+   * specific symbol.
+   */
   anchors: string[];
+  /**
+   * The distinct `hayven:node/<id>` URIs of the changed nodes that produced a
+   * SYMBOL match for this doc — i.e. the changed node ids whose
+   * `hayvenNodeName(id)` equals one of the doc's matched symbol anchors. Empty
+   * for a file-level-only match. Carried into the emitted `doc.drifted` refs so
+   * peers (Sirius) can trace the mark back to the exact changed node(s).
+   */
+  nodeRefs: string[];
 }
 
 /** The outcome of a `catryna consume` run. */
@@ -61,21 +79,30 @@ export interface ConsumeReport {
   cursor: SuiteCursor | null;
 }
 
-/**
- * The anchor files of a doc — the SAME source of truth `drift.ts` uses:
- * `effectiveAnchors` (Phase 1) merges structured symbol/line `anchors` with
- * file-level `relatedFiles`, so a doc anchored ONLY by symbol still participates
- * in drift-suspect matching. Returns the deduped set of anchored file paths.
- */
-function anchorFilesOf(doc: DocMetadata): string[] {
-  return [...new Set(effectiveAnchors(doc).map((a) => a.file))];
-}
-
 /** The `files` a `code.changed` event reports (§2 registry: `{files, symbols}`). */
 function changedFilesOf(ev: SpineEvent): string[] {
   const files = (ev.data as { files?: unknown }).files;
   if (!Array.isArray(files)) return [];
   return files.filter((f): f is string => typeof f === "string");
+}
+
+/**
+ * The changed-symbol NODE IDS a `code.changed` event reports: `data.symbols`
+ * UNION every `hayven:node/<id>` ref (the ref's id counts identically to the
+ * same id in `data.symbols`, per the matching contract). Node ids, not bare
+ * names — the caller reduces each to its bare name via `hayvenNodeName`.
+ */
+function changedSymbolIdsOf(ev: SpineEvent): string[] {
+  const ids: string[] = [];
+  const symbols = (ev.data as { symbols?: unknown }).symbols;
+  if (Array.isArray(symbols)) {
+    for (const s of symbols) if (typeof s === "string") ids.push(s);
+  }
+  for (const ref of ev.refs) {
+    const id = parseHayvenNodeRef(ref);
+    if (id !== null) ids.push(id);
+  }
+  return ids;
 }
 
 /** True iff `doc` is currently flagged drift-suspect. */
@@ -93,37 +120,97 @@ export interface MarkPlan {
   marked: SuspectMark[];
   /** Docs that matched anchors but were already suspect (left as-is). */
   alreadySuspect: string[];
+  /**
+   * The MAX `ts` among the consumed `code.changed` events (ISO-8601), or "" if
+   * none carried a ts. This is the time the code actually changed — the `since`
+   * of the emitted `doc.drifted` (distinct from `driftSuspectSince`, which is
+   * the consume run's own `now()`).
+   */
+  changedTs: string;
 }
 
 /**
  * PURE classification: given the events drained from the spine and the current
  * docs, decide which docs a `code.changed` touches. Only `code.changed` events
  * participate — every other type (foreign or otherwise) is ignored silently
- * (§2). Matching is exact path equality between a changed file and a doc anchor,
- * mirroring how `drift.ts` treats `relatedFiles` as git pathspecs. No I/O — the
- * seam that makes marking directly unit-testable.
+ * (§2). No I/O — the seam that makes marking directly unit-testable.
+ *
+ * ENRICH-ONLY symbol handling. The MARK DECISION is purely FILE-LEVEL over each
+ * doc's `effectiveAnchors` (drift.ts's own source of truth: structured `anchors`
+ * UNION file-level `relatedFiles`): a doc marks iff ANY of its anchors has
+ * `.file ∈ changedFiles`. This is byte-identical coverage to the original
+ * pre-symbol consumer — ZERO regression.
+ *
+ * We DELIBERATELY do NOT let `symbols` SUPPRESS a mark, because hayven's producer
+ * makes suppression unsound:
+ *   - a `code.changed` reports ALL non-module survivors of the changed file, not
+ *     the truly-changed subset (so a same-file sibling edit still lists our
+ *     symbol — precision wouldn't actually narrow); and
+ *   - a DELETED symbol is ABSENT from the event (the producer queries survivors
+ *     after re-ingest), yet a doc anchored to it is exactly the one that most
+ *     needs flagging; and
+ *   - an overflow-truncated (>4096) event sheds `symbols` entirely.
+ * Under file-level marking all three cases mark correctly.
+ *
+ * Symbols are used ONLY to ENRICH a matched anchor: when `anchor.symbol` is among
+ * the changed symbol NAMES, the descriptor names the symbol (`symbol <name> in
+ * <file>`) and that name's `hayven:node/<id>` URIs flow into the doc's `nodeRefs`
+ * (→ the emitted `doc.drifted` refs, for peer traceability); otherwise the
+ * descriptor is the plain `<file>`. Changed symbol names = `hayvenNodeName` of
+ * every id in `data.symbols` UNION every `hayven:node/<id>` ref, across all
+ * consumed `code.changed` events.
+ *
+ * KNOWN LIMITATION (acceptable): the flat event `symbols` list can't attribute a
+ * node id to a specific file, so a symbol name matched for file A may pull in a
+ * same-named node from a different changed file B. `nodeRefs` is best-effort
+ * traceability metadata, never a mark gate — so this never affects correctness.
  */
 export function computeMarks(events: SpineEvent[], docs: DocMetadata[]): MarkPlan {
-  const changed = new Set<string>();
+  const changedFiles = new Set<string>();
+  // Bare symbol name → the distinct `hayven:node/<id>` URIs of the changed nodes
+  // that reduce to it. Keyed by name (what an anchor matches) but retains the
+  // full node ids so an enriched descriptor can name the exact changed node(s).
+  const nodeRefsByName = new Map<string, Set<string>>();
   let codeChangedCount = 0;
+  let changedTs = "";
   for (const ev of events) {
     if (ev.type !== "code.changed") continue; // ignore all other types (§2)
     codeChangedCount++;
-    for (const f of changedFilesOf(ev)) changed.add(f);
+    if (typeof ev.ts === "string" && ev.ts > changedTs) changedTs = ev.ts; // MAX ts (ISO sorts lexically)
+    for (const f of changedFilesOf(ev)) changedFiles.add(f);
+    for (const id of changedSymbolIdsOf(ev)) {
+      const name = hayvenNodeName(id);
+      if (!name) continue;
+      let refs = nodeRefsByName.get(name);
+      if (!refs) nodeRefsByName.set(name, (refs = new Set<string>()));
+      refs.add(`hayven:node/${id}`);
+    }
   }
 
   const marked: SuspectMark[] = [];
   const alreadySuspect: string[] = [];
-  if (changed.size > 0) {
+  if (changedFiles.size > 0) {
     for (const doc of docs) {
-      const hits = [...new Set(anchorFilesOf(doc).filter((f) => changed.has(f)))];
-      if (hits.length === 0) continue;
+      const hits = new Set<string>();
+      const nodeRefs = new Set<string>();
+      for (const anchor of effectiveAnchors(doc)) {
+        if (!changedFiles.has(anchor.file)) continue; // FILE-LEVEL mark decision
+        // ENRICH-ONLY: name the symbol when it's in the changed set, else the file.
+        const refs = anchor.symbol ? nodeRefsByName.get(anchor.symbol) : undefined;
+        if (refs) {
+          hits.add(`symbol ${anchor.symbol} in ${anchor.file}`);
+          for (const r of refs) nodeRefs.add(r);
+        } else {
+          hits.add(anchor.file);
+        }
+      }
+      if (hits.size === 0) continue;
       if (isSuspect(doc)) alreadySuspect.push(doc.path);
-      else marked.push({ path: doc.path, anchors: hits });
+      else marked.push({ path: doc.path, anchors: [...hits], nodeRefs: [...nodeRefs] });
     }
   }
 
-  return { changedFiles: [...changed], codeChangedCount, marked, alreadySuspect };
+  return { changedFiles: [...changedFiles], codeChangedCount, marked, alreadySuspect, changedTs };
 }
 
 /**
@@ -201,6 +288,27 @@ export async function runConsume(opts: { cwd: string; now?: () => string }): Pro
 
   if (plan.marked.length > 0) {
     await applyMarks(cwd, plan.marked, now());
+    // §2 flow (hayven code.changed → catryna marks drift-suspect → catryna
+    // doc.drifted): announce each NEWLY-suspect doc on the spine so peers (Sirius)
+    // can react in real time, AFTER the mark is durable in our own store. Only
+    // `plan.marked` (not `alreadySuspect`) is announced, so a re-run over the same
+    // events never re-announces (belt-and-suspenders atop the cursor). `since` is
+    // the code-change time (max consumed `code.changed` ts), NOT the run's now().
+    // Emission is best-effort (emitEvent itself never throws); an extra guard
+    // ensures a surprise can never gate the mark that already succeeded.
+    const since = plan.changedTs || now();
+    try {
+      for (const m of plan.marked) {
+        await emitEvent(
+          "doc.drifted",
+          [docUri(m.path), ...m.nodeRefs],
+          { path: m.path, anchors: m.anchors, since },
+          cwd,
+        );
+      }
+    } catch {
+      // Never let announcing drift undo/gate the durable mark above (§2).
+    }
   }
 
   // Advance the cursor whenever a spine exists, even if nothing matched — so a

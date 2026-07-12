@@ -31,6 +31,13 @@ command -v bun >/dev/null 2>&1 || exit 0
 CLI="${CLAUDE_PLUGIN_ROOT:-.}/src/cli.ts"
 [ -f "$CLI" ] || exit 0
 
+# Pre-step: apply any drift-suspect marks the suite spine has published since the
+# last run, so drift below is reported against the freshest signal. Best-effort
+# and quiet by contract (§2): consume already exits 0 on every no-op (absent /
+# empty / foreign spine), and we swallow all output + ignore the exit code so it
+# can never fail or block the session.
+bun run "$CLI" consume >/dev/null 2>&1 || true
+
 # `drift --json` prints exactly one JSON object and always exits 0; we read
 # summary.drifted AND summary.broken (a deleted/renamed anchor is the highest-
 # severity, most-actionable drift class). Any failure degrades to a silent exit 0.
