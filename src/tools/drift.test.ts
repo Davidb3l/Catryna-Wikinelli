@@ -273,6 +273,33 @@ describe("buildRepairContext — targeting + edge cases (in-process)", () => {
     expect(one.notDrifted).toBeUndefined();
   });
 
+  test("--since baselines a never-verified corpus so repair produces context", async () => {
+    const dir = await initRepo({ "src/a.ts": "v1\n" });
+    const old = await git(dir, ["rev-parse", "HEAD"]);
+    // A doc with NO verifiedCommit (the Virixia case).
+    await seedDocs(dir, [{ path: "m/a", relatedFiles: ["src/a.ts"] }]);
+    await writeFile(join(dir, "src", "a.ts"), "v2 changed\n");
+    await git(dir, ["add", "-A"]);
+    await git(dir, ["commit", "-qm", "change a"]);
+
+    // Without --since → unverified, nothing to repair.
+    const plain = await buildRepairContext(dir, "all");
+    expect(plain.repairs).toEqual([]);
+
+    // With --since <old> → a drifted repair carrying the diff + the baseline.
+    const withSince = await buildRepairContext(dir, "all", old);
+    expect(withSince.repairs.length).toBe(1);
+    expect(withSince.repairs[0].path).toBe("m/a");
+    expect(withSince.repairs[0].diffs[0].diff).toContain("v2 changed");
+    expect(withSince.baseline).toBe(old);
+    expect((buildRepairJson(withSince) as { baseline?: string }).baseline).toBe(old);
+
+    // Garbage --since → error surfaced, no repairs (not a false all-clear).
+    const bad = await buildRepairContext(dir, "all", "nonsense-xyz");
+    expect(bad.error).toBeTruthy();
+    expect(bad.repairs).toEqual([]);
+  });
+
   test("not a git repo → degrades cleanly (gitRepo:false, error set)", async () => {
     const dir = await mkdtemp(join(tmpdir(), "catryna-consume-nogit-"));
     dirs.push(dir);

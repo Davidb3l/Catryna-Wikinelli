@@ -79,6 +79,8 @@ export interface RepairContextResult {
   /** "all", or the specific doc path requested. */
   requested: string;
   repairs: DocRepairContext[];
+  /** The resolved `--since` baseline override, when used (echoes the SHA). */
+  baseline?: string;
   /** A specific path was requested but is not currently drifted. */
   notDrifted?: string[];
   /** Set only when the run could not proceed (e.g. not a git repository). */
@@ -105,13 +107,19 @@ async function readDocRaw(cwd: string, path: string): Promise<string> {
 export async function buildRepairContext(
   cwd: string,
   target: string,
+  since?: string,
 ): Promise<RepairContextResult> {
-  const report = await computeDrift(cwd, { emit: false });
+  // `since` is a GLOBAL baseline override (a commit-ish or ISO date), same as
+  // `drift --since`: it makes repair work on a corpus that was never verified
+  // (every anchored doc is diffed <since>..HEAD). The diffs below use each
+  // drifted result's `verifiedCommit`, which computeDrift sets to the override.
+  const report = await computeDrift(cwd, { emit: false, ...(since ? { since } : {}) });
 
-  if (!report.gitRepo) {
+  if (!report.gitRepo || report.error) {
+    // Not a git repo, or an unresolved --since — surface the error, no repairs.
     return {
-      gitRepo: false,
-      head: null,
+      gitRepo: report.gitRepo,
+      head: report.head,
       requested: target || "all",
       repairs: [],
       error: report.error,
@@ -181,6 +189,7 @@ export async function buildRepairContext(
     head: report.head,
     requested: wantAll ? "all" : target,
     repairs,
+    ...(report.baseline ? { baseline: report.baseline } : {}),
     ...(notDrifted ? { notDrifted } : {}),
   };
 }
@@ -201,6 +210,7 @@ export function buildRepairJson(r: RepairContextResult): Record<string, unknown>
     command: "repair",
     gitRepo: r.gitRepo,
     head: r.head,
+    ...(r.baseline ? { baseline: r.baseline } : {}),
     requested: r.requested,
     summary: {
       repairs: r.repairs.length,
@@ -227,11 +237,13 @@ const short = (sha: string) => (sha ? sha.slice(0, 7) : "");
 
 /** The human report for `catryna repair`. */
 export function renderRepairHuman(r: RepairContextResult): string {
-  if (!r.gitRepo) {
+  if (!r.gitRepo || r.error) {
     return `catryna repair\n\n  ${r.error ?? "not a git repository"}\n`;
   }
 
-  const lines: string[] = ["catryna repair", `  HEAD: ${short(r.head ?? "")}`, ""];
+  const lines: string[] = ["catryna repair", `  HEAD: ${short(r.head ?? "")}`];
+  if (r.baseline) lines.push(`  baseline (--since): ${short(r.baseline)}`);
+  lines.push("");
 
   if (r.repairs.length === 0) {
     if (r.notDrifted && r.notDrifted.length > 0) {
@@ -290,14 +302,16 @@ export async function runRepair(opts: {
   json: boolean;
   cwd: string;
   target: string;
+  since?: string;
 }): Promise<CliRun> {
-  const result = await buildRepairContext(opts.cwd, opts.target);
+  const result = await buildRepairContext(opts.cwd, opts.target, opts.since);
 
   if (opts.json) {
     return { stdout: JSON.stringify(buildRepairJson(result)) + "\n", stderr: "", code: 0 };
   }
 
-  if (!result.gitRepo) {
+  if (!result.gitRepo || result.error) {
+    // Not a git repo, or an unresolved --since — operational failure.
     return { stdout: "", stderr: renderRepairHuman(result), code: 1 };
   }
   return { stdout: renderRepairHuman(result), stderr: "", code: 0 };
@@ -363,10 +377,18 @@ export function registerDriftTools(server: McpServer): void {
           "Doc path to build repair context for, or 'all' (default) for every drifted doc. " +
             "Returns current doc content + the git diff of each changed anchor since verification.",
         ),
+      since: z
+        .string()
+        .optional()
+        .describe(
+          "Optional baseline override (commit-ish or ISO date, e.g. '2026-02-18'). Use for a " +
+            "corpus that was never `catryna verify`'d — repairs docs whose anchored code changed " +
+            "since <since>, instead of relying on each doc's recorded baseline.",
+        ),
     },
-    async ({ doc }) => {
+    async ({ doc, since }) => {
       try {
-        const result = await buildRepairContext(process.cwd(), doc ?? "all");
+        const result = await buildRepairContext(process.cwd(), doc ?? "all", since);
         return {
           content: [{ type: "text", text: JSON.stringify(buildRepairJson(result)) }],
         };

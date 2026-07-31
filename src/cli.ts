@@ -35,7 +35,9 @@ Usage:
                                    Report docs whose anchored code drifted (CI gate).
                                    --since sets a baseline (commit/tag/date) for docs
                                    with no verifiedCommit — e.g. --since 2026-02-18.
-  catryna repair [<path>] [--json] Repair context for drifted docs (hand to the agent)
+  catryna repair [<path>] [--since <commit|date>] [--json]
+                                   Repair context for drifted docs (hand to the agent).
+                                   --since works like drift's, for never-verified corpora.
   catryna consume [--json]         Consume code.changed → mark docs drift-suspect (spine tail)
   catryna --help                   Show this help
 
@@ -134,7 +136,7 @@ export async function main(argv: string[]): Promise<number> {
       // Optional positional doc path; default "all". A CONTEXT REPORT, not a
       // gate — it never fails on found drift (repairing is the point).
       const target = positionals[1] ?? "all";
-      const run = await runRepair({ json, cwd: process.cwd(), target });
+      const run = await runRepair({ json, cwd: process.cwd(), target, since });
       if (run.stderr) process.stderr.write(run.stderr);
       process.stdout.write(run.stdout);
       return run.code;
@@ -158,11 +160,18 @@ export async function main(argv: string[]): Promise<number> {
 // Only run when invoked directly (not when imported by tests).
 if (import.meta.main) {
   main(process.argv.slice(2)).then(
-    (code) => process.exit(code),
+    (code) => {
+      // Set the exit code and let the process end naturally rather than calling
+      // process.exit(): process.exit() does NOT wait for a piped stdout to
+      // drain, so a large write (e.g. `repair --json` over a big corpus) is
+      // truncated at the pipe buffer boundary. Setting exitCode lets stdout
+      // flush fully first; with no lingering handles the process then exits.
+      process.exitCode = code;
+    },
     (err) => {
       // Last-resort guard: never leak a stack trace onto stdout.
       process.stderr.write(`catryna: fatal: ${err?.message ?? err}\n`);
-      process.exit(1);
+      process.exitCode = 1;
     },
   );
 }

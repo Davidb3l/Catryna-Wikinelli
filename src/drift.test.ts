@@ -445,3 +445,27 @@ describe("catryna drift --since (global baseline override)", () => {
     expect(garbage.clean).toEqual([]);
   });
 });
+
+describe("large stdout is not truncated (cli flushes before exit)", () => {
+  test("a >64KiB `repair --json` output stays intact through a pipe", async () => {
+    // Regression: cli.ts used process.exit(code), which does NOT drain a piped
+    // stdout — a large write (e.g. `repair --json` over a big corpus) was cut at
+    // the ~64KiB pipe buffer, yielding invalid/truncated JSON. Prove a big
+    // bundle survives. Bun.spawn uses a pipe here, so the truncation path is real.
+    const lines = (v: number) =>
+      Array.from({ length: 3000 }, (_, i) => `export const v${i} = ${i + v};`).join("\n") + "\n";
+    const dir = await initRepo({ "src/big.ts": lines(0) });
+    const old = await git(dir, ["rev-parse", "HEAD"]);
+    await seedDocs(dir, [{ path: "m/big", relatedFiles: ["src/big.ts"] }]);
+    await writeFileAt(dir, "src/big.ts", lines(1)); // rewrite every line → huge diff
+    await git(dir, ["add", "-A"]);
+    await git(dir, ["commit", "-q", "-m", "rewrite big"]);
+
+    const { stdout, code } = await runCli(dir, ["repair", "--since", old, "--json"]);
+    expect(code).toBe(0);
+    expect(stdout.length).toBeGreaterThan(70_000); // well past the 64KiB cut point
+    const parsed = JSON.parse(stdout); // throws if truncated
+    expect(parsed.repairs[0].path).toBe("m/big");
+    expect(parsed.repairs[0].diffs[0].diff.length).toBeGreaterThan(60_000);
+  });
+});
