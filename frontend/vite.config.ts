@@ -648,7 +648,17 @@ export default defineConfig(() => {
       ? Number(rawPort)
       : DEFAULT_VIEWER_PORT;
 
+  // The sidebar used to hardcode "v2.5.0" while package.json said 1.3.0 — the
+  // same fabrication class as the fake coverage numbers. Read it at build time
+  // so it cannot drift again.
+  const pkgVersion = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf-8'),
+  ).version;
+
   return {
+    define: {
+      __CATRYNA_VERSION__: JSON.stringify(pkgVersion),
+    },
     server: {
       port: viewerPort,
       // strictPort: fail loudly if the advertised port is taken, rather than

@@ -520,7 +520,6 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -736,7 +735,7 @@ export default function App() {
           </div>
           <div className="p-3 sm:p-4 border-t border-zinc-200/80 dark:border-zinc-800 flex items-center gap-2 sm:gap-3 bg-white/50 dark:bg-zinc-900/50">
             <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-accent flex items-center justify-center text-white font-bold text-[10px] sm:text-xs ring-2 ring-accent/20 shrink-0">CW</div>
-            <div className="flex-1 min-w-0"><div className="text-[11px] sm:text-xs font-semibold truncate text-navy dark:text-zinc-200">Catryna</div><div className="text-[9px] sm:text-[10px] text-navy-light dark:text-zinc-500">v2.5.0</div></div>
+            <div className="flex-1 min-w-0"><div className="text-[11px] sm:text-xs font-semibold truncate text-navy dark:text-zinc-200">Catryna</div><div className="text-[9px] sm:text-[10px] text-navy-light dark:text-zinc-500">v{__CATRYNA_VERSION__}</div></div>
             <Settings size={16} className="text-navy-light dark:text-zinc-400 cursor-pointer hover:text-accent shrink-0" onClick={() => setIsSettingsOpen(true)} />
           </div>
         </div>
@@ -746,14 +745,33 @@ export default function App() {
         <header className="h-12 sm:h-14 border-b border-zinc-200/80 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 shrink-0 bg-white/95 dark:bg-zinc-950/80 backdrop-blur-md sticky top-0 z-40">
           <div className="flex items-center gap-2 sm:gap-4">
             {!isSidebarOpen && <Button variant="ghost" onClick={() => setIsSidebarOpen(true)} className="p-1"><Menu size={16} /></Button>}
+            {/* Was a hardcoded green "● Synced" that claimed a sync status nothing
+                backed. Reports the real drift summary instead, or nothing when
+                there is no verdict to report. */}
             <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-bold text-zinc-400">
-               {isSaving ? <span className="text-indigo-500 animate-pulse">● Saving...</span> : <span className="text-green-500">● Synced</span>}
+              {drift?.gitRepo && (
+                drift.summary.broken + drift.summary.drifted + drift.summary.unverified === 0
+                  ? <span className="text-green-500">● {drift.summary.clean} verified</span>
+                  : <span className="text-amber-500">
+                      ● {drift.summary.broken > 0 && `${drift.summary.broken} broken, `}
+                      {drift.summary.drifted > 0 && `${drift.summary.drifted} stale, `}
+                      {drift.summary.clean} verified
+                    </span>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
             <Button variant="ghost" onClick={() => setIsSearchOpen(true)} className="text-xs h-8 px-2 sm:px-3"><Search size={16} /> <kbd className="hidden md:inline ml-2 opacity-50 font-sans">⌘K</kbd></Button>
             <Button variant="ghost" onClick={() => setIsHistoryOpen(true)} className="text-xs h-8 px-2 sm:px-3 hidden sm:flex"><History size={16} /></Button>
-            {isEditing ? <Button variant="accent" onClick={() => { setIsSaving(true); setTimeout(() => { setIsSaving(false); setIsEditing(false); addToast('Saved'); }, 800); }} className="h-8 px-2 sm:px-3"><Save size={16} /> <span className="hidden sm:inline">Save</span></Button> : <Button variant="outline" onClick={() => setIsEditing(true)} className="h-8 px-2 sm:px-3"><Edit3 size={16} /> <span className="hidden sm:inline">Edit</span></Button>}
+            {/* The old "Save" ran an 800ms timer and toasted "Saved" with no write
+                path behind it — the docs API is GET-only, and the contentEditable
+                blocks are never read back into state, so the edits existed only in
+                DOM nodes and were discarded on the next render. A UI that confirms
+                a write it never performed is the worst thing this product can do.
+                The toggle is now honestly labelled a preview. */}
+            {isEditing
+              ? <Button variant="outline" onClick={() => setIsEditing(false)} className="h-8 px-2 sm:px-3"><X size={16} /> <span className="hidden sm:inline">Close preview</span></Button>
+              : <Button variant="outline" onClick={() => setIsEditing(true)} className="h-8 px-2 sm:px-3"><Edit3 size={16} /> <span className="hidden sm:inline">Preview edits</span></Button>}
           </div>
         </header>
 
@@ -769,6 +787,16 @@ export default function App() {
                 {currentDoc.path.map((p, i) => <React.Fragment key={p}><button className="hover:text-accent whitespace-nowrap">{p}</button><ChevronRight size={10} className="shrink-0" /></React.Fragment>)}
                 <span className="text-navy dark:text-zinc-100 whitespace-nowrap">{currentDoc.title}</span>
               </nav>
+              {isEditing && (
+                <div className="mb-4 p-3 rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                  <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Preview only — changes are not saved.</span>{' '}
+                    The docs API is read-only. Edit <code className="font-mono">.docs/{currentDoc.path.join('/')}.mdx</code> directly,
+                    or ask Claude Code to update it via the <code className="font-mono">update_doc</code> MCP tool.
+                  </div>
+                </div>
+              )}
               <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black tracking-tight mb-3 sm:mb-4 text-navy dark:text-zinc-50">{currentDoc.title}</h1>
               <DocTrust
                 status={selectedDocPath ? driftStatusFor(selectedDocPath) : null}
