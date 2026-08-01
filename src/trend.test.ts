@@ -146,7 +146,10 @@ describe("computeCoverageTrend", () => {
     expect(trend.samples.map((s) => s.coveragePercent)).toEqual([50, 100]);
   });
 
-  test("samples are chronological, oldest first", async () => {
+  test("sample timestamps are the real committer dates, oldest first", async () => {
+    // Sorting the timestamps and comparing them to themselves passes for wholly
+    // fabricated values (Date.now() survived that assertion). Pin them against
+    // what git actually reports instead.
     const dir = await initRepo();
     await writeFileAt(dir, "src/a.ts", "");
     await commit(dir, "one");
@@ -155,7 +158,17 @@ describe("computeCoverageTrend", () => {
     await writeFileAt(dir, "src/c.ts", "");
     await commit(dir, "three");
 
+    const expected = (await git(dir, ["log", "--format=%H %ct", "--reverse"]))
+      .split("\n")
+      .map((l) => {
+        const [sha, ct] = l.trim().split(" ");
+        return { sha, ts: Number(ct) * 1000 };
+      });
+
     const trend = await computeCoverageTrend(dir);
+    expect(trend.samples.map((s) => s.commit)).toEqual(expected.map((e) => e.sha));
+    expect(trend.samples.map((s) => s.timestamp)).toEqual(expected.map((e) => e.ts));
+
     const times = trend.samples.map((s) => s.timestamp);
     expect([...times].sort((a, b) => a - b)).toEqual(times);
   });
@@ -178,7 +191,9 @@ describe("computeCoverageTrend", () => {
 
     const trend = await computeCoverageTrend(dir, { maxPoints: 5 });
     expect(trend.totalCommits).toBe(12);
-    expect(trend.samples.length).toBeLessThanOrEqual(5);
+    // Exact, not <=: downsample(12, 5) is deterministic, and the loose bound
+    // also passed for a trend that silently computed only some of its samples.
+    expect(trend.samples).toHaveLength(5);
     expect(trend.sampled).toBe(true);
   });
 

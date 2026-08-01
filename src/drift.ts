@@ -88,24 +88,51 @@ interface GitResult {
  */
 export async function runGit(cwd: string, args: string[]): Promise<GitResult> {
   try {
-    // Reached via globalThis, not the `Bun` global: this module is also compiled
-    // by the frontend's tsconfig (the Vite plugin imports it), which has no Bun
-    // type definitions. Feature-detection stays a runtime concern either way.
-    const bun = (globalThis as { Bun?: { spawn?: (...a: any[]) => any } }).Bun;
-    if (bun && typeof bun.spawn === "function") {
-      const proc = bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-      const [stdout, stderr, code] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
-      return { ok: code === 0, stdout, stderr };
-    }
-
-    return await runGitViaNode(cwd, args);
+    return await selectGitRunner(hasBunSpawn())(cwd, args);
   } catch (err) {
     return { ok: false, stdout: "", stderr: (err as Error).message };
   }
+}
+
+/** A git invoker. Two exist: the Bun spawn path and the Node fallback. */
+type GitRunner = (cwd: string, args: string[]) => Promise<GitResult>;
+
+/**
+ * Is a usable `Bun.spawn` present?
+ *
+ * Reached via globalThis, not the `Bun` global: this module is also compiled by
+ * the frontend's tsconfig (the Vite plugin imports it), which has no Bun type
+ * definitions.
+ */
+export function hasBunSpawn(): boolean {
+  const bun = (globalThis as { Bun?: { spawn?: (...a: any[]) => any } }).Bun;
+  return !!bun && typeof bun.spawn === "function";
+}
+
+/**
+ * Pick the runner. Exported as a seam so the DISPATCH is testable.
+ *
+ * `Bun` is a non-configurable global, so a test cannot hide it to force the
+ * fallback. Testing `runGitViaNode` in isolation — which is what the first
+ * attempt at a regression guard did — proves the fallback works but proves
+ * nothing about whether `runGit` ever reaches it: reverting `runGit` to a
+ * Bun-only spawn left the whole suite green. This function is the branch, so
+ * pinning it pins the behaviour that actually regressed.
+ */
+export function selectGitRunner(bunAvailable: boolean): GitRunner {
+  return bunAvailable ? runGitViaBun : runGitViaNode;
+}
+
+/** The Bun half of `runGit`. */
+export async function runGitViaBun(cwd: string, args: string[]): Promise<GitResult> {
+  const bun = (globalThis as { Bun?: { spawn?: (...a: any[]) => any } }).Bun!;
+  const proc = bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  return { ok: code === 0, stdout, stderr };
 }
 
 /**

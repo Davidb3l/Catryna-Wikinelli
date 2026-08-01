@@ -11,11 +11,11 @@
  * and commits that mutate anchored files to manufacture drift.
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { computeDrift, runGit, runGitViaNode } from "./drift";
+import { computeDrift, runGit, runGitViaBun, runGitViaNode, selectGitRunner } from "./drift";
 import { docFreshness, docsFreshness, freshnessHeadline } from "./freshness";
 
 const dirs: string[] = [];
@@ -350,5 +350,81 @@ describe("the `only` filter must not change a verdict — symbol anchors", () =>
     // it correctly falls back to git-diff and calls this doc clean. That is not
     // the bug — the bug was the filter changing the verdict on the hayven path,
     // and this is where that is observable.
+  });
+});
+
+describe("reads must not write (the invariant that had no test)", () => {
+  // Asserted in prose at the top of src/freshness.ts and in a commit message,
+  // with nothing behind it: flipping `emit: false` to `emit: true` left the
+  // whole suite green while a read wrote .suite/events/*.jsonl into the repo.
+  // Emission is observable on disk, so assert on disk.
+
+  const suiteDir = (dir: string) => join(dir, ".suite");
+
+  async function exists(p: string): Promise<boolean> {
+    try { await stat(p); return true; } catch { return false; }
+  }
+
+  test("docFreshness emits nothing to the suite spine, on any status", async () => {
+    const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
+    const base = await git(dir, ["rev-parse", "HEAD"]);
+    await seedDocs(dir, [
+      { path: "clean-doc", relatedFiles: ["src/a.ts"], verifiedCommit: base },
+      { path: "stale-doc", relatedFiles: ["src/a.ts"], verifiedCommit: base },
+      { path: "bare-doc", relatedFiles: [] },
+    ]);
+    await writeFileAt(dir, "src/a.ts", "export const a = 2;\n");
+    await git(dir, ["add", "-A"]);
+    await git(dir, ["commit", "-q", "-m", "drift it"]);
+
+    expect(await exists(suiteDir(dir))).toBe(false);
+
+    for (const p of ["clean-doc", "stale-doc", "bare-doc", "no-such-doc"]) {
+      await docFreshness(dir, p);
+    }
+    expect(await exists(suiteDir(dir))).toBe(false);
+  });
+
+  test("docsFreshness emits nothing either", async () => {
+    const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
+    const base = await git(dir, ["rev-parse", "HEAD"]);
+    await seedDocs(dir, [{ path: "d", relatedFiles: ["src/a.ts"], verifiedCommit: base }]);
+    await writeFileAt(dir, "src/a.ts", "export const a = 3;\n");
+    await git(dir, ["add", "-A"]);
+    await git(dir, ["commit", "-q", "-m", "drift"]);
+
+    await docsFreshness(dir, ["d"]);
+    expect(await exists(suiteDir(dir))).toBe(false);
+  });
+
+  test("a drift run WITH emit does write — proving the check above can fail", async () => {
+    // Without this, the two tests above would also pass if emission were broken
+    // outright, or if .suite/ simply never got created for unrelated reasons.
+    const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
+    const base = await git(dir, ["rev-parse", "HEAD"]);
+    await seedDocs(dir, [{ path: "d", relatedFiles: ["src/a.ts"], verifiedCommit: base }]);
+    await writeFileAt(dir, "src/a.ts", "export const a = 4;\n");
+    await git(dir, ["add", "-A"]);
+    await git(dir, ["commit", "-q", "-m", "drift"]);
+
+    await computeDrift(dir, { emit: true });
+    expect(await exists(suiteDir(dir))).toBe(true);
+  });
+});
+
+describe("runGit dispatch (not just the fallback in isolation)", () => {
+  test("selects the node runner when Bun is unavailable, the Bun runner when present", () => {
+    // The branch itself, pinned. Testing runGitViaNode alone proved the fallback
+    // works but not that runGit ever reaches it — a Bun-only revert stayed green.
+    expect(selectGitRunner(false)).toBe(runGitViaNode);
+    expect(selectGitRunner(true)).toBe(runGitViaBun);
+  });
+
+  test("the selected node runner produces the same result runGit does", async () => {
+    const dir = await initRepo({ "src/a.ts": "" });
+    const head = await git(dir, ["rev-parse", "HEAD"]);
+    const viaSelected = await selectGitRunner(false)(dir, ["rev-parse", "HEAD"]);
+    expect(viaSelected.stdout.trim()).toBe(head);
+    expect((await runGit(dir, ["rev-parse", "HEAD"])).stdout.trim()).toBe(head);
   });
 });
