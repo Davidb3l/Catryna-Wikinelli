@@ -47,6 +47,10 @@ It also sets **`strictPort: true`**, so a taken port is a hard startup failure i
 
 **App.tsx** - Main application component with:
 
+- Header status pill showing the **real** drift summary from `/api/drift` ("● 12 verified", amber with counts when anything is stale or broken). It was previously a hardcoded green "● Synced" backed by nothing.
+
+- Version string injected from the repo root `package.json` at build time via a vite `define`. It was previously hardcoded `v2.5.0` while the package said `1.3.0`.
+
 - Sidebar navigation with collapsible folder tree
 
 - Project selector — lists every scanned project that has a `.docs/_index.json` and switches the server's docs root
@@ -85,9 +89,15 @@ Renders different block types with appropriate styling:
 
 - **whiteboard** - A placeholder card that launches the full-screen tldraw editor. Stored `whiteboardData` is neither loaded into nor saved from the canvas.
 
-### Edit Mode
+### Preview Mode (formerly "Edit")
 
-Content-editable blocks for in-browser editing. Nothing persists yet: **Save** runs an 800 ms timer and shows a toast, and the docs API is read-only (`GET` only — the only write endpoint is `POST /api/projects/select`). Edits are lost on reload.
+Content-editable blocks for previewing changes locally. **Nothing persists, and the UI now says so** — a banner names the `.mdx` file to edit and the `update_doc` MCP tool.
+
+<Callout type="warning">
+This used to present a **Save** button that ran an 800 ms timer and toasted "Saved". There was no write path (the docs API is `GET`-only), and the contentEditable blocks are never read back into state — the edits existed only as DOM nodes and were discarded on the next render. Nothing was saved, nothing could have been, and the user was told otherwise.
+</Callout>
+
+A real write path is deliberately not built yet. `updateDoc` re-serializes blocks through the simplified parser — the documented lossy round-trip that mangled rich MDX and orphaned `</Callout>` tags earlier in this project's history. Viewer-side writes on top of that would corrupt docs; the honest read-only failure mode is better than the silent destructive one. Fixing the serializer is the prerequisite.
 
 ### Version History
 
