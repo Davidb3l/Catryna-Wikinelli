@@ -84,6 +84,10 @@ An anchor pointing at a path that is not on disk. A doc pointing at a deleted fi
 
 An anchor on an **excluded-but-real** file (a test file, say) is legitimate and is *not* reported broken — only paths that are neither scanned source nor present on disk.
 
+## Honest percentages
+
+`coveragePct(documented, total)` never rounds **up** to 100: `Math.round(199/200*100)` is 100, which rendered "100% coverage" beside "1 undocumented". 100 is reserved for genuinely complete coverage, and 0 is returned for an empty tree rather than `NaN`. Shared with `src/trend.ts` so the chart and the headline agree.
+
 ## Shared classification
 
 `isSourcePath()` and `isExcludedPath()` are exported so `src/trend.ts` classifies paths identically. The trend reads paths out of **git trees** rather than off disk, and if the two rulesets ever diverged the newest trend point would stop matching the live coverage number — the chart would quietly misstate today. See the `backend/trend` doc.

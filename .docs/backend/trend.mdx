@@ -43,6 +43,13 @@ Both paths therefore share `isSourcePath()` from `src/coverage.ts`, and a test p
 
 **Known caveat:** samples classify *committed* paths, so a file present on disk but never committed counts toward live coverage and not the trend. HEAD with a dirty working tree is the only place the two can legitimately differ.
 
+<Callout type="warning">
+The original invariant test used ASCII filenames at the repo root, so it passed while the invariant was false in two other ways — both found in adversarial review, both now pinned by regression tests:
+
+- **`git ls-tree` C-quotes non-ASCII paths** under the default `core.quotePath=true`, emitting `"src/caf\303\251.ts"`. Parsed naively those files vanished from the sample: a repo with one accented filename read **33% live vs 100% trend**. Fixed by reading with `-z` (raw, NUL-separated, also safe for newlines in names).
+- **`ls-tree` paths are cwd-relative** while `git show <sha>:<path>` is repo-root relative. From a subdirectory, source paths lost their prefix while anchors kept theirs and nothing matched — a fully documented subtree reported a **flat 0%**. Reachable in production, since the viewer passes a runtime-switchable project root. Fixed with `--full-name` plus a `git rev-parse --show-prefix` prefix applied to *both* halves.
+</Callout>
+
 ## API
 
 ```typescript
@@ -70,7 +77,7 @@ interface CoverageTrend {
 
 ## Sampling
 
-Each sample costs **two git reads**, so a long history is downsampled rather than walked commit by commit. `downsample()` picks evenly across the series and **always keeps the oldest and newest** — the newest is what a reader checks against today's number, the oldest anchors the left edge.
+Each sample costs **two git reads**, so a long history is downsampled rather than walked commit by commit. `downsample()` picks evenly across the series and keeps the oldest and newest (at `maxPoints: 1` only the newest — one slot goes to today's number). Non-finite or fractional input is sanitized by `computeCoverageTrend`; a fractional `maxPoints` previously overshot the array and crashed. `downsample` deliberately does **not** dedupe: index collisions are impossible once `items.length > max`, and a `Set` would silently collapse value-equal items below `max` — the newest is what a reader checks against today's number, the oldest anchors the left edge.
 
 `sampled: true` is reported whenever the series is a selection. A chart that silently dropped points would misrepresent *when* something changed, so consumers surface it ("sampled 40 of 76 commits").
 
@@ -83,6 +90,8 @@ Samples run **sequentially**, not in parallel: two git processes per sample, and
 | Commit before `.docs/` existed | `totalDocs: 0`, `coveragePercent: 0` — not a crash |
 | Unparseable `_index.json` at a commit | Treated as no docs, not an error |
 | Not a git repository | Empty `samples` + `error`, never fabricated points |
+| Repo with no commits | Empty `samples` + `error` — distinguishable from "no history" |
+| Commits out of chronological order (rebase, cherry-pick, skewed clock) | `git log --reverse` gives ancestry order, then a **stable** sort by committer timestamp corrects it. Both are load-bearing: `%ct` is second-granular, so same-second ties are the common case and must keep ancestry order |
 | Fewer than 2 commits | Consumers show "not enough history" rather than a one-point line |
 
 ## Consumers

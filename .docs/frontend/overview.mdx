@@ -112,7 +112,8 @@ The header previously carried an **Auto-Generate Missing** button; it was scaffo
 Two deliberate choices worth keeping:
 
 - The **y-axis is pinned to 0–100**, not fitted to the data. An auto-scaled axis turns a 2-point wobble into a visual collapse, and this chart exists to show whether documentation is keeping pace, not to dramatize noise.
-- The **largest single drop is marked and named**, because the actionable question is not "what is coverage" but "when did it fall, and to what". Every point carries a tooltip with commit, date, percent, modules, and doc count.
+- The **x-axis is scaled by timestamp**, not by commit index. It previously spaced points evenly by index while labelling the axis with dates — on this repo a six-month gap and a 90-second gap rendered as identical widths, so "when did our docs fall behind?" was answered off the wrong part of the chart. Same defect class as the hardcoded 84%: a plausible picture that isn't true.
+- The **largest single drop is marked**, because the actionable question is not "what is coverage" but "when did it fall, and to what". When the series is downsampled it reports a *range* (`between <sha> and <sha>`) rather than naming one commit, since consecutive samples can skip many commits and blaming the later endpoint is a false attribution. Every point carries a tooltip with commit, date, percent, modules, and doc count.
 
 `sampled N of M commits` appears whenever the series is a selection, so the chart never implies it plotted every commit.
 
@@ -130,6 +131,8 @@ Per-doc drift status (PRODUCT_ROADMAP Phase 2), from `GET /api/drift` via `useDr
 - ⚪ **Unverified** — no baseline, never checked
 
 Rendered as a compact dot per file in the sidebar (`SidebarItem`) and as a `DocTrust` line under the document title, which also names the baseline commit and the changed files — a badge says a doc is stale, the file list says what to go re-read.
+
+Switching projects refetches drift. Drift is keyed by doc **path**, and paths collide across projects (`architecture/overview`, `getting-started` are near-universal), so without the refetch the previous repo's verdicts stayed on screen — an unverified doc in the new project rendered a green "Verified" dot with a baseline SHA from a different repository.
 
 <Callout type="info">
 The badge renders **only when there is a verdict**. A doc with no anchors, or a viewer that could not reach `/api/drift`, shows no dot rather than a green one: failing to ask is not a clean bill of health. This mirrors the `unanchored` / `unknown` states in `src/freshness.ts`.
@@ -174,6 +177,15 @@ Nothing is proxied. `vite.config.ts` registers its own `docs-api` Vite plugin wh
 - `GET /api/drift` - per-doc drift status keyed by path, via `computeDrift()` from `src/drift.ts`, for the verified badge
 
 - `GET /api/coverage/trend?points=N` - coverage over time, via `computeCoverageTrend()` from `src/trend.ts` (default 40 points, capped at 200)
+
+Any other `/api/projects/*` URL returns 404. Falling through without `next()` or `res.end()` previously left the socket open forever — a `GET` to `/api/projects/select` hung until timeout, and a handful exhausted the browser's per-origin connection pool.
+
+<Callout type="warning">
+**Security, both found in adversarial review and verified exploitable against a running dev server.** These matter more than "it's only a dev server" suggests, because `server.host` is `0.0.0.0` — every device on the same network can reach it unauthenticated.
+
+- `GET /api/docs/:path` joined the request path onto `docsRoot` with no containment check, serving **any `.mdx` file on the machine** with its body in `raw`. It now strips query/fragment, decodes percent-escapes *before* checking (so `%2e%2e` cannot smuggle a traversal), resolves, and requires the result to stay inside `docsRoot`.
+- `POST /api/projects/select` accepted **any path on disk**, and because the handler `JSON.parse`s regardless of `Content-Type` it is a CORS *simple* request with no preflight — any page the developer visited could silently repoint the viewer with a `no-cors` fetch. `docsRoot` also becomes the cwd for git subprocesses. Selection is now restricted to the set `findProjects()` discovered.
+</Callout>
 
 The last two compute against the **project root** (the parent of the docs root), not the dev server's cwd — which is `frontend/`. They read `docsRoot` per request rather than capturing it, because `POST /api/projects/select` switches it at runtime. `/api/drift` passes `emit: false`: rendering a badge must not write to the suite event spine.
 
