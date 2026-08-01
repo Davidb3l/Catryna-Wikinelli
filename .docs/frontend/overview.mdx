@@ -97,7 +97,7 @@ Content-editable blocks for previewing changes locally. **Nothing persists, and 
 This used to present a **Save** button that ran an 800 ms timer and toasted "Saved". There was no write path (the docs API is `GET`-only), and the contentEditable blocks are never read back into state — the edits existed only as DOM nodes and were discarded on the next render. Nothing was saved, nothing could have been, and the user was told otherwise.
 </Callout>
 
-A real write path is deliberately not built yet. `updateDoc` re-serializes blocks through the simplified parser — the documented lossy round-trip that mangled rich MDX and orphaned `</Callout>` tags earlier in this project's history. Viewer-side writes on top of that would corrupt docs; the honest read-only failure mode is better than the silent destructive one. Fixing the serializer is the prerequisite.
+A real write path is deliberately not built yet. `updateDoc` re-serializes blocks through the simplified parser — the documented lossy round-trip that mangled rich MDX and left orphaned closing callout tags earlier in this project's history. Viewer-side writes on top of that would corrupt docs; the honest read-only failure mode is better than the silent destructive one. Fixing the serializer is the prerequisite.
 
 ### Version History
 
