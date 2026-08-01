@@ -45,8 +45,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "6bcedfbbb336b71142bf0e546d2e5e136793305c",
-      "verifiedAt": "2026-08-01T23:44:42.258Z",
+      "verifiedCommit": "c3ff07e8b8d5f3ce6e7ea1d41c9f9c9851e2d63e",
+      "verifiedAt": "2026-08-01T23:45:18.725Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -121,8 +121,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "6bcedfbbb336b71142bf0e546d2e5e136793305c",
-      "verifiedAt": "2026-08-01T23:44:42.296Z",
+      "verifiedCommit": "c3ff07e8b8d5f3ce6e7ea1d41c9f9c9851e2d63e",
+      "verifiedAt": "2026-08-01T23:45:18.765Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -254,7 +254,7 @@
     {
       "id": "b936aeb6-47e2-4526-bd8d-f8d4457927f8",
       "path": "guides/drift-adoption-playbook",
-      "title": "Drift Adoption Playbook \u2014 rolling catryna drift into a repo",
+      "title": "Drift Adoption Playbook — rolling catryna drift into a repo",
       "tags": [
         "drift",
         "playbook",
@@ -281,7 +281,7 @@
     {
       "id": "73a55b74-3ef2-4733-8c6a-85d8115aa4a8",
       "path": "backend/freshness",
-      "title": "Freshness \u2014 the read trust surface",
+      "title": "Freshness — the read trust surface",
       "tags": [
         "phase2",
         "drift",
@@ -356,7 +356,7 @@
     {
       "id": "18949801-5661-497c-a183-26132900fdc6",
       "path": "backend/lint",
-      "title": "catryna lint \u2014 structural doc health",
+      "title": "catryna lint — structural doc health",
       "tags": [
         "lint",
         "backend",
@@ -380,5 +380,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1785627882372
+  "lastUpdated": 1785627918766
 }
