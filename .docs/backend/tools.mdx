@@ -3,36 +3,49 @@ id: 2da43b16-2ffa-46eb-b07e-367d2173e777
 title: "MCP Tools Reference"
 path: "backend/tools"
 tags: ["backend", "mcp", "tools", "reference"]
-relatedFiles: ["src/tools/docs.ts", "src/tools/search.ts", "src/tools/diagrams.ts", "src/tools/coverage.ts"]
+relatedFiles: ["src/tools/docs.ts", "src/tools/search.ts", "src/tools/diagrams.ts", "src/tools/coverage.ts", "src/tools/drift.ts"]
 createdAt: 1767321316028
 updatedAt: 1767321661004
 createdBy: "claude-code"
+verifiedCommit: "cafd52ed6f86f1a48416eb02fc856009d1c5f19a"
+verifiedAt: "2026-08-01T19:01:53.686Z"
+driftSuspectSince: ""
+driftSuspectReason: ""
 ---
 
 # MCP Tools Reference
 
-Complete reference for all MCP tools available in Catryna Wikinelli.
+Complete reference for all 14 MCP tools available in Catryna Wikinelli, registered from five modules under `src/tools/`.
 
 ## Document Tools (docs.ts)
 
 ### create_doc
 
-Creates a new documentation page.
+Creates a new documentation page. Fails (without overwriting) if a doc already exists at `path`.
 
 ```typescript
 // Parameters
 {
-  path: string,           // e.g., "modules/auth"
-  title: string,          // Human-readable title
-  content: Block[],       // Array of content blocks
-  tags?: string[],        // Categorization tags
-  relatedFiles?: string[] // Source files covered
+  path: string,             // e.g., "modules/auth"
+  title: string,            // Human-readable title
+  content: Block[],         // Array of content blocks
+  tags?: string[],          // Categorization tags
+  relatedFiles?: string[],  // Source files covered (file-level drift anchors)
+  anchors?: Array<{         // Structured drift anchors, additive over relatedFiles
+    file: string,
+    symbol?: string,
+    lines?: [number, number]
+  }>,
+  evidence?: string[],      // Suite URIs backing this doc, e.g. "sirius:receipt/89"
+  refs?: string[]           // Suite URIs this doc references, e.g. "amt:decision/7"
 }
 ```
 
+`evidence` / `refs` accept any suite scheme and are stored OPAQUELY — never validated or resolved.
+
 ### get_doc
 
-Retrieves a document by path. Returns metadata and blocks.
+Retrieves a document by path. Returns metadata (including `anchors`, `evidence`, `refs`) and blocks.
 
 ### list_docs
 
@@ -40,7 +53,7 @@ Lists all documents with optional filtering by tag or path prefix.
 
 ### update_doc
 
-Updates an existing document's title, content, tags, or relatedFiles.
+Updates an existing document's title, content, tags, relatedFiles, anchors, evidence, or refs. Omitted fields are preserved; a provided array REPLACES the existing one.
 
 ### delete_doc
 
@@ -84,8 +97,22 @@ Creates a React Flow architecture diagram.
     id: string,
     source: string,
     target: string,
-    label?: string
+    label?: string,
+    type?: string
   }>
+}
+```
+
+### create_mermaid_diagram
+
+Creates a doc containing a single Mermaid diagram (flowchart, sequence, etc.), tagged `diagram` + `mermaid`.
+
+```typescript
+// Parameters
+{
+  path: string,
+  title?: string,
+  mermaid: string  // Mermaid source
 }
 ```
 
@@ -109,8 +136,9 @@ Creates a tldraw whiteboard document.
 Finds source files that aren't linked to any documentation.
 
 ```typescript
+// Parameters: { rootDir?: string, patterns?: string[] }
 // Scans for: .ts, .tsx, .js, .jsx, .py, .go, .rs
-// Excludes: node_modules, tests, dist, build
+// Excludes: node_modules, .test./.spec., dist/, build/, __pycache__, .docs/
 ```
 
 ### get_doc_coverage
@@ -123,6 +151,49 @@ Generates a coverage report with metrics:
 
 - `coveragePercent` - Documentation coverage %
 
+- `totalDocs` - Number of docs in the index
+
+- `recentlyUpdated` - The 5 most recently updated docs
+
 - `staleDocs` - Docs not updated in 30+ days
 
 - `undocumentedFiles` - List of files needing docs
+
+<Callout type="warning">
+Both coverage tools count only `relatedFiles`. A doc anchored purely through structured `anchors` still drifts correctly, but does not yet count as coverage for the files it anchors.
+</Callout>
+
+## Drift Tools (drift.ts)
+
+The in-session half of the living-docs loop — the same logic behind the `catryna drift` / `verify` / `repair` CLI subcommands, so an agent never has to shell out.
+
+### check_drift
+
+Takes no parameters. Returns the full drift report as JSON for the current working directory: `summary` counts plus the `broken`, `drifted`, `unverified`, and `clean` buckets, and whether Hayvenhurst symbol precision was used. Read-only — it never emits `doc.drifted` on the spine (the CLI gate and Stop hook own emission).
+
+### verify_doc
+
+Records the repo's current HEAD as a doc's drift baseline (`verifiedCommit` + `verifiedAt`), clears any drift-suspect marker, and emits `doc.verified`. Warns via `brokenAnchors` when an anchored file no longer exists — a warning, not a failure.
+
+```typescript
+// Parameters
+{
+  path: string  // Doc path to re-baseline, e.g. "modules/auth"
+}
+```
+
+### propose_doc_repair
+
+Returns the REPAIR CONTEXT for drifted docs: the current `.docs/<path>.mdx` content plus the `git diff <verifiedCommit>..HEAD` of each changed anchor. A repair flagged `broken: true` means an anchored file was deleted or renamed (see `brokenFiles`) — there is no diff, the fix is to update the doc's anchors.
+
+```typescript
+// Parameters
+{
+  doc?: string,   // Doc path, or "all" (default)
+  since?: string  // Baseline override: commit-ish or ISO date, e.g. "2026-02-18"
+}
+```
+
+<Callout type="info">
+This tool NEVER edits a doc. It hands the agent reviewable context; the agent proposes the change via `update_doc`, then re-baselines with `verify_doc` (or `catryna verify <path>`) so the doc reports clean again.
+</Callout>

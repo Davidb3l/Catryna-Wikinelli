@@ -3,10 +3,14 @@ id: 7b2456cf-6907-4c1d-9670-66baaf04880a
 title: "MCP Server"
 path: "backend/mcp-server"
 tags: ["backend", "mcp", "server"]
-relatedFiles: ["src/index.ts"]
+relatedFiles: ["src/index.ts", "scripts/run-server.sh"]
 createdAt: 1767321253064
 updatedAt: 1767321658640
 createdBy: "claude-code"
+verifiedCommit: "cafd52ed6f86f1a48416eb02fc856009d1c5f19a"
+verifiedAt: "2026-08-01T19:01:53.580Z"
+driftSuspectSince: ""
+driftSuspectReason: ""
 ---
 
 # MCP Server
@@ -15,7 +19,7 @@ The MCP (Model Context Protocol) server is the core backend component that enabl
 
 ## Entry Point
 
-Located at `src/index.ts`, the server uses the official `@modelcontextprotocol/sdk` package to create a stdio-based server.
+Located at `src/index.ts` (published as the `catryna-mcp` bin), the server uses the official `@modelcontextprotocol/sdk` package to create a stdio-based server.
 
 ```typescript
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -31,28 +35,42 @@ const transport = new StdioServerTransport();
 await server.connect(transport);
 ```
 
+<Callout type="info">
+This is NOT the only entry point. `src/cli.ts` (bin `catryna`) is a separate CLI with the `doctor`, `drift`, `verify`, `repair`, and `consume` subcommands. The MCP server never parses argv; the CLI never speaks MCP.
+</Callout>
+
 ## Tool Registration
 
-The server registers four tool modules:
+The server registers five tool modules — 14 tools in total:
 
 - **docs.ts** - Document CRUD operations (create_doc, get_doc, list_docs, update_doc, delete_doc)
 
 - **search.ts** - Full-text search across documents (search_docs)
 
-- **diagrams.ts** - Visual content (create_diagram, create_whiteboard)
+- **diagrams.ts** - Visual content (create_diagram, create_mermaid_diagram, create_whiteboard)
 
 - **coverage.ts** - Documentation metrics (get_undocumented_modules, get_doc_coverage)
+
+- **drift.ts** - Living-docs loop (check_drift, verify_doc, propose_doc_repair)
+
+## Launching
+
+The plugin starts the server through `scripts/run-server.sh`, which resolves the install root, self-heals a missing `node_modules` with `bun install`, then `exec bun run "$ROOT/src/index.ts"`.
+
+<Callout type="warning">
+The launcher deliberately never `cd`s before exec: storage resolves `.docs/` from `process.cwd()`, so the server's working directory MUST stay the user's project. An MCP config that pins `cwd` to the Catryna install writes docs into the wrong repo.
+</Callout>
 
 ## Transport
 
 Uses stdio (standard input/output) for communication with Claude Code. This is the standard transport for CLI-based MCP servers.
 
-{/* Block: raw
-{
-  "content": "<Callout type=\"warning\">"
-}
-*/}
-
+<Callout type="warning">
 Logs go to stderr since stdout is reserved for MCP protocol messages.
-
 </Callout>
+
+## Side effects on write
+
+The write tools do not only touch `.docs/`. Every durable create/update/verify also appends a past-tense fact to the suite event spine (`.suite/events/<UTC-day>.jsonl`) — `doc.created`, `doc.updated`, `doc.verified` — so peer tools can react. Emission is best-effort: a spine failure is logged to stderr and never fails the doc write.
+
+`catryna doctor` reports the server's presence with its `mcp_entry` check (the resolved path to `src/index.ts`) and advertises the `mcp` capability.

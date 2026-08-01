@@ -7,6 +7,10 @@ relatedFiles: ["frontend/hooks/useDocs.ts"]
 createdAt: 1767321379449
 updatedAt: 1767321661283
 createdBy: "claude-code"
+verifiedCommit: "cafd52ed6f86f1a48416eb02fc856009d1c5f19a"
+verifiedAt: "2026-08-01T19:01:53.734Z"
+driftSuspectSince: ""
+driftSuspectReason: ""
 ---
 
 # React Hooks
@@ -27,7 +31,9 @@ const {
 } = useDocsList();
 ```
 
-Automatically fetches on mount from `/api/docs`. The `navItems` are built by `buildNavTree()` which groups docs by path folders.
+Automatically fetches on mount from `/api/docs`. The `navItems` are built by `buildNavTree()`, which groups docs by path folders.
+
+The tree is only **one level deep**, despite `NavItem.children` being recursive. `buildNavTree()` keys folders by the doc's full folder path but titles them with the last segment and pushes every folder onto the root array — so `a/b/c` renders as a top-level folder named `b`, not nested under `a`.
 
 ## useDoc
 
@@ -38,11 +44,15 @@ const {
   doc,       // Document | null
   loading,   // boolean
   error,     // string | null
-  refetch    // () => Promise<Document | null>
+  refetch    // () => Promise<Document | null> | null | ''
 } = useDoc(path);  // path: string | null
 ```
 
 When `path` is null, returns null without fetching. On 404, sets doc to null without error.
+
+`refetch` is written as `() => path && fetchDoc(path)`, so it returns the falsy `path` rather than a promise when nothing is selected — always guard before awaiting it.
+
+The API response is mapped by `toDocument()`: `path` is split on `/` into a string array, `lastUpdated` is `new Date(updatedAt).toISOString()`, and `history` / `isDraft` are never populated.
 
 ## useDocsSearch
 
@@ -57,7 +67,9 @@ const {
 } = useDocsSearch();
 ```
 
-The `search` function requires a minimum of 2 characters. Calls `/api/docs/search?q={query}`.
+The `search` function requires a minimum of 2 characters (shorter queries clear the results and return `[]` without a request). Calls `/api/docs/search?q={query}`.
+
+Despite the name, this is not full-text search: the endpoint matches every whitespace-separated term against the doc's **title, tags, and path** from `_index.json` and caps results at 20. Body content is never searched.
 
 ## EMPTY_DOC
 

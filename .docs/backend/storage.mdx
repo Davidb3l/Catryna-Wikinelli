@@ -7,6 +7,10 @@ relatedFiles: ["src/storage.ts"]
 createdAt: 1767321315890
 updatedAt: 1767321660905
 createdBy: "claude-code"
+verifiedCommit: "cafd52ed6f86f1a48416eb02fc856009d1c5f19a"
+verifiedAt: "2026-08-01T19:01:53.635Z"
+driftSuspectSince: ""
+driftSuspectReason: ""
 ---
 
 # Storage Layer
@@ -25,7 +29,7 @@ The storage layer (`src/storage.ts`) provides file-based persistence for documen
 
 ## MDX File Format
 
-Each document is an MDX file with YAML frontmatter:
+Each document is an MDX file with frontmatter. Free-text and opaque fields are JSON-encoded on one physical line (`serializeFmScalar` / `serializeFmArray` / `serializeAnchors`), so quotes, commas, backslashes, and newlines round-trip losslessly and the frontend's `JSON.parse` reader agrees with `parseMdx`:
 
 ```mdx
 ---
@@ -34,6 +38,13 @@ title: "Authentication Module"
 path: "modules/auth"
 tags: ["auth", "security"]
 relatedFiles: ["src/auth/index.ts"]
+anchors: [{"file":"src/auth/index.ts","symbol":"login"}]
+evidence: ["sirius:receipt/89"]
+refs: ["amt:decision/7"]
+verifiedCommit: "9f3c1ab..."
+verifiedAt: "2026-07-11T09:12:03.000Z"
+driftSuspectSince: ""
+driftSuspectReason: ""
 createdAt: 1704067200000
 updatedAt: 1704067200000
 createdBy: "claude-code"
@@ -44,18 +55,33 @@ createdBy: "claude-code"
 This module handles user authentication...
 ```
 
+Legacy files that predate these fields still load: on read, a missing array normalizes to `[]` and a missing scalar to `""`, and a legacy (non-JSON, comma-split) array value falls back to the old parser.
+
 ## Core Interfaces
 
 ```typescript
+interface DocAnchor {
+  file: string;             // repo-relative, forward slashes
+  symbol?: string;          // narrow drift to one symbol
+  lines?: [number, number]; // inclusive, 1-based, vs the baseline
+}
+
 interface DocMetadata {
   id: string;
-  path: string;           // e.g., "modules/auth"
+  path: string;             // e.g., "modules/auth"
   title: string;
   tags: string[];
-  relatedFiles: string[]; // Source files this doc covers
-  createdAt: number;      // Unix timestamp
+  relatedFiles: string[];   // Source files this doc covers (file-level anchors)
+  anchors: DocAnchor[];     // Structured anchors, additive over relatedFiles
+  evidence: string[];       // Opaque suite URIs backing this doc
+  refs: string[];           // Opaque suite URIs this doc references
+  verifiedCommit: string;   // Drift baseline SHA; "" = never verified
+  verifiedAt: string;       // ISO-8601 UTC; "" = never verified
+  driftSuspectSince: string;  // Set by `catryna consume`; "" = not suspect
+  driftSuspectReason: string; // Which changed file(s) tripped the marker
+  createdAt: number;        // Unix timestamp
   updatedAt: number;
-  createdBy: string;      // Always "claude-code"
+  createdBy: string;        // Always "claude-code"
 }
 
 interface Block {
@@ -64,23 +90,44 @@ interface Block {
 }
 ```
 
+`evidence` and `refs` hold suite URIs stored OPAQUELY (SUITE_CONTRACTS §1): any string is accepted, persisted, and displayed verbatim — never validated or resolved.
+
+## Anchors vs relatedFiles
+
+`effectiveAnchors(meta)` is the single place the two anchoring styles reconcile, and it is what `src/drift.ts` and `src/consume.ts` read:
+
+- structured `anchors`, UNION a file-level anchor for every `relatedFiles` path not already covered by an anchor's `file`;
+- a doc that upgrades a file to a `{file, symbol}` anchor does NOT also get a redundant file-level anchor for that same file, so symbol precision isn't drowned by whole-file drift;
+- a legacy doc with only `relatedFiles` behaves exactly as it did before anchors existed.
+
+Every anchor path goes through `normalizeAnchorPath`: backslashes become `/`, duplicate separators collapse, and a leading `./` is stripped. Anchors are used as git pathspecs and compared against `git diff --name-only` output, which speaks forward slashes on every platform — so a corpus authored on Windows resolves correctly on macOS/Linux instead of reporting every doc `broken`.
+
 ## Key Functions
 
 | Function | Description |
-
 |----------|-------------|
-
-| `createDoc()` | Creates new MDX file and updates index |
-
+| `createDoc()` | Creates new MDX file, updates index, emits `doc.created` |
 | `getDoc()` | Reads and parses MDX file |
-
 | `listDocs()` | Returns filtered docs from index |
-
-| `updateDoc()` | Modifies MDX file and updates index |
-
+| `updateDoc()` | Modifies MDX file and index, emits `doc.updated` |
 | `deleteDoc()` | Removes MDX file and index entry |
-
 | `searchDocs()` | Full-text search across content |
+| `recordVerification()` | Records the drift baseline, clears drift-suspect, emits `doc.verified` |
+| `readIndexAt(cwd)` | Read-only index read that never creates the store (used by doctor/drift) |
+| `loadIndex()` | Index read for write paths; creates an empty index on a miss |
+| `effectiveAnchors()` | Merges `anchors` with file-level `relatedFiles` for drift |
+| `setFrontmatterScalars()` | Surgically rewrites frontmatter keys, body byte-for-byte untouched |
+| `parseMdx()` | Parses an .mdx back into metadata + blocks |
+
+## Write safety
+
+<Callout type="info">
+**Serialized index writes**: `createDoc` / `updateDoc` / `deleteDoc` each do load → mutate → save with awaits in between, so concurrent MCP calls could interleave and drop an entry. `withIndexLock` chains every index mutation so each one sees the latest persisted index. `createDoc` also replaces (rather than duplicates) an existing same-path entry inside the lock.
+</Callout>
+
+<Callout type="info">
+**Surgical frontmatter writes**: `recordVerification` (and the consumer's suspect marking) use `setFrontmatterScalars`, which rewrites only the requested `key: value` lines and leaves every body byte alone — so recording a baseline never risks the lossy block round-trip.
+</Callout>
 
 ## Block Types
 
@@ -94,8 +141,29 @@ The storage layer converts blocks to/from MDX:
 
 - **mermaid** → Mermaid diagram in code fence
 
+- **table** → `<Table data={...} />`
+
+- **divider** → `---`
+
+- **markdown** → Raw markdown, emitted verbatim
+
+- **code-embed** → `<CodeEmbed file="..." startLine={..} endLine={..} />`
+
 - **react-flow** → `<ReactFlow data={...} />`
 
 - **whiteboard** → `<Whiteboard data={...} />`
 
 - **callout** → `<Callout type="info">...</Callout>`
+
+- **raw** → a source line captured verbatim by `parseMdx`, re-emitted unchanged
+
+An unknown block type is warned about on stderr and falls back to its `data.content` (or an MDX comment).
+
+## Parse fidelity
+
+`parseMdx` feeds `updateDoc`'s metadata-only path, which re-serializes the parsed blocks — so the parse must reconstruct blocks that re-emit byte-identical body text. Two constructs get explicit care:
+
+1. a multi-line `<Callout …>…</Callout>` becomes ONE callout block whose content is joined with `\n`, mirroring how `blockToMdx` emits it;
+2. consecutive prose lines group into ONE `text` block, so a wrapped paragraph doesn't explode into one block per line with blank lines between them.
+
+`parseMdx` also normalizes CRLF to LF before matching the frontmatter regex, so a corpus checked out on Windows doesn't lose its entire metadata block.

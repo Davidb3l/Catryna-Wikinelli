@@ -3,10 +3,14 @@ id: a279005f-04b8-47a6-b67a-d58a8ebbd323
 title: "Types & Data Models"
 path: "frontend/types"
 tags: ["types", "typescript", "reference"]
-relatedFiles: ["frontend/types.ts"]
+relatedFiles: ["frontend/types.ts", "frontend/hooks/useDocs.ts", "src/storage.ts"]
 createdAt: 1767321379351
 updatedAt: 1767321661199
 createdBy: "claude-code"
+verifiedCommit: "cafd52ed6f86f1a48416eb02fc856009d1c5f19a"
+verifiedAt: "2026-08-01T19:01:53.881Z"
+driftSuspectSince: ""
+driftSuspectReason: ""
 ---
 
 # Types & Data Models
@@ -23,7 +27,8 @@ type BlockType =
   | 'callout' 
   | 'diagram' 
   | 'whiteboard' 
-  | 'divider';
+  | 'divider'
+  | 'table';
 
 interface Block {
   id: string;
@@ -33,11 +38,15 @@ interface Block {
     language?: string;           // For code blocks
     level?: 'info' | 'warning' | 'error' | 'success';  // For callouts
     filePath?: string;           // For code embeds
-    diagramData?: any;           // React Flow data
+    diagramData?: any;           // React Flow data, or { mermaid: string }
     whiteboardData?: any;        // tldraw data
+    headers?: string[];          // For tables
+    rows?: string[][];           // For tables
   };
 }
 ```
+
+These are the *viewer's* block types, produced by `parseMdx()` in `frontend/vite.config.ts`. They are not the same vocabulary as the MCP authoring blocks (`heading`, `text`, `markdown`, `mermaid`, …) — the MDX file is the contract between them.
 
 ## Document
 
@@ -90,14 +99,28 @@ interface UserPreferences {
 ## Backend Types (storage.ts)
 
 ```typescript
-// Metadata stored in _index.json
+// A validated anchor from a doc to a precise region of code
+interface DocAnchor {
+  file: string;                // repo-relative path (forward slashes)
+  symbol?: string;             // optional symbol inside `file`
+  lines?: [number, number];    // optional inclusive 1-based range
+}
+
+// Metadata stored in _index.json AND in each .mdx frontmatter
 interface DocMetadata {
   id: string;
   path: string;
   title: string;
   tags: string[];
-  relatedFiles: string[];
-  createdAt: number;       // Unix timestamp ms
+  relatedFiles: string[];      // bare paths == file-level anchors
+  anchors: DocAnchor[];        // symbol/line anchors, additive over relatedFiles
+  evidence: string[];          // opaque suite URIs backing this doc
+  refs: string[];              // opaque suite URIs this doc references
+  verifiedCommit: string;      // drift baseline SHA; "" = never verified
+  verifiedAt: string;          // ISO-8601 UTC, or ""
+  driftSuspectSince: string;   // ISO-8601 UTC set by `catryna consume`, or ""
+  driftSuspectReason: string;  // human reason paired with the above, or ""
+  createdAt: number;           // Unix timestamp ms
   updatedAt: number;
   createdBy: string;
 }
@@ -109,3 +132,27 @@ interface DocIndex {
   lastUpdated: number | null;
 }
 ```
+
+The anchor/provenance/drift fields (`anchors`, `evidence`, `refs`, `verifiedCommit`, `verifiedAt`, `driftSuspectSince`, `driftSuspectReason`) are additive and backward compatible: absent in a legacy index or frontmatter, they normalize to `[]` / `""` on read. Anchor paths use **forward slashes** on every platform, including docs authored on Windows.
+
+<Callout type="info">
+Frontmatter arrays (`tags`, `relatedFiles`, `evidence`, `refs`) are written as single-line **JSON**, and string scalars are JSON-encoded too, so values containing commas, quotes, or backslashes round-trip verbatim.
+</Callout>
+
+## What the Viewer Actually Consumes
+
+`frontend/hooks/useDocs.ts` declares its own narrower `DocMetadata` for API responses:
+
+```typescript
+interface DocMetadata {
+  id: string;
+  path: string;
+  title: string;
+  tags: string[];
+  relatedFiles: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+```
+
+No `createdBy`, and none of the anchors/verification/drift fields. The API returns them (they are copied straight out of `_index.json`), but the viewer's types drop them and no component reads them — so verification and drift state are invisible in the UI today.

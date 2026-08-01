@@ -3,23 +3,37 @@ id: d37e0497-e75d-47d9-9d08-5ef7067ab81d
 title: "Architecture Overview"
 path: "architecture/overview"
 tags: ["architecture", "overview", "core"]
-relatedFiles: ["src/index.ts", "src/storage.ts"]
+relatedFiles: ["src/index.ts", "src/cli.ts", "src/storage.ts", "src/drift.ts", "src/events.ts", "src/consume.ts", "src/doctor.ts"]
 createdAt: 1767321236003
 updatedAt: 1767321656661
 createdBy: "claude-code"
+verifiedCommit: "cafd52ed6f86f1a48416eb02fc856009d1c5f19a"
+verifiedAt: "2026-08-01T19:01:53.514Z"
+driftSuspectSince: ""
+driftSuspectReason: ""
 ---
 
 # Architecture Overview
 
 Catryna Wikinelli is a file-based documentation platform designed for both AI coding agents and humans. The key insight is that documentation is stored as .mdx files in the .docs/ folder, enabling dual access: AI agents can read docs directly via file system, while MCP tools handle mutations (create/update/delete).
 
+Docs are not just stored — they are ANCHORED to code and checked against it. That drift machinery (anchors, baselines, the `catryna` CLI, the suite event spine) is the second half of the architecture below.
+
 ## Core Architecture
 
-The system consists of two main components:
+The system has five parts:
 
-1. **MCP Server** - A Node.js server using the Model Context Protocol SDK that exposes tools for documentation management. Runs on stdio for Claude Code integration.
+1. **MCP Server** (`src/index.ts`, bin `catryna-mcp`) - A Bun-run server using the Model Context Protocol SDK that exposes 14 tools for documentation management. Runs on stdio for Claude Code integration.
 
-2. **Frontend Viewer** - A React/Vite application (port 1307) that provides a visual interface for humans to browse, search, and view documentation.
+2. **CLI** (`src/cli.ts`, bin `catryna`) - A SEPARATE entry point from the MCP server, with hand-rolled arg parsing and five subcommands: `doctor`, `drift`, `verify`, `repair`, `consume`. This is what CI, the Stop hook, and peer suite tools invoke.
+
+3. **Drift engine** (`src/drift.ts`) - Classifies every anchored doc against git as `broken`, `drifted`, `unverified`, or `clean`, using each doc's `verifiedCommit` baseline. Optional Hayvenhurst symbol precision; git-diff fallback always works with zero dependencies.
+
+4. **Suite spine** (`src/events.ts`, `src/consume.ts`) - Append-only JSONL event log at `.suite/events/<UTC-day>.jsonl`. Catryna EMITS `doc.created` / `doc.updated` / `doc.drifted` / `doc.verified`, and CONSUMES hayven `code.changed` events to mark docs drift-suspect between full drift runs.
+
+5. **Frontend Viewer** - A React/Vite application (port 1307, overridable via `CATRYNA_VIEWER_PORT`) that provides a visual interface for humans to browse, search, and view documentation.
+
+Discovery across the suite goes through `src/doctor.ts`: `catryna doctor --json` emits the SUITE_CONTRACTS §3 handshake envelope (`{tool, version, schemaVersion, ok, capabilities, ui, checks, report}`), advertising the capabilities that exist today — `mcp`, `events.emit`, `events.consume`, `drift`, `verify`, `ui`.
 
 ## Data Flow
 
@@ -29,11 +43,37 @@ The system consists of two main components:
 
 - WRITE: Uses MCP tools (create_doc, update_doc, delete_doc)
 
+- CHECK: Uses MCP tools check_drift / verify_doc / propose_doc_repair, without shelling out
+
 **Frontend (Human):**
 
 - READ: Fetches from Vite dev server API that reads .docs/ folder
 
 - WRITE: Currently view-only (edit capabilities in development)
+
+**CLI / CI / hooks:**
+
+- `catryna drift` is a CI gate: exit 3 when a doc drifted or an anchor broke, 1 on operational failure, else 0
+
+- The plugin's Stop hook (`hooks/drift-check.sh`) runs `consume` then `drift --json` and nudges the agent on stderr; it never blocks a session
+
+- `catryna repair` prints the repair context (doc content + anchor diffs) for the agent to act on
+
+## The drift lifecycle
+
+```text
+create_doc (+ anchors)  →  catryna verify <path>   # records HEAD as verifiedCommit
+        ↓                          ↓
+    code changes            catryna drift          # broken / drifted / unverified / clean
+        ↓                          ↓
+ hayven code.changed  →  catryna consume           # marks docs drift-suspect (real time)
+        ↓                          ↓
+                       catryna repair / propose_doc_repair
+                                   ↓
+                        update_doc  →  catryna verify   # re-baseline, doc reports clean
+```
+
+An anchor is `{file, symbol?, lines?}`; a bare `relatedFiles` path counts as a file-level anchor, so pre-anchor docs keep drifting with zero migration.
 
 ## File Structure
 
@@ -42,35 +82,42 @@ catryna-wikinelli/
 ├── .docs/                    # Documentation files (git-tracked)
 │   ├── _index.json           # Index of all docs (metadata)
 │   └── **/*.mdx              # Individual doc files
+├── .suite/                   # Suite event spine (SUITE_CONTRACTS §2)
+│   ├── events/               # <YYYY-MM-DD>.jsonl append-only event log
+│   └── cursors/catryna.json  # Our consumer cursor
 ├── src/
-│   ├── index.ts              # MCP server entry point
+│   ├── index.ts              # MCP server entry point (bin: catryna-mcp)
+│   ├── cli.ts                # CLI entry point (bin: catryna)
+│   ├── doctor.ts             # Suite discovery handshake
+│   ├── drift.ts              # Drift engine + verify
+│   ├── events.ts             # Spine emit + consume primitives
+│   ├── consume.ts            # code.changed → drift-suspect marking
 │   ├── storage.ts            # File-based storage layer
 │   └── tools/
 │       ├── docs.ts           # Document CRUD tools
 │       ├── search.ts         # Full-text search
-│       ├── diagrams.ts       # React Flow & tldraw
-│       └── coverage.ts       # Documentation coverage
+│       ├── diagrams.ts       # React Flow, Mermaid & tldraw
+│       ├── coverage.ts       # Documentation coverage
+│       └── drift.ts          # check_drift / verify_doc / propose_doc_repair
+├── hooks/                    # SessionStart + Stop (drift) hooks
+├── scripts/                  # run-server.sh, check-catryna.sh
 └── frontend/                 # Vite viewer (port 1307)
 ```
 
 ## Key Design Decisions
 
-{/* Block: raw
-{
-  "content": "<Callout type=\"info\">"
-}
-*/}
-
+<Callout type="info">
 **File-Based Storage**: Docs are MDX files with YAML frontmatter. This enables direct file reads by Claude, git versioning, and human editability.
-
 </Callout>
 
-{/* Block: raw
-{
-  "content": "<Callout type=\"info\">"
-}
-*/}
+<Callout type="info">
+**Dual Index**: _index.json maintains metadata for fast listing/search without parsing every MDX file. It is also the queryable source of truth for the drift fields (`anchors`, `verifiedCommit`, `driftSuspect*`), which are mirrored into each .mdx frontmatter.
+</Callout>
 
-**Dual Index**: _index.json maintains metadata for fast listing/search without parsing every MDX file.
+<Callout type="info">
+**Verification is not editing**: a doc's drift baseline is `verifiedCommit`, never `updatedAt` — rewriting prose does not re-verify a doc against code. Only `catryna verify` / `verify_doc` moves the baseline.
+</Callout>
 
+<Callout type="info">
+**Degrade, never gate**: spine emission is best-effort, the Hayvenhurst probe is optional, and an absent spine, absent `.docs/`, or missing `hayven` all degrade to a clean no-op instead of an error.
 </Callout>

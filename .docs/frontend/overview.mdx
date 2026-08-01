@@ -3,10 +3,14 @@ id: 8ba895db-7586-4187-92fb-7da033094537
 title: "Frontend Application"
 path: "frontend/overview"
 tags: ["frontend", "react", "vite"]
-relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/constants.tsx"]
+relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json"]
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
+verifiedCommit: "cafd52ed6f86f1a48416eb02fc856009d1c5f19a"
+verifiedAt: "2026-08-01T19:01:53.785Z"
+driftSuspectSince: ""
+driftSuspectReason: ""
 ---
 
 # Frontend Application
@@ -15,17 +19,27 @@ The frontend is a React application built with Vite, providing a visual interfac
 
 ## Tech Stack
 
-- **React 18** - UI framework
+- **React 19** - UI framework
 
-- **Vite** - Build tool and dev server (port 1307)
+- **Vite 8** - Build tool and dev server (with `@vitejs/plugin-react` 6)
 
-- **React Flow** - Architecture diagrams
+- **React Flow** (`reactflow` 11) - Architecture diagrams
+
+- **Mermaid** - Text-based diagrams, themed from `initMermaid()` in `App.tsx`
 
 - **tldraw** - Whiteboard/canvas support
 
-- **Tailwind CSS** - Styling (inferred from class usage)
+- **Tailwind CSS** - Loaded from the `cdn.tailwindcss.com` script in `index.html`, not a build step. `darkMode: 'class'`, plus the custom `surface` / `navy` / `accent` colors configured inline there.
 
 - **Lucide React** - Icon library
+
+`@tiptap/*` and `diff` are still declared in `package.json` (and the `index.html` importmap), but nothing in the viewer imports or calls them today.
+
+## Dev Server Port
+
+The port is **not** hardcoded. `vite.config.ts` reads **`CATRYNA_VIEWER_PORT`** and falls back to **1307** when it is unset, non-numeric, or outside 1..65535 — the same rule as `viewerPort()` in `src/doctor.ts`.
+
+It also sets **`strictPort: true`**, so a taken port is a hard startup failure instead of a silent bump to 1308. That is deliberate: `catryna doctor` advertises `http://localhost:<that port>` as the suite hub's `ui` URL, so a viewer that drifted to another port would make the advertised URL a lie. Keep the two parsers in lockstep.
 
 ## Main Components
 
@@ -33,11 +47,13 @@ The frontend is a React application built with Vite, providing a visual interfac
 
 - Sidebar navigation with collapsible folder tree
 
-- Command palette for quick doc search (Cmd+K)
+- Project selector — lists every scanned project that has a `.docs/_index.json` and switches the server's docs root
+
+- Command palette for quick doc search. It opens from the header **Search** button; the `⌘K` next to it is a rendered hint only — no keydown handler is registered.
 
 - Document viewer with block rendering
 
-- Table of contents (sticky sidebar)
+- Table of contents (sticky sidebar) with an IntersectionObserver scroll spy
 
 - Theme switching (light/dark/system)
 
@@ -53,19 +69,27 @@ The frontend is a React application built with Vite, providing a visual interfac
 
 Renders different block types with appropriate styling:
 
-- **heading** - H1/H2/H3 with proper typography
+- **paragraph** - Text with a small inline-markdown parser (bold, italic, code, links)
 
-- **code** - Syntax highlighted code blocks with copy button
+- **heading-1 / heading-2 / heading-3** - H1 gets its own size; H2 and H3 currently share one style
 
-- **callout** - Info/warning/error boxes
+- **code** - Read-only `<textarea>` with optional line numbers. There is no syntax highlighting, and the copy button only raises a "Copied" toast — it does not write to the clipboard.
 
-- **diagram** - Interactive React Flow diagrams
+- **callout** - Rendered with a single info style; `metadata.level` is not yet used to vary the colours
 
-- **whiteboard** - Embedded tldraw canvas
+- **table** - Markdown or `<Table data={...} />` tables, from `metadata.headers` / `metadata.rows`
+
+- **diagram** - Mermaid (rendered via `MermaidRenderer` with an expand/zoom modal) when `metadata.diagramData.mermaid` is set, otherwise an interactive React Flow canvas
+
+- **whiteboard** - A placeholder card that launches the full-screen tldraw editor. Stored `whiteboardData` is neither loaded into nor saved from the canvas.
 
 ### Edit Mode
 
-Content-editable blocks for in-browser editing (save functionality in development).
+Content-editable blocks for in-browser editing. Nothing persists yet: **Save** runs an 800 ms timer and shows a toast, and the docs API is read-only (`GET` only — the only write endpoint is `POST /api/projects/select`). Edits are lost on reload.
+
+### Version History
+
+The sidebar renders `currentDoc.history`, but the API never returns a `history` field and `toDocument()` never sets one — so it always shows "No versions found", and **Revert** only closes the panel. Git is the real history today.
 
 ### Diagram/Whiteboard Editors
 
@@ -85,16 +109,22 @@ Uses custom hooks in `hooks/useDocs.ts`:
 
 - `useDocsSearch()` - Search with /api/docs/search?q=...
 
-{/* Block: raw
+The project list is fetched directly in `App.tsx` (no hook): `GET /api/projects` on mount, and `POST /api/projects/select` to switch.
 
-{
+## The Docs API
 
-  "content": "<Callout type=\"info\">"
+Nothing is proxied. `vite.config.ts` registers its own `docs-api` Vite plugin whose `configureServer` hook mounts Connect middleware that reads the `.docs/` folder off disk:
 
-}
+- `GET /api/docs` - returns `_index.json` verbatim
 
-*/}
+- `GET /api/docs/search?q=` - substring match over title, tags, and path; capped at 20 results
 
-The Vite dev server proxies /api/* requests and reads directly from the .docs/ folder.
+- `GET /api/docs/:path` - reads `{path}.mdx`, runs the config's own `parseMdx()`, and returns `{ ...indexMetadata, path, blocks, raw }`
 
+- `GET /api/projects` / `POST /api/projects/select` - project discovery and switching
+
+Because it hangs off `configureServer`, the API exists **only in `vite dev`** — a `vite build` bundle has no backend. The docs root defaults to `../.docs` and can be overridden with `DOCS_ROOT`; project scanning honours `PROJECTS_ROOT` before falling back to sibling and common dev directories.
+
+<Callout type="info">
+`parseMdx()` here is a second, independent parser — separate from `src/storage.ts`. It keeps only the `blocks` it produces; the frontmatter it parses is discarded, and the metadata the viewer shows comes from `_index.json`. Frontmatter arrays are written as JSON (so values containing commas or quotes round-trip), and this parser `JSON.parse`s any value starting with `[` — after a legacy `'` → `"` substitution that can corrupt an apostrophe inside an otherwise valid JSON string.
 </Callout>

@@ -32,15 +32,20 @@
       ],
       "relatedFiles": [
         "src/index.ts",
-        "src/storage.ts"
+        "src/cli.ts",
+        "src/storage.ts",
+        "src/drift.ts",
+        "src/events.ts",
+        "src/consume.ts",
+        "src/doctor.ts"
       ],
       "createdAt": 1767321236003,
       "updatedAt": 1767336003658,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "",
-      "verifiedAt": "",
+      "verifiedCommit": "cafd52ed6f86f1a48416eb02fc856009d1c5f19a",
+      "verifiedAt": "2026-08-01T19:01:53.514Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -55,15 +60,16 @@
         "server"
       ],
       "relatedFiles": [
-        "src/index.ts"
+        "src/index.ts",
+        "scripts/run-server.sh"
       ],
       "createdAt": 1767321253064,
       "updatedAt": 1767321658640,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "",
-      "verifiedAt": "",
+      "verifiedCommit": "cafd52ed6f86f1a48416eb02fc856009d1c5f19a",
+      "verifiedAt": "2026-08-01T19:01:53.580Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -85,8 +91,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "",
-      "verifiedAt": "",
+      "verifiedCommit": "cafd52ed6f86f1a48416eb02fc856009d1c5f19a",
+      "verifiedAt": "2026-08-01T19:01:53.635Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -105,15 +111,16 @@
         "src/tools/docs.ts",
         "src/tools/search.ts",
         "src/tools/diagrams.ts",
-        "src/tools/coverage.ts"
+        "src/tools/coverage.ts",
+        "src/tools/drift.ts"
       ],
       "createdAt": 1767321316028,
       "updatedAt": 1767321661004,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "",
-      "verifiedAt": "",
+      "verifiedCommit": "cafd52ed6f86f1a48416eb02fc856009d1c5f19a",
+      "verifiedAt": "2026-08-01T19:01:53.686Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -131,15 +138,16 @@
         "frontend/App.tsx",
         "frontend/index.tsx",
         "frontend/vite.config.ts",
-        "frontend/constants.tsx"
+        "frontend/index.html",
+        "frontend/package.json"
       ],
       "createdAt": 1767321379263,
       "updatedAt": 1767321691220,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "",
-      "verifiedAt": "",
+      "verifiedCommit": "cafd52ed6f86f1a48416eb02fc856009d1c5f19a",
+      "verifiedAt": "2026-08-01T19:01:53.785Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -154,15 +162,17 @@
         "reference"
       ],
       "relatedFiles": [
-        "frontend/types.ts"
+        "frontend/types.ts",
+        "frontend/hooks/useDocs.ts",
+        "src/storage.ts"
       ],
       "createdAt": 1767321379351,
       "updatedAt": 1767321661199,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "",
-      "verifiedAt": "",
+      "verifiedCommit": "cafd52ed6f86f1a48416eb02fc856009d1c5f19a",
+      "verifiedAt": "2026-08-01T19:01:53.881Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -184,8 +194,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "",
-      "verifiedAt": "",
+      "verifiedCommit": "cafd52ed6f86f1a48416eb02fc856009d1c5f19a",
+      "verifiedAt": "2026-08-01T19:01:53.734Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -221,15 +231,17 @@
         "service"
       ],
       "relatedFiles": [
-        "frontend/services/geminiService.ts"
+        "frontend/services/geminiService.ts",
+        "frontend/vite.config.ts",
+        "frontend/App.tsx"
       ],
       "createdAt": 1767321677827,
       "updatedAt": 1767321677827,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "",
-      "verifiedAt": "",
+      "verifiedCommit": "cafd52ed6f86f1a48416eb02fc856009d1c5f19a",
+      "verifiedAt": "2026-08-01T19:01:53.833Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -249,15 +261,16 @@
         "frontend/index.css",
         "frontend/App.tsx",
         "frontend/components/TurboNode.tsx",
-        "frontend/components/TurboEdge.tsx"
+        "frontend/components/TurboEdge.tsx",
+        "frontend/components/TurboEdgeGradient.tsx"
       ],
       "createdAt": 1767494114128,
       "updatedAt": 1767494114128,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "",
-      "verifiedAt": "",
+      "verifiedCommit": "cafd52ed6f86f1a48416eb02fc856009d1c5f19a",
+      "verifiedAt": "2026-08-01T19:01:53.927Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -265,7 +278,7 @@
     {
       "id": "b936aeb6-47e2-4526-bd8d-f8d4457927f8",
       "path": "guides/drift-adoption-playbook",
-      "title": "Drift Adoption Playbook \u2014 rolling catryna drift into a repo",
+      "title": "Drift Adoption Playbook — rolling catryna drift into a repo",
       "tags": [
         "drift",
         "playbook",
@@ -290,5 +303,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1785609432415
+  "lastUpdated": 1785610913928
 }
