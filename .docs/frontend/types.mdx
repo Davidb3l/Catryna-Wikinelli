@@ -7,8 +7,8 @@ relatedFiles: ["frontend/types.ts", "frontend/hooks/useDocs.ts", "src/storage.ts
 createdAt: 1767321379351
 updatedAt: 1767321661199
 createdBy: "claude-code"
-verifiedCommit: "cafd52ed6f86f1a48416eb02fc856009d1c5f19a"
-verifiedAt: "2026-08-01T19:01:53.881Z"
+verifiedCommit: "84a43b1cee670399ee25f8f4896263eb72933fb8"
+verifiedAt: "2026-08-01T20:33:07.857Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -59,8 +59,33 @@ interface Document {
   path: string[];          // e.g., ["modules", "auth"]
   isDraft?: boolean;
   history?: HistoryEntry[];
+  verification?: DocVerification;  // drift baseline, populated by toDocument()
 }
 ```
+
+## Verification (drift state in the viewer)
+
+`frontend/types.ts` mirrors the backend's drift fields so the viewer can tell a verified doc from one the code has outgrown:
+
+```typescript
+interface DocAnchor {           // mirrors DocAnchor in src/storage.ts
+  file: string;
+  symbol?: string;
+  lines?: [number, number];
+}
+
+interface DocVerification {
+  anchors: DocAnchor[];
+  verifiedCommit: string;       // "" = never verified
+  verifiedAt: string;
+  driftSuspectSince: string;    // "" = not suspect
+  driftSuspectReason: string;
+}
+
+type VerificationStatus = 'verified' | 'suspect' | 'unverified';
+```
+
+`verificationStatus(v)` — exported from `frontend/hooks/useDocs.ts`, not from `types.ts`, which stays purely declarative — reduces the five fields to the three states a badge needs: no `verifiedCommit` is `unverified`, a set `driftSuspectSince` is `suspect`, otherwise `verified`.
 
 ## History Entry
 
@@ -141,18 +166,15 @@ Frontmatter arrays (`tags`, `relatedFiles`, `evidence`, `refs`) are written as s
 
 ## What the Viewer Actually Consumes
 
-`frontend/hooks/useDocs.ts` declares its own narrower `DocMetadata` for API responses:
+`frontend/hooks/useDocs.ts` declares its own `DocMetadata` for API responses, mirroring the backend field for field. **Keep the two in sync** — this type is what the viewer can see.
 
-```typescript
-interface DocMetadata {
-  id: string;
-  path: string;
-  title: string;
-  tags: string[];
-  relatedFiles: string[];
-  createdAt: number;
-  updatedAt: number;
-}
-```
+It previously dropped eight fields, including every drift field, which made verification state invisible in the UI and blocked the verified badge. That is fixed: the hook now carries `anchors`, `evidence`, `refs`, `verifiedCommit`, `verifiedAt`, `driftSuspectSince`, `driftSuspectReason`, and `createdBy`.
 
-No `createdBy`, and none of the anchors/verification/drift fields. The API returns them (they are copied straight out of `_index.json`), but the viewer's types drop them and no component reads them — so verification and drift state are invisible in the UI today.
+Two boundary details matter, because the dev API serves `_index.json` verbatim rather than a validated payload:
+
+- **`RawDocMetadata`** (`Partial<DocMetadata> & { path: string }`) types what actually arrives. A legacy index simply omits fields that did not exist when it was written.
+- **`normalizeDocMetadata()`** fills those in using the same defaults the backend applies on read (`[]` / `""`), which is why every field on `DocMetadata` is required — consumers never guard. Entries without a usable `path` are dropped first, since `buildNavTree()` and `toDocument()` both split `path` unconditionally.
+
+<Callout type="info">
+No component renders verification state yet. The data now reaches the UI layer and `verificationStatus()` derives the badge state, but the badge itself is Phase 2 work.
+</Callout>

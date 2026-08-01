@@ -7,8 +7,8 @@ relatedFiles: ["frontend/hooks/useDocs.ts"]
 createdAt: 1767321379449
 updatedAt: 1767321661283
 createdBy: "claude-code"
-verifiedCommit: "cafd52ed6f86f1a48416eb02fc856009d1c5f19a"
-verifiedAt: "2026-08-01T19:01:53.734Z"
+verifiedCommit: "84a43b1cee670399ee25f8f4896263eb72933fb8"
+verifiedAt: "2026-08-01T20:33:07.894Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -31,7 +31,7 @@ const {
 } = useDocsList();
 ```
 
-Automatically fetches on mount from `/api/docs`. The `navItems` are built by `buildNavTree()`, which groups docs by path folders.
+Automatically fetches on mount from `/api/docs`. Entries are filtered by `isUsable()` and passed through `normalizeDocMetadata()` before anything else touches them, so `docs` is always fully-populated `DocMetadata` — including the drift fields — regardless of how old the `_index.json` on disk is. The `navItems` are built by `buildNavTree()`, which groups docs by path folders.
 
 The tree is only **one level deep**, despite `NavItem.children` being recursive. `buildNavTree()` keys folders by the doc's full folder path but titles them with the last segment and pushes every folder onto the root array — so `a/b/c` renders as a top-level folder named `b`, not nested under `a`.
 
@@ -52,7 +52,15 @@ When `path` is null, returns null without fetching. On 404, sets doc to null wit
 
 `refetch` is written as `() => path && fetchDoc(path)`, so it returns the falsy `path` rather than a promise when nothing is selected — always guard before awaiting it.
 
-The API response is mapped by `toDocument()`: `path` is split on `/` into a string array, `lastUpdated` is `new Date(updatedAt).toISOString()`, and `history` / `isDraft` are never populated.
+The API response is mapped by `toDocument()`: it normalizes the metadata, splits `path` on `/` into a string array, sets `lastUpdated` to `new Date(updatedAt).toISOString()`, and attaches the doc's drift baseline as `verification`. `history` / `isDraft` are never populated.
+
+## verificationStatus
+
+```typescript
+verificationStatus(v: DocVerification | undefined): VerificationStatus
+```
+
+Reduces a doc's five drift fields to `'verified' | 'suspect' | 'unverified'` for display. No `verifiedCommit` (or no `verification` at all) is `unverified` — never silently clean, matching `catryna drift`. A set `driftSuspectSince` is `suspect`. Nothing renders this yet; it exists so the Phase 2 badge has one place to get its state.
 
 ## useDocsSearch
 

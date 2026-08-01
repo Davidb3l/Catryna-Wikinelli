@@ -7,8 +7,8 @@ relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.t
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
-verifiedCommit: "cafd52ed6f86f1a48416eb02fc856009d1c5f19a"
-verifiedAt: "2026-08-01T19:01:53.785Z"
+verifiedCommit: "84a43b1cee670399ee25f8f4896263eb72933fb8"
+verifiedAt: "2026-08-01T20:33:07.816Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -33,7 +33,9 @@ The frontend is a React application built with Vite, providing a visual interfac
 
 - **Lucide React** - Icon library
 
-`@tiptap/*` and `diff` are still declared in `package.json` (and the `index.html` importmap), but nothing in the viewer imports or calls them today.
+`@tiptap/*` and `diff` are still declared in `package.json` (and the `index.html` importmap) without earning their place: `@tiptap/*` is never imported at all, and `diff` is imported by `App.tsx` (`import * as Diff from 'diff'`) but never called.
+
+The viewer has **no LLM dependency and no API key**. It previously shipped a `frontend/services/geminiService.ts` that called the Google Gemini API straight from the browser, with `vite.config.ts` inlining `GEMINI_API_KEY` into the bundle via `define` — for two methods nothing ever invoked. Both the service and the `define` block are gone; summarization and structure suggestion belong to Claude Code over MCP, which has the repo context this never did.
 
 ## Dev Server Port
 
