@@ -1,0 +1,87 @@
+---
+id: 73a55b74-3ef2-4733-8c6a-85d8115aa4a8
+title: "Freshness — the read trust surface"
+path: "backend/freshness"
+tags: ["phase2", "drift", "trust", "backend"]
+relatedFiles: ["src/freshness.ts", "src/tools/docs.ts", "src/tools/search.ts"]
+anchors: []
+evidence: []
+refs: []
+verifiedCommit: ""
+verifiedAt: ""
+driftSuspectSince: ""
+driftSuspectReason: ""
+createdAt: 1785617835645
+updatedAt: 1785617835645
+createdBy: "claude-code"
+---
+
+# Freshness — the read trust surface
+
+`catryna drift` answers "which docs has the code outgrown?" **after the fact**, for a human or a CI gate. Freshness answers the same question **inline, at the moment a doc is read**, so an agent is warned *before* it trusts a stale doc rather than after it has already acted on one.
+
+That is the context-rot failure mode this targets: a doc that reads as authoritative but describes code that no longer exists.
+
+## What it is
+
+`src/freshness.ts` is a thin, read-only projection over `computeDrift`. It contains **no drift logic of its own** — same engine, same verdicts. It adds two things:
+
+1. A one-line, agent-facing `summary` that leads with the verdict.
+2. Names for the two states the drift report has no bucket for.
+
+## Statuses
+
+| Status | Meaning |
+|---|---|
+| `clean` | Verified, and anchored code is unchanged since. Safe to trust. |
+| `drifted` | Verified at some commit, but anchored files have changed since. |
+| `broken` | An anchored file no longer exists. |
+| `unverified` | No drift baseline — never checked against the code. |
+| `unanchored` | The doc declares no anchors, so drift **cannot** be computed. |
+| `unknown` | Drift could not run (e.g. not a git repository). |
+
+The last two are the important ones, and they are why this module exists rather than the tools calling `computeDrift` directly.
+
+## The trap this exists to avoid
+
+`computeDrift` **silently omits** docs with no effective anchors — there is nothing to diff, so they appear in no bucket. A naive read would find the doc missing from the report and conclude it is `clean`.
+
+That would tell an agent an unchecked doc is trustworthy. **"Nothing to check" and "checked and fine" are different claims.** Hence `unanchored`. The same reasoning gives `unknown` its own state instead of degrading to clean when git is unavailable.
+
+There is a test asserting exactly this: an anchorless doc appears in zero drift buckets and still reports `unanchored`, never `clean`.
+
+## API
+
+```typescript
+// One doc. Uses computeDrift's `only` filter, so it costs one doc's git work
+// rather than a corpus scan.
+docFreshness(cwd: string, path: string): Promise<DocFreshness>
+
+// Many docs in ONE drift pass — for list/search, where per-doc calls would
+// re-run git once per result.
+docsFreshness(cwd: string, paths: string[]): Promise<Map<string, DocFreshness>>
+
+// Corpus one-liner: "Trust warning: 1 BROKEN, 2 STALE in these results."
+// Returns "" when nothing needs attention.
+freshnessHeadline(all: Iterable<DocFreshness>): string
+```
+
+## Where it surfaces
+
+| Tool | Carries |
+|---|---|
+| `get_doc` | `freshness` for that doc |
+| `list_docs` | `freshness` per entry + a `warning` headline |
+| `search_docs` | `freshness` per result + a `warning` headline |
+
+Both list tools resolve the whole result set in a **single** drift pass.
+
+## Invariants
+
+- **Reads never write.** Every call passes `emit: false`, so reading a doc never emits drift events on the suite spine.
+- **Never claims clean on missing information.** Absence of a verdict is its own state, not a passing grade.
+
+## Related
+
+- `catryna drift` / `src/drift.ts` — the engine underneath
+- The viewer's verified badge consumes the same verdicts via `GET /api/drift`

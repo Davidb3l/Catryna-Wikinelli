@@ -27,11 +27,18 @@ The system has five parts:
 
 2. **CLI** (`src/cli.ts`, bin `catryna`) - A SEPARATE entry point from the MCP server, with hand-rolled arg parsing and five subcommands: `doctor`, `drift`, `verify`, `repair`, `consume`. This is what CI, the Stop hook, and peer suite tools invoke.
 
-3. **Drift engine** (`src/drift.ts`) - Classifies every anchored doc against git as `broken`, `drifted`, `unverified`, or `clean`, using each doc's `verifiedCommit` baseline. Optional Hayvenhurst symbol precision; git-diff fallback always works with zero dependencies.
+3. **Drift engine** (`src/drift.ts`) - Classifies every anchored doc against git as `broken`, `drifted`, `unverified`, or `clean`, using each doc's `verifiedCommit` baseline. Optional Hayvenhurst symbol precision; git-diff fallback always works with zero dependencies. An additive `only` filter narrows a run to named docs — which docs are evaluated, never how one is judged — so a single-doc read costs one doc's git work instead of a corpus scan. Runs under Bun **or** Node (`runGit` / `runHayven` feature-detect), because the viewer's Vite plugin imports this engine in a context with no `Bun` global.
 
 4. **Suite spine** (`src/events.ts`, `src/consume.ts`) - Append-only JSONL event log at `.suite/events/<UTC-day>.jsonl`. Catryna EMITS `doc.created` / `doc.updated` / `doc.drifted` / `doc.verified`, and CONSUMES hayven `code.changed` events to mark docs drift-suspect between full drift runs.
 
-5. **Frontend Viewer** - A React/Vite application (port 1307, overridable via `CATRYNA_VIEWER_PORT`) that provides a visual interface for humans to browse, search, and view documentation.
+5. **Frontend Viewer** - A React/Vite application (port 1307, overridable via `CATRYNA_VIEWER_PORT`) that provides a visual interface for humans to browse, search, and view documentation. Its dev API also serves `GET /api/coverage` and `GET /api/drift`, which drive the verified badge and the coverage dashboard.
+
+### The trust surface (Phase 2)
+
+Two shared, root-parameterized modules sit between the engine and every consumer, so the CLI, the MCP tools, and the viewer cannot disagree:
+
+- **`src/freshness.ts`** — a read-only projection over the drift engine. Attaches a status and a one-line warning to `get_doc` / `list_docs` / `search_docs`, so an agent is warned *before* trusting a stale doc. Adds `unanchored` and `unknown` so a doc with no verdict is never reported as clean.
+- **`src/coverage.ts`** — coverage over **effective anchors**, shared by the MCP tools and `GET /api/coverage`. Takes every root as a parameter and never reads `process.cwd()`.
 
 Discovery across the suite goes through `src/doctor.ts`: `catryna doctor --json` emits the SUITE_CONTRACTS §3 handshake envelope (`{tool, version, schemaVersion, ok, capabilities, ui, checks, report}`), advertising the capabilities that exist today — `mcp`, `events.emit`, `events.consume`, `drift`, `verify`, `ui`.
 

@@ -275,7 +275,57 @@
       "createdAt": 1785609420180,
       "updatedAt": 1785609420180,
       "createdBy": "claude-code"
+    },
+    {
+      "id": "73a55b74-3ef2-4733-8c6a-85d8115aa4a8",
+      "path": "backend/freshness",
+      "title": "Freshness — the read trust surface",
+      "tags": [
+        "phase2",
+        "drift",
+        "trust",
+        "backend"
+      ],
+      "relatedFiles": [
+        "src/freshness.ts",
+        "src/tools/docs.ts",
+        "src/tools/search.ts"
+      ],
+      "anchors": [],
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "driftSuspectSince": "",
+      "driftSuspectReason": "",
+      "createdAt": 1785617835645,
+      "updatedAt": 1785617835645,
+      "createdBy": "claude-code"
+    },
+    {
+      "id": "a1fc57d9-15a4-47a5-88bd-b09c66bafa51",
+      "path": "backend/coverage",
+      "title": "Coverage core",
+      "tags": [
+        "phase2",
+        "coverage",
+        "backend"
+      ],
+      "relatedFiles": [
+        "src/coverage.ts",
+        "src/tools/coverage.ts"
+      ],
+      "anchors": [],
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "driftSuspectSince": "",
+      "driftSuspectReason": "",
+      "createdAt": 1785617858378,
+      "updatedAt": 1785617858378,
+      "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1785616689635
+  "lastUpdated": 1785617858380
 }

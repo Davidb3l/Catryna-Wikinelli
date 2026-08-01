@@ -45,11 +45,29 @@ Creates a new documentation page. Fails (without overwriting) if a doc already e
 
 ### get_doc
 
-Retrieves a document by path. Returns metadata (including `anchors`, `evidence`, `refs`) and blocks.
+Retrieves a document by path. Returns metadata (including `anchors`, `evidence`, `refs`), blocks, and a **`freshness`** object (Phase 2 trust surface).
 
 ### list_docs
 
-Lists all documents with optional filtering by tag or path prefix.
+Lists all documents with optional filtering by tag or path prefix. Each entry carries `freshness`, and the response carries a `warning` headline when any result is stale, broken, or unverified.
+
+### Freshness on reads (Phase 2)
+
+`get_doc`, `list_docs`, and `search_docs` all warn **inline**, so an agent is told a doc is stale *before* it trusts it rather than after acting on it:
+
+```json
+"freshness": {
+  "status": "drifted",
+  "verifiedCommit": "a1b2c3d…",
+  "head": "e4f5a6b…",
+  "changedFiles": ["src/auth.ts"],
+  "summary": "STALE — verified at a1b2c3d, but 1 anchored file(s) have changed since: src/auth.ts. Re-read the code before trusting this doc; run `catryna repair <path>` to fix it."
+}
+```
+
+Statuses are `clean`, `drifted`, `broken`, `unverified`, plus `unanchored` (the doc anchors no code, so drift cannot be computed) and `unknown` (drift could not run). The last two exist so a read never reports "no verdict" as clean — see the `backend/freshness` doc.
+
+The two list tools resolve their whole result set in a **single** drift pass, not one per entry. All reads pass `emit: false`, so reading never writes to the suite spine.
 
 ### update_doc
 
@@ -153,14 +171,26 @@ Generates a coverage report with metrics:
 
 - `totalDocs` - Number of docs in the index
 
+- `anchoringDocs` - Docs that anchor at least one file — the ones coverage can credit
+
+- `brokenAnchors` - Anchored paths not present on disk
+
 - `recentlyUpdated` - The 5 most recently updated docs
 
 - `staleDocs` - Docs not updated in 30+ days
 
-- `undocumentedFiles` - List of files needing docs
+- `undocumentedFiles` - List of files needing docs (capped)
+
+- `totalUndocumented` - Exact count, never capped
+
+Both tools delegate to `computeCoverage()` in `src/coverage.ts`, which is shared with the viewer's `GET /api/coverage` so the two never disagree. See the `backend/coverage` doc.
+
+<Callout type="info">
+Coverage counts **effective anchors**, so a doc anchored purely through structured `anchors` counts for the files it anchors. This was previously not the case — the tools read `relatedFiles` only, which meant using the more precise Phase 1 anchors made your coverage number worse.
+</Callout>
 
 <Callout type="warning">
-Both coverage tools count only `relatedFiles`. A doc anchored purely through structured `anchors` still drifts correctly, but does not yet count as coverage for the files it anchors.
+`recentlyUpdated` / `staleDocs` sort on `updatedAt`, which is **edit** time, not verification time. A recently edited doc is not a verified one — that is what `freshness` and `catryna drift` answer.
 </Callout>
 
 ## Drift Tools (drift.ts)

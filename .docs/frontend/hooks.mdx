@@ -60,7 +60,45 @@ The API response is mapped by `toDocument()`: it normalizes the metadata, splits
 verificationStatus(v: DocVerification | undefined): VerificationStatus
 ```
 
-Reduces a doc's five drift fields to `'verified' | 'suspect' | 'unverified'` for display. No `verifiedCommit` (or no `verification` at all) is `unverified` — never silently clean, matching `catryna drift`. A set `driftSuspectSince` is `suspect`. Nothing renders this yet; it exists so the Phase 2 badge has one place to get its state.
+Reduces a doc's five drift fields to `'verified' | 'suspect' | 'unverified'` for display. No `verifiedCommit` (or no `verification` at all) is `unverified` — never silently clean, matching `catryna drift`. A set `driftSuspectSince` is `suspect`.
+
+This reads *stored* frontmatter state. For the live, git-computed verdict the badge actually renders, use `useDrift()` below.
+
+## useDrift
+
+Per-doc drift status for the verified badge (Phase 2).
+
+```typescript
+const {
+  drift,       // DriftResponse | null
+  loading,     // boolean
+  statusFor,   // (path: string) => DriftStatus | null
+  refetch,     // () => Promise<void>
+} = useDrift();
+```
+
+Fetches `GET /api/drift`, which runs the same git-backed engine as `catryna drift`. `statusFor(path)` returns the verdict for one doc, or `null` when there is none.
+
+<Callout type="warning">
+`null` is meaningful and must not be treated as verified. It means the doc anchors no code, or the viewer could not reach the endpoint (no git repo, or an older dev API). Callers render **no badge** in that case rather than a green one — failing to ask is not a clean bill of health. This mirrors the `unanchored` / `unknown` states in `src/freshness.ts`.
+</Callout>
+
+The hook degrades quietly: on any error `drift` is `null` and every `statusFor` returns `null`.
+
+## useCoverage
+
+Real documentation coverage, replacing the viewer's former hardcoded placeholders.
+
+```typescript
+const {
+  coverage,   // CoverageResponse | null
+  loading,    // boolean
+  error,      // string | null
+  refetch,    // () => Promise<void>
+} = useCoverage();
+```
+
+Fetches `GET /api/coverage`. On failure `coverage` is `null` and `error` is set; `CoverageReport` renders "Coverage unavailable" rather than inventing numbers.
 
 ## useDocsSearch
 

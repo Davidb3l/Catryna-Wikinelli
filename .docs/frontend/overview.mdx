@@ -33,7 +33,7 @@ The frontend is a React application built with Vite, providing a visual interfac
 
 - **Lucide React** - Icon library
 
-`@tiptap/*` and `diff` are still declared in `package.json` (and the `index.html` importmap) without earning their place: `@tiptap/*` is never imported at all, and `diff` is imported by `App.tsx` (`import * as Diff from 'diff'`) but never called.
+Dependencies are limited to what the viewer actually uses. `@tiptap/*` and `diff` were declared but dead (`@tiptap/*` never imported, `diff` imported by `App.tsx` and never called) and have been removed from `package.json` and the `index.html` importmap.
 
 The viewer has **no LLM dependency and no API key**. It previously shipped a `frontend/services/geminiService.ts` that called the Google Gemini API straight from the browser, with `vite.config.ts` inlining `GEMINI_API_KEY` into the bundle via `define` — for two methods nothing ever invoked. Both the service and the `define` block are gone; summarization and structure suggestion belong to Claude Code over MCP, which has the repo context this never did.
 
@@ -95,13 +95,32 @@ The sidebar renders `currentDoc.history`, but the API never returns a `history` 
 
 ### Coverage Report
 
-<Callout type="warning">
-`CoverageReport` displays **hardcoded placeholder data, not your project's coverage.** The 84% health score, 42 total pages, 12 missing-context count, and the file list (`auth-service.ts`, `user-controller.go`, `database-layer.rs`, `frontend-api.ts`) are literals in `App.tsx`. None of those files exist in this repo, and the screen makes no API call.
+Real data, fetched from `GET /api/coverage` by the `useCoverage()` hook. Shows coverage percent, doc counts, a doc-trust breakdown from `GET /api/drift`, a broken-anchors panel, and the undocumented-module list.
+
+On fetch failure it renders "Coverage unavailable" rather than numbers — the screen never invents a figure it could not compute.
+
+<Callout type="info">
+This screen previously displayed **hardcoded placeholders**: an 84% health score, 42 pages, 12 missing, and four filenames that did not exist in the repo, with no API call behind it. It was reachable from the UI and read as a genuine report. Fixed in Phase 2 by extracting `src/coverage.ts` and adding the endpoint.
 </Callout>
 
-It is reachable from the UI (`activeEditor === 'coverage'`), so a reader can mistake invented numbers for a real report. Catryna already computes this properly — `get_doc_coverage` and `get_undocumented_modules` in `src/tools/coverage.ts` — but the viewer is not wired to either, and the dev docs API exposes no coverage endpoint to wire it to.
-
 The header previously carried an **Auto-Generate Missing** button; it was scaffolding for the removed Gemini integration and never had a handler. Removed rather than left as a dead control.
+
+### Verified Badge
+
+Per-doc drift status (PRODUCT_ROADMAP Phase 2), from `GET /api/drift` via `useDrift()`:
+
+- 🟢 **Verified** — clean at HEAD
+- 🟡 **Stale** — anchored code changed since verification
+- 🔴 **Broken** — an anchored file no longer exists
+- ⚪ **Unverified** — no baseline, never checked
+
+Rendered as a compact dot per file in the sidebar (`SidebarItem`) and as a `DocTrust` line under the document title, which also names the baseline commit and the changed files — a badge says a doc is stale, the file list says what to go re-read.
+
+<Callout type="info">
+The badge renders **only when there is a verdict**. A doc with no anchors, or a viewer that could not reach `/api/drift`, shows no dot rather than a green one: failing to ask is not a clean bill of health. This mirrors the `unanchored` / `unknown` states in `src/freshness.ts`.
+</Callout>
+
+The status is **not** derived from frontmatter. A doc's stored `verifiedCommit` records which commit it was checked at, never whether the code has moved on since — only the git-backed engine can answer that.
 
 ### Diagram/Whiteboard Editors
 
@@ -134,6 +153,16 @@ Nothing is proxied. `vite.config.ts` registers its own `docs-api` Vite plugin wh
 - `GET /api/docs/:path` - reads `{path}.mdx`, runs the config's own `parseMdx()`, and returns `{ ...indexMetadata, path, blocks, raw }`
 
 - `GET /api/projects` / `POST /api/projects/select` - project discovery and switching
+
+- `GET /api/coverage` - real coverage, via `computeCoverage()` from `src/coverage.ts`
+
+- `GET /api/drift` - per-doc drift status keyed by path, via `computeDrift()` from `src/drift.ts`, for the verified badge
+
+The last two compute against the **project root** (the parent of the docs root), not the dev server's cwd — which is `frontend/`. They read `docsRoot` per request rather than capturing it, because `POST /api/projects/select` switches it at runtime. `/api/drift` passes `emit: false`: rendering a badge must not write to the suite event spine.
+
+<Callout type="warning">
+Because the Vite plugin imports the drift engine, `src/drift.ts` runs in a module context with **no `Bun` global**. `runGit` originally called `Bun.spawn` unconditionally; since every git failure in that engine degrades quietly by design, it did not throw — it reported a real git repository as "not a git repository" and would have rendered every doc unverified. Both `runGit` and `runHayven` now feature-detect through `globalThis` and fall back to `node:child_process`.
+</Callout>
 
 Because it hangs off `configureServer`, the API exists **only in `vite dev`** — a `vite build` bundle has no backend. The docs root defaults to `../.docs` and can be overridden with `DOCS_ROOT`; project scanning honours `PROJECTS_ROOT` before falling back to sibling and common dev directories.
 

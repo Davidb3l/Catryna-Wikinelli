@@ -1,0 +1,94 @@
+---
+id: a1fc57d9-15a4-47a5-88bd-b09c66bafa51
+title: "Coverage core"
+path: "backend/coverage"
+tags: ["phase2", "coverage", "backend"]
+relatedFiles: ["src/coverage.ts", "src/tools/coverage.ts"]
+anchors: []
+evidence: []
+refs: []
+verifiedCommit: ""
+verifiedAt: ""
+driftSuspectSince: ""
+driftSuspectReason: ""
+createdAt: 1785617858378
+updatedAt: 1785617858378
+createdBy: "claude-code"
+---
+
+# Coverage core
+
+`src/coverage.ts` computes documentation coverage: how much of the source tree is anchored by a doc. It was extracted out of the MCP tool so **one implementation** answers the question everywhere it is asked — the MCP tools, and the viewer's `GET /api/coverage`.
+
+Before the extraction the viewer had no answer at all and rendered hardcoded placeholders.
+
+## The anchors gap (fixed)
+
+Coverage counts **effective anchors** (`effectiveAnchors`), not bare `relatedFiles`.
+
+The old implementation read `relatedFiles` only. A doc that anchored precisely — `anchors: [{file, symbol}]` — drifted correctly but counted as documenting *nothing*. **Using the more precise Phase 1 feature made your coverage number worse.**
+
+A test asserts a symbol-anchored doc and a `relatedFiles` doc produce identical coverage for the same file.
+
+## Two design rules
+
+Both learned from real bugs, both enforced by tests:
+
+1. **No `process.cwd()`.** Every root is an explicit parameter. The viewer's dev server runs with `cwd = frontend/`, and its docs root is switchable at runtime via `POST /api/projects/select` — anything resolving paths from the current directory silently reports on the wrong project.
+2. **Docs come in as data.** Callers supply the already-loaded index, so this module never decides where `.docs/` lives.
+
+## API
+
+```typescript
+computeCoverage(opts: {
+  rootDir: string;        // source tree to scan
+  docs: DocMetadata[];    // already-loaded index
+  limit?: number;         // caps the undocumented LISTING (default 50)
+}): Promise<CoverageReport>
+
+findSourceFiles(dir: string, rootDir: string): Promise<string[]>
+anchoredFiles(docs: DocMetadata[]): Set<string>
+```
+
+### CoverageReport
+
+| Field | Meaning |
+|---|---|
+| `totalModules` | Source files found, after exclusions |
+| `documentedModules` | Source files anchored by at least one doc |
+| `coveragePercent` | `documented / total`, 0..100. `0` when there is no source (never `NaN`) |
+| `totalDocs` | Docs in the index |
+| `anchoringDocs` | Docs that anchor at least one file — the ones coverage can credit |
+| `brokenAnchors` | Anchored paths not on disk |
+| `undocumented` | Sample of undocumented modules, capped by `limit` |
+| `totalUndocumented` | **Exact** count, never capped |
+
+<Callout type="info">
+The undocumented **list** is capped but the **count** is always exact, so a truncated sample can never be mistaken for the whole problem.
+</Callout>
+
+## What counts as source
+
+Extensions: `.ts` `.tsx` `.js` `.jsx` `.py` `.go` `.rs`.
+
+Excluded: `node_modules`, `dist`, `build`, `__pycache__`, `.git`, `.docs`, and `*.test.*` / `*.spec.*`. Tests and build output are not undocumented modules, and counting them makes coverage permanently unreachable.
+
+Exclusion patterns are anchored to **path segments**, so a directory named `distributed/` is not swallowed by the `dist` rule.
+
+## Broken anchors
+
+An anchor pointing at a path that is not on disk. A doc pointing at a deleted file documents no module, so it is surfaced rather than quietly counted.
+
+An anchor on an **excluded-but-real** file (a test file, say) is legitimate and is *not* reported broken — only paths that are neither scanned source nor present on disk.
+
+## Consumers
+
+| Consumer | Notes |
+|---|---|
+| `get_doc_coverage` | Full report + recency lists |
+| `get_undocumented_modules` | The undocumented sample |
+| `GET /api/coverage` | The viewer dashboard |
+
+<Callout type="warning">
+`recentlyUpdated` / `staleDocs` in `get_doc_coverage` sort on `updatedAt`, which is **edit** time, not verification time. A recently edited doc is not a verified one — that is what `freshness` and `catryna drift` are for.
+</Callout>

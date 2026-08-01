@@ -87,6 +87,47 @@ type VerificationStatus = 'verified' | 'suspect' | 'unverified';
 
 `verificationStatus(v)` — exported from `frontend/hooks/useDocs.ts`, not from `types.ts`, which stays purely declarative — reduces the five fields to the three states a badge needs: no `verifiedCommit` is `unverified`, a set `driftSuspectSince` is `suspect`, otherwise `verified`.
 
+## Drift and coverage (Phase 2 API types)
+
+These mirror the `GET /api/drift` and `GET /api/coverage` responses.
+
+```typescript
+// Mirrors DriftStatus in src/drift.ts.
+// clean = green, drifted = amber, broken = red, unverified = grey.
+type DriftStatus = 'clean' | 'drifted' | 'broken' | 'unverified';
+
+interface DocDrift {
+  status: DriftStatus;
+  verifiedCommit: string;
+  changedFiles: string[];
+  brokenFiles?: string[];      // only when broken
+}
+
+interface DriftResponse {
+  gitRepo: boolean;
+  head: string | null;
+  error?: string;
+  docs: Record<string, DocDrift>;   // keyed by doc path
+  summary: { clean: number; drifted: number; broken: number; unverified: number };
+}
+
+interface CoverageResponse {
+  totalModules: number;
+  documentedModules: number;
+  coveragePercent: number;
+  totalDocs: number;
+  anchoringDocs: number;
+  brokenAnchors: string[];
+  undocumented: UndocumentedModule[];  // capped sample
+  totalUndocumented: number;           // exact count
+  generatedAt: number;
+}
+```
+
+<Callout type="info">
+`DriftStatus` (the live, git-computed verdict) and `VerificationStatus` (derived from stored frontmatter) answer different questions. Frontmatter records which commit a doc was checked at; only the drift engine knows whether the code has moved on since. The badge uses `DriftStatus`.
+</Callout>
+
 ## History Entry
 
 ```typescript
