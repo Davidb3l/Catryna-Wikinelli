@@ -1,0 +1,90 @@
+---
+id: 18949801-5661-497c-a183-26132900fdc6
+title: "catryna lint — structural doc health"
+path: "backend/lint"
+tags: ["lint", "backend", "gate", "quality"]
+relatedFiles: ["src/lint.ts", "src/tools/lint.ts", "src/cli.ts"]
+anchors: []
+evidence: []
+refs: []
+verifiedCommit: ""
+verifiedAt: ""
+driftSuspectSince: ""
+driftSuspectReason: ""
+createdAt: 1785627863145
+updatedAt: 1785627863145
+createdBy: "claude-code"
+---
+
+# `catryna lint` — structural doc health
+
+A different question from every other command in the suite, and the distinction is the point:
+
+| Command | Question |
+|---|---|
+| `catryna drift` | Has the **code** outgrown this doc? |
+| `catryna lint` | Is this **doc** structurally sound and honestly anchored? |
+
+Drift can only speak about docs that anchor code, and only about whether that code moved. It says nothing about a doc whose frontmatter is unparseable, whose callout tags are orphaned, or whose anchors point at paths that were never there. Those docs render broken or silently document nothing — and until this shipped, nothing in the toolchain looked for them.
+
+## Rules
+
+Every rule was earned by a real failure in this repo, not invented.
+
+| Rule | Severity | Why it exists |
+|---|---|---|
+| `frontmatter` | error | No parseable `---` block — the doc has no path, tags or baseline, so the index and the file disagree from then on |
+| `unclosed-callout` | error | The lossy MDX round-trip's signature: an orphaned closing tag renders as literal text mid-document |
+| `unclosed-fence` | error | An odd number of ``` swallows the rest of the doc into a code block |
+| `missing-anchor` | error | An anchor to a path not on disk documents nothing. Drift calls this `broken` **only once a baseline exists**; lint catches it immediately |
+| `windows-anchor` | error | A backslash path matches nothing off Windows, so the doc silently stops being drift-checked at all |
+| `index-mismatch` | error (path) / warning (title) | `_index.json` and the frontmatter disagreeing means one of them is lying to whoever read it first |
+| `orphan-file` | warning | A `.mdx` no index entry names is invisible to search, drift and coverage |
+| `missing-file` | error | An index entry with no file behind it 404s in the viewer |
+
+## What it deliberately does NOT check
+
+No prose opinions — no line length, no heading order, no spelling.
+
+<Callout type="info">
+A gate that fails on style trains people to bypass the gate. Every rule here describes a doc that is **broken**, not one that is merely unfashionable.
+</Callout>
+
+## The false-positive guard
+
+`stripCode()` removes fenced blocks and inline code **before** looking for markup.
+
+Without it the checker flags a doc that merely *mentions* a closing callout tag inside backticks. That is not hypothetical: it happened in this repo, to the ad-hoc shell checker this command replaces, on a doc describing that very failure mode.
+
+<Callout type="warning">
+A validator that cries wolf gets ignored, and an ignored validator is worse than none — it provides the feeling of coverage without the fact of it. The false-positive guard is the most important code in this module.
+</Callout>
+
+## Exit codes
+
+Matches the `drift` convention exactly:
+
+| Code | Meaning |
+|---|---|
+| `0` | No errors. Warnings may be present — **warnings never gate** |
+| `3` | One or more errors: the gate is hit |
+| `1` | Operational failure (unreadable `_index.json`) — distinct from the gate |
+
+`--json` emits exactly one object on stdout with stderr clean, per SUITE_CONTRACTS §4.
+
+## Interaction with `verify`
+
+`catryna verify` refuses to record a baseline on a structurally malformed doc, checked **before** the write so a rejection leaves the previous baseline intact. `verify` is the chokepoint every doc passes through, so nothing structurally broken can ever claim to be verified.
+
+<Callout type="warning">
+The guard is scoped to `STRUCTURAL_RULES` — `frontmatter`, `unclosed-callout`, `unclosed-fence` — and deliberately **excludes anchor resolution**. A vanished anchor means the *code* moved, which is drift's question; `verifyDoc` already reports it as a `brokenAnchors` warning while still recording the baseline. Blocking there would overrule that decision and make re-verifying a doc after a rename impossible.
+</Callout>
+
+## Surfaces
+
+- **CLI:** `catryna lint [--json]`
+- **MCP:** `lint_docs` — in its own `src/tools/lint.ts`, not folded into the drift tools, because it is a different question with a different gate
+
+## Design rules
+
+Same two as `src/coverage.ts`, for the same reasons: `lintDocs(cwd)` takes its root as a **parameter** and never reads `process.cwd()`, and every issue carries an **actionable hint** rather than only a diagnosis — asserted by a test.

@@ -193,6 +193,14 @@ Coverage counts **effective anchors**, so a doc anchored purely through structur
 `recentlyUpdated` / `staleDocs` sort on `updatedAt`, which is **edit** time, not verification time. A recently edited doc is not a verified one — that is what `freshness` and `catryna drift` answer.
 </Callout>
 
+## Lint Tools (lint.ts)
+
+### lint_docs
+
+Are the docs **well-formed**? Frontmatter parseable, callout/fence balance, anchors that resolve, index and file in agreement. Returns the same JSON body as `catryna lint --json`.
+
+Separate from the drift tools by design — drift asks whether the code moved, lint asks whether the doc is sound. See the `backend/lint` doc.
+
 ## Drift Tools (drift.ts)
 
 The in-session half of the living-docs loop — the same logic behind the `catryna drift` / `verify` / `repair` CLI subcommands, so an agent never has to shell out.

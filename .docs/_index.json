@@ -350,7 +350,33 @@
       "createdAt": 1785619158337,
       "updatedAt": 1785619158337,
       "createdBy": "claude-code"
+    },
+    {
+      "id": "18949801-5661-497c-a183-26132900fdc6",
+      "path": "backend/lint",
+      "title": "catryna lint — structural doc health",
+      "tags": [
+        "lint",
+        "backend",
+        "gate",
+        "quality"
+      ],
+      "relatedFiles": [
+        "src/lint.ts",
+        "src/tools/lint.ts",
+        "src/cli.ts"
+      ],
+      "anchors": [],
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "driftSuspectSince": "",
+      "driftSuspectReason": "",
+      "createdAt": 1785627863145,
+      "updatedAt": 1785627863145,
+      "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1785627208550
+  "lastUpdated": 1785627863146
 }
