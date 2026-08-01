@@ -311,11 +311,35 @@ function parseFmArray(value: string): string[] {
  * so the rest of the system only ever sees `{file, symbol?, lines?}` in canonical
  * shape (`file` a non-empty string; `lines` a sorted 2-tuple of numbers).
  */
+/**
+ * Normalize an anchor path so a corpus authored on one OS works on the others.
+ *
+ * `.docs/` is git-versioned and travels between machines, but a doc authored on
+ * Windows records anchors with backslashes (`src\index.ts`). On macOS/Linux that
+ * is one literal filename, so nothing resolves and drift reports every such doc
+ * `broken` — and the backslashes also make the frontmatter array invalid JSON
+ * (`\i` is an illegal escape), silently downgrading it to the legacy parser.
+ *
+ * Converting `\` → `/` is unconditionally right HERE (as opposed to for
+ * filesystem paths generally) because anchors are used as git pathspecs and
+ * compared against `git diff --name-only` output, and git speaks forward slashes
+ * on every platform, Windows included. A tracked path git reports can never
+ * contain a raw backslash separator, so there is nothing to lose.
+ */
+export function normalizeAnchorPath(p: string): string {
+  return p
+    .replace(/\\/g, "/") // Windows separators → POSIX (git's wire format)
+    .replace(/\/{2,}/g, "/") // collapse duplicate separators
+    .replace(/^\.\//, ""); // strip a leading "./" so it matches git output
+}
+
 export function normalizeAnchor(x: unknown): DocAnchor | null {
   if (!x || typeof x !== "object") return null;
   const o = x as Record<string, unknown>;
   if (typeof o.file !== "string" || o.file.length === 0) return null;
-  const anchor: DocAnchor = { file: o.file };
+  const file = normalizeAnchorPath(o.file);
+  if (file.length === 0) return null;
+  const anchor: DocAnchor = { file };
   if (typeof o.symbol === "string" && o.symbol.length > 0) anchor.symbol = o.symbol;
   if (
     Array.isArray(o.lines) &&
@@ -381,8 +405,12 @@ export function effectiveAnchors(
     : [];
   const anchoredFiles = new Set(anchors.map((a) => a.file));
   const related = Array.isArray(meta.relatedFiles) ? meta.relatedFiles : [];
-  for (const f of related) {
-    if (typeof f === "string" && f.length > 0 && !anchoredFiles.has(f)) {
+  for (const raw of related) {
+    if (typeof raw !== "string" || raw.length === 0) continue;
+    // Same cross-platform normalization as structured anchors: a legacy
+    // `relatedFiles` entry authored on Windows carries backslashes.
+    const f = normalizeAnchorPath(raw);
+    if (f.length > 0 && !anchoredFiles.has(f)) {
       anchors.push({ file: f });
       anchoredFiles.add(f);
     }
@@ -513,7 +541,14 @@ function blockToMdx(block: Block): string {
  * Parse MDX file back to metadata and blocks. Exported so the frontmatter
  * round-trip (serialize → parse) is directly testable.
  */
-export function parseMdx(content: string): { metadata: Partial<DocMetadata>; blocks: Block[] } {
+export function parseMdx(rawContent: string): { metadata: Partial<DocMetadata>; blocks: Block[] } {
+  // CRLF tolerance (cross-platform): a `.docs/` corpus checked out on Windows —
+  // or anywhere with `core.autocrlf=false` after a Windows commit — arrives with
+  // CRLF endings. The frontmatter regex below anchors on `\n`, so `---\r\n`
+  // would NOT match: the metadata would be silently lost and the whole YAML
+  // block would be parsed as body content. Normalize to LF before parsing.
+  const content = rawContent.replace(/\r\n/g, "\n");
+
   // Extract frontmatter
   const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
 
