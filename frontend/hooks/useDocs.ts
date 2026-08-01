@@ -6,6 +6,9 @@ import type {
   DocAnchor,
   DocVerification,
   VerificationStatus,
+  DriftStatus,
+  DriftResponse,
+  CoverageResponse,
 } from '../types';
 
 /**
@@ -260,6 +263,71 @@ export function useDocsSearch() {
   }, []);
 
   return { results, loading, error, search };
+}
+
+/**
+ * Per-doc drift status for the verified badge (PRODUCT_ROADMAP Phase 2).
+ *
+ * This is the REAL verdict — `GET /api/drift` runs the same git-backed engine as
+ * `catryna drift`. It is deliberately not derived from frontmatter: a doc's
+ * stored `verifiedCommit` only says which commit it was checked at, never
+ * whether the code has moved on since.
+ *
+ * Degrades quietly. Outside a git repo (or on a dev API that predates the
+ * endpoint) `statuses` is empty and every badge renders as unknown — the viewer
+ * must not claim docs are verified because it failed to ask.
+ */
+export function useDrift() {
+  const [drift, setDrift] = useState<DriftResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchDrift = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/drift');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setDrift(await res.json());
+    } catch {
+      setDrift(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchDrift(); }, [fetchDrift]);
+
+  const statusFor = useCallback(
+    (path: string): DriftStatus | null => drift?.docs?.[path]?.status ?? null,
+    [drift],
+  );
+
+  return { drift, loading, statusFor, refetch: fetchDrift };
+}
+
+/** Real documentation coverage from `GET /api/coverage`. */
+export function useCoverage() {
+  const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchCoverage = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/coverage');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setCoverage(await res.json());
+    } catch (err) {
+      setError(String(err));
+      setCoverage(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchCoverage(); }, [fetchCoverage]);
+
+  return { coverage, loading, error, refetch: fetchCoverage };
 }
 
 // Default empty doc for when nothing is selected

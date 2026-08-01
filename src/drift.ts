@@ -88,8 +88,12 @@ interface GitResult {
  */
 export async function runGit(cwd: string, args: string[]): Promise<GitResult> {
   try {
-    if (typeof Bun !== "undefined" && typeof Bun.spawn === "function") {
-      const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+    // Reached via globalThis, not the `Bun` global: this module is also compiled
+    // by the frontend's tsconfig (the Vite plugin imports it), which has no Bun
+    // type definitions. Feature-detection stays a runtime concern either way.
+    const bun = (globalThis as { Bun?: { spawn?: (...a: any[]) => any } }).Bun;
+    if (bun && typeof bun.spawn === "function") {
+      const proc = bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
       const [stdout, stderr, code] = await Promise.all([
         new Response(proc.stdout).text(),
         new Response(proc.stderr).text(),
@@ -311,7 +315,22 @@ async function runHayven(
   timeoutMs = 2000,
 ): Promise<{ ok: boolean; stdout: string }> {
   try {
-    const proc = Bun.spawn(["hayven", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+    // Same runtime feature-detection as runGit — see the note there. Under Node
+    // the timeout is execFile's own, which kills the child on expiry.
+    const bun = (globalThis as { Bun?: { spawn?: (...a: any[]) => any } }).Bun;
+    if (!bun || typeof bun.spawn !== "function") {
+      const { execFile } = await import("node:child_process");
+      return await new Promise<{ ok: boolean; stdout: string }>((resolve) => {
+        execFile(
+          "hayven",
+          args,
+          { cwd, timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, encoding: "utf8" },
+          (err, stdout) => resolve({ ok: !err, stdout: String(stdout ?? "") }),
+        );
+      });
+    }
+
+    const proc = bun.spawn(["hayven", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
     const timer = setTimeout(() => {
       try {
         proc.kill();

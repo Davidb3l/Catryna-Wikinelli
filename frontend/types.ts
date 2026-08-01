@@ -51,6 +51,49 @@ export interface DocVerification {
 /** Verification state reduced to what a badge needs. Derived by `verificationStatus`. */
 export type VerificationStatus = 'verified' | 'suspect' | 'unverified';
 
+/**
+ * Per-doc drift status from `GET /api/drift` — the real, git-computed verdict
+ * behind the verified badge. Mirrors `DriftStatus` in src/drift.ts.
+ *
+ * `clean` = green, `drifted` = amber, `broken` = red, `unverified` = grey.
+ */
+export type DriftStatus = 'clean' | 'drifted' | 'broken' | 'unverified';
+
+export interface DocDrift {
+  status: DriftStatus;
+  verifiedCommit: string;
+  changedFiles: string[];
+  brokenFiles?: string[];
+}
+
+export interface DriftResponse {
+  gitRepo: boolean;
+  head: string | null;
+  error?: string;
+  docs: Record<string, DocDrift>;
+  summary: { clean: number; drifted: number; broken: number; unverified: number };
+}
+
+/** One undocumented source file, from `GET /api/coverage`. */
+export interface UndocumentedModule {
+  filePath: string;
+  name: string;
+  lastModified: number;
+}
+
+/** Coverage report from `GET /api/coverage`. Mirrors src/coverage.ts. */
+export interface CoverageResponse {
+  totalModules: number;
+  documentedModules: number;
+  coveragePercent: number;
+  totalDocs: number;
+  anchoringDocs: number;
+  brokenAnchors: string[];
+  undocumented: UndocumentedModule[];
+  totalUndocumented: number;
+  generatedAt: number;
+}
+
 export interface Document {
   id: string;
   title: string;

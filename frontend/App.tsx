@@ -18,8 +18,8 @@ import { TurboEdgeGradient } from './components/TurboEdgeGradient';
 // Custom node and edge types for Turbo Flow style
 const nodeTypes = { turbo: TurboNode };
 const edgeTypes = { turbo: TurboEdge };
-import { NavItem, Document, Block, UserPreferences, HistoryEntry } from './types';
-import { useDocsList, useDoc, useDocsSearch, EMPTY_DOC } from './hooks/useDocs';
+import { NavItem, Document, Block, UserPreferences, HistoryEntry, DriftStatus, DocDrift } from './types';
+import { useDocsList, useDoc, useDocsSearch, useDrift, useCoverage, EMPTY_DOC } from './hooks/useDocs';
 
 // Initialize mermaid with Turbo Flow inspired theme
 const initMermaid = (isDark: boolean) => {
@@ -194,31 +194,203 @@ const VersionHistorySidebar: React.FC<{
   );
 };
 
-const CoverageReport: React.FC<{ onClose: () => void }> = ({ onClose }) => (
-  <div className="fixed inset-0 z-[160] bg-white dark:bg-zinc-950 flex flex-col animate-in fade-in duration-300">
-    <header className="h-12 sm:h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 shrink-0">
-      <div className="flex items-center gap-2 sm:gap-3"><Button variant="ghost" onClick={onClose} className="p-1"><X size={20} /></Button><h2 className="font-bold flex items-center gap-2 text-sm sm:text-base"><BarChart3 size={18} /> <span className="hidden sm:inline">Documentation</span> Coverage</h2></div>
-    </header>
-    <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-12 max-w-5xl mx-auto w-full">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-8 sm:mb-12">
-        <div className="p-4 sm:p-6 bg-zinc-50 dark:bg-zinc-900 rounded-xl sm:rounded-2xl border border-zinc-100 dark:border-zinc-800"><div className="text-[10px] sm:text-xs text-zinc-400 font-bold uppercase mb-1.5 sm:mb-2">Health Score</div><div className="text-3xl sm:text-4xl font-black text-indigo-600">84%</div></div>
-        <div className="p-4 sm:p-6 bg-zinc-50 dark:bg-zinc-900 rounded-xl sm:rounded-2xl border border-zinc-100 dark:border-zinc-800"><div className="text-[10px] sm:text-xs text-zinc-400 font-bold uppercase mb-1.5 sm:mb-2">Total Pages</div><div className="text-3xl sm:text-4xl font-black text-zinc-900 dark:text-white">42</div></div>
-        <div className="p-4 sm:p-6 bg-zinc-50 dark:bg-zinc-900 rounded-xl sm:rounded-2xl border border-zinc-100 dark:border-zinc-800"><div className="text-[10px] sm:text-xs text-zinc-400 font-bold uppercase mb-1.5 sm:mb-2">Missing Context</div><div className="text-3xl sm:text-4xl font-black text-amber-500">12</div></div>
-      </div>
-      <div className="space-y-3 sm:space-y-4">
-        {['auth-service.ts', 'user-controller.go', 'database-layer.rs', 'frontend-api.ts'].map((f, i) => (
-          <div key={f} className="p-3 sm:p-4 bg-white dark:bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
-            <div className="flex items-center gap-2 sm:gap-3"><Terminal size={14} className="text-zinc-400 shrink-0 sm:w-4 sm:h-4" /><span className="text-xs sm:text-sm font-medium truncate">{f}</span></div>
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="flex-1 sm:w-24 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden"><div className="h-full bg-indigo-500" style={{ width: i === 3 ? '20%' : '100%' }} /></div>
-              <span className={`text-[10px] sm:text-xs font-bold shrink-0 ${i === 3 ? 'text-red-500' : 'text-green-500'}`}>{i === 3 ? 'Missing' : 'Done'}</span>
-            </div>
-          </div>
-        ))}
-      </div>
+/**
+ * Verified badge (PRODUCT_ROADMAP Phase 2).
+ *
+ * Green = verified at HEAD, amber = anchored code changed since, red = anchors
+ * broken, grey = never verified. `null` means the viewer could not determine a
+ * status (no /api/drift, or not a git repo) — it renders as "unknown" rather
+ * than as verified, because failing to ask is not a clean bill of health.
+ */
+const DRIFT_BADGE: Record<string, { label: string; title: string; cls: string; dot: string }> = {
+  clean: {
+    label: 'Verified',
+    title: 'Verified: anchored code is unchanged since this doc was last checked.',
+    cls: 'text-green-700 bg-green-100 dark:text-green-300 dark:bg-green-950/60 border-green-200 dark:border-green-900',
+    dot: 'bg-green-500',
+  },
+  drifted: {
+    label: 'Stale',
+    title: 'Stale: anchored code has changed since this doc was last verified.',
+    cls: 'text-amber-700 bg-amber-100 dark:text-amber-300 dark:bg-amber-950/60 border-amber-200 dark:border-amber-900',
+    dot: 'bg-amber-500',
+  },
+  broken: {
+    label: 'Broken',
+    title: 'Broken: a file this doc anchors no longer exists.',
+    cls: 'text-red-700 bg-red-100 dark:text-red-300 dark:bg-red-950/60 border-red-200 dark:border-red-900',
+    dot: 'bg-red-500',
+  },
+  unverified: {
+    label: 'Unverified',
+    title: 'Unverified: this doc has no drift baseline and has never been checked against the code.',
+    cls: 'text-zinc-600 bg-zinc-100 dark:text-zinc-400 dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-700',
+    dot: 'bg-zinc-400',
+  },
+  unknown: {
+    label: 'Unknown',
+    title: 'Unknown: drift could not be computed (no git repository, or this doc anchors no code).',
+    cls: 'text-zinc-500 bg-transparent border-dashed border-zinc-300 dark:border-zinc-700',
+    dot: 'bg-zinc-300 dark:bg-zinc-600',
+  },
+};
+
+const VerifiedBadge: React.FC<{ status: DriftStatus | null; compact?: boolean }> = ({ status, compact }) => {
+  const b = DRIFT_BADGE[status ?? 'unknown'];
+  if (compact) {
+    return <span title={b.title} className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${b.dot}`} />;
+  }
+  return (
+    <span
+      title={b.title}
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wide ${b.cls}`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${b.dot}`} />
+      {b.label}
+    </span>
+  );
+};
+
+/**
+ * The per-doc trust line under the title: the badge, plus what the verdict is
+ * actually based on. A badge alone tells a reader a doc is stale; naming the
+ * changed files tells them what to go re-read.
+ */
+const DocTrust: React.FC<{ status: DriftStatus | null; detail?: DocDrift }> = ({ status, detail }) => {
+  if (!status) return null;
+  const files = status === 'broken' ? (detail?.brokenFiles ?? []) : (detail?.changedFiles ?? []);
+  const noun = status === 'broken' ? 'missing' : 'changed';
+  return (
+    <div className="mb-6 sm:mb-8 lg:mb-10 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+      <VerifiedBadge status={status} />
+      {detail?.verifiedCommit && (
+        <span>baseline <code className="font-mono">{detail.verifiedCommit.slice(0, 7)}</code></span>
+      )}
+      {files.length > 0 && (
+        <span className="min-w-0">
+          {files.length} {noun}:{' '}
+          <span className="font-mono">{files.slice(0, 3).join(', ')}</span>
+          {files.length > 3 && ` +${files.length - 3} more`}
+        </span>
+      )}
     </div>
+  );
+};
+
+const StatCard: React.FC<{ label: string; value: React.ReactNode; tone?: string; hint?: string }> = ({
+  label, value, tone = 'text-zinc-900 dark:text-white', hint,
+}) => (
+  <div className="p-4 sm:p-6 bg-zinc-50 dark:bg-zinc-900 rounded-xl sm:rounded-2xl border border-zinc-100 dark:border-zinc-800">
+    <div className="text-[10px] sm:text-xs text-zinc-400 font-bold uppercase mb-1.5 sm:mb-2">{label}</div>
+    <div className={`text-3xl sm:text-4xl font-black ${tone}`}>{value}</div>
+    {hint && <div className="text-[10px] sm:text-xs text-zinc-400 mt-1">{hint}</div>}
   </div>
 );
+
+const CoverageReport: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const { coverage, loading, error } = useCoverage();
+  const { drift } = useDrift();
+
+  return (
+    <div className="fixed inset-0 z-[160] bg-white dark:bg-zinc-950 flex flex-col animate-in fade-in duration-300">
+      <header className="h-12 sm:h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3"><Button variant="ghost" onClick={onClose} className="p-1"><X size={20} /></Button><h2 className="font-bold flex items-center gap-2 text-sm sm:text-base"><BarChart3 size={18} /> <span className="hidden sm:inline">Documentation</span> Coverage</h2></div>
+      </header>
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-12 max-w-5xl mx-auto w-full">
+        {loading && (
+          <div className="flex items-center gap-2 text-sm text-zinc-500"><Loader2 size={16} className="animate-spin" /> Scanning source files…</div>
+        )}
+
+        {!loading && (error || !coverage) && (
+          <div className="p-4 rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-sm text-amber-800 dark:text-amber-300 flex items-start gap-2">
+            <AlertCircle size={16} className="shrink-0 mt-0.5" />
+            <div>
+              <div className="font-bold">Coverage unavailable</div>
+              <div className="mt-1 text-xs">
+                The dev server did not answer <code>/api/coverage</code>. No numbers are shown rather than made-up ones.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!loading && coverage && (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-8 sm:mb-12">
+              <StatCard
+                label="Coverage"
+                value={`${coverage.coveragePercent}%`}
+                tone="text-indigo-600"
+                hint={`${coverage.documentedModules} of ${coverage.totalModules} modules anchored`}
+              />
+              <StatCard
+                label="Docs"
+                value={coverage.totalDocs}
+                hint={`${coverage.anchoringDocs} anchor code`}
+              />
+              <StatCard
+                label="Undocumented"
+                value={coverage.totalUndocumented}
+                tone={coverage.totalUndocumented > 0 ? 'text-amber-500' : 'text-green-600'}
+                hint={coverage.totalUndocumented > coverage.undocumented.length
+                  ? `showing first ${coverage.undocumented.length}`
+                  : 'complete list below'}
+              />
+            </div>
+
+            {drift && drift.gitRepo && (
+              <div className="mb-8 flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-zinc-400 font-bold uppercase tracking-wide">Doc trust</span>
+                <span className="inline-flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-green-500" />{drift.summary.clean} verified</span>
+                <span className="inline-flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" />{drift.summary.drifted} stale</span>
+                <span className="inline-flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-red-500" />{drift.summary.broken} broken</span>
+                <span className="inline-flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />{drift.summary.unverified} unverified</span>
+              </div>
+            )}
+
+            {coverage.brokenAnchors.length > 0 && (
+              <div className="mb-8 p-4 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40">
+                <div className="text-xs font-bold uppercase text-red-700 dark:text-red-400 mb-2">
+                  Broken anchors ({coverage.brokenAnchors.length})
+                </div>
+                <div className="space-y-1">
+                  {coverage.brokenAnchors.map(f => (
+                    <div key={f} className="text-xs font-mono text-red-800 dark:text-red-300">{f}</div>
+                  ))}
+                </div>
+                <div className="text-[10px] text-red-700/70 dark:text-red-400/70 mt-2">
+                  A doc anchors these paths, but they are not on disk.
+                </div>
+              </div>
+            )}
+
+            <div className="text-xs font-bold uppercase text-zinc-400 mb-3">
+              Undocumented modules{coverage.totalUndocumented > coverage.undocumented.length && ` (first ${coverage.undocumented.length} of ${coverage.totalUndocumented})`}
+            </div>
+            <div className="space-y-2 sm:space-y-3">
+              {coverage.undocumented.length === 0 && (
+                <div className="text-sm text-zinc-500">Every source module is anchored by a doc.</div>
+              )}
+              {coverage.undocumented.map(m => (
+                <div key={m.filePath} className="p-3 sm:p-4 bg-white dark:bg-zinc-900/50 rounded-lg sm:rounded-xl border border-zinc-100 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                    <Terminal size={14} className="text-zinc-400 shrink-0 sm:w-4 sm:h-4" />
+                    <span className="text-xs sm:text-sm font-medium truncate font-mono" title={m.filePath}>{m.filePath}</span>
+                  </div>
+                  <span className="text-[10px] sm:text-xs font-bold shrink-0 text-amber-500">Undocumented</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-8 text-[10px] text-zinc-400">
+              Computed from source on disk and <code>.docs/_index.json</code> — the same engine as
+              {' '}<code>get_doc_coverage</code> and <code>catryna drift</code>.
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // --- Main App ---
 
@@ -254,6 +426,8 @@ export default function App() {
 
   // Fetch docs list and nav tree from .docs folder
   const { docs, navItems, loading: listLoading, error: listError, refetch: refetchList } = useDocsList();
+  // Phase 2 trust surface: real, git-computed per-doc status for the badges.
+  const { drift, statusFor: driftStatusFor } = useDrift();
 
   // Fetch current document
   const { doc: fetchedDoc, loading: docLoading, error: docError } = useDoc(selectedDocPath);
@@ -435,7 +609,7 @@ export default function App() {
                 <div className="text-zinc-400 text-sm mb-2">No docs yet</div>
                 <div className="text-zinc-500 text-xs">Use Claude Code to create documentation!</div>
               </div>
-            ) : navItems.map(item => <SidebarItem key={item.id} item={item} depth={0} selectedId={selectedDocPath || ''} onSelect={handleDocSelect} />)}
+            ) : navItems.map(item => <SidebarItem key={item.id} item={item} depth={0} selectedId={selectedDocPath || ''} onSelect={handleDocSelect} statusFor={driftStatusFor} />)}
             <div className="mt-8 px-4"><label className="text-[10px] font-bold text-navy-light dark:text-zinc-400 uppercase tracking-widest mb-3 block">Reports</label><button onClick={() => setActiveEditor('coverage')} className="w-full flex items-center gap-2 text-sm text-navy-light dark:text-zinc-500 hover:text-accent py-1.5 transition-colors"><BarChart3 size={14} /> Doc Coverage</button></div>
           </div>
           <div className="p-3 sm:p-4 border-t border-zinc-200/80 dark:border-zinc-800 flex items-center gap-2 sm:gap-3 bg-white/50 dark:bg-zinc-900/50">
@@ -473,7 +647,11 @@ export default function App() {
                 {currentDoc.path.map((p, i) => <React.Fragment key={p}><button className="hover:text-accent whitespace-nowrap">{p}</button><ChevronRight size={10} className="shrink-0" /></React.Fragment>)}
                 <span className="text-navy dark:text-zinc-100 whitespace-nowrap">{currentDoc.title}</span>
               </nav>
-              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black tracking-tight mb-6 sm:mb-8 lg:mb-10 text-navy dark:text-zinc-50">{currentDoc.title}</h1>
+              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black tracking-tight mb-3 sm:mb-4 text-navy dark:text-zinc-50">{currentDoc.title}</h1>
+              <DocTrust
+                status={selectedDocPath ? driftStatusFor(selectedDocPath) : null}
+                detail={selectedDocPath ? drift?.docs?.[selectedDocPath] : undefined}
+              />
               <div className="space-y-1 sm:space-y-2">
                 {currentDoc.blocks
                   .filter(block => !(block.type === 'heading-1' && block.content === currentDoc.title))
@@ -835,16 +1013,21 @@ const BlockRenderer: React.FC<{
 };
 
 // Sub-components
-const SidebarItem: React.FC<{ item: NavItem; depth: number; selectedId: string; onSelect: (id: string) => void }> = ({ item, depth, selectedId, onSelect }) => {
+const SidebarItem: React.FC<{ item: NavItem; depth: number; selectedId: string; onSelect: (id: string) => void; statusFor?: (path: string) => DriftStatus | null }> = ({ item, depth, selectedId, onSelect, statusFor }) => {
   const [isOpen, setIsOpen] = useState(true);
   const isSelected = selectedId === item.id;
+  // Only files carry a verdict; a folder is not a doc. `item.id` is the doc path.
+  const status = item.type === 'file' && statusFor ? statusFor(item.id) : null;
   return (
     <div className="select-none mb-0.5">
       <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer text-xs transition-all ${isSelected ? 'bg-white dark:bg-zinc-800 text-navy dark:text-zinc-50 font-bold shadow-sm' : 'text-navy-light dark:text-zinc-400 hover:bg-white/60 dark:hover:bg-zinc-900'}`} style={{ paddingLeft: `${(depth * 16) + 12}px` }} onClick={() => item.type === 'folder' ? setIsOpen(!isOpen) : onSelect(item.id)}>
         {item.type === 'folder' ? (isOpen ? <ChevronDown size={12} className="text-navy-light dark:text-zinc-400" /> : <ChevronRight size={12} className="text-navy-light dark:text-zinc-400" />) : <FileText size={14} className={isSelected ? 'text-accent' : 'text-navy-light/60 dark:text-zinc-400'} />}
         <span className="truncate">{item.title}</span>
+        {/* Only render a dot when there is a real verdict — absence of data must
+            not paint every doc with a status it does not have. */}
+        {status && <span className="ml-auto shrink-0"><VerifiedBadge status={status} compact /></span>}
       </div>
-      {item.type === 'folder' && isOpen && item.children && <div className="mt-0.5">{item.children.map(child => <SidebarItem key={child.id} item={child} depth={depth + 1} selectedId={selectedId} onSelect={onSelect} />)}</div>}
+      {item.type === 'folder' && isOpen && item.children && <div className="mt-0.5">{item.children.map(child => <SidebarItem key={child.id} item={child} depth={depth + 1} selectedId={selectedId} onSelect={onSelect} statusFor={statusFor} />)}</div>}
     </div>
   );
 };
