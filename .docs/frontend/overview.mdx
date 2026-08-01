@@ -93,6 +93,16 @@ Content-editable blocks for in-browser editing. Nothing persists yet: **Save** r
 
 The sidebar renders `currentDoc.history`, but the API never returns a `history` field and `toDocument()` never sets one — so it always shows "No versions found", and **Revert** only closes the panel. Git is the real history today.
 
+### Coverage Report
+
+<Callout type="warning">
+`CoverageReport` displays **hardcoded placeholder data, not your project's coverage.** The 84% health score, 42 total pages, 12 missing-context count, and the file list (`auth-service.ts`, `user-controller.go`, `database-layer.rs`, `frontend-api.ts`) are literals in `App.tsx`. None of those files exist in this repo, and the screen makes no API call.
+</Callout>
+
+It is reachable from the UI (`activeEditor === 'coverage'`), so a reader can mistake invented numbers for a real report. Catryna already computes this properly — `get_doc_coverage` and `get_undocumented_modules` in `src/tools/coverage.ts` — but the viewer is not wired to either, and the dev docs API exposes no coverage endpoint to wire it to.
+
+The header previously carried an **Auto-Generate Missing** button; it was scaffolding for the removed Gemini integration and never had a handler. Removed rather than left as a dead control.
+
 ### Diagram/Whiteboard Editors
 
 Full-screen modal editors for visual content:

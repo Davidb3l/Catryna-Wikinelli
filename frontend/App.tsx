@@ -5,7 +5,7 @@ import {
   Menu, X, Plus, Clock, Terminal, Activity, Github, Edit3, Save,
   MousePointer2, History, RotateCcw, Check, Monitor, Moon, Sun,
   Type as TypeIcon, Layout, Box, Share2, Layers, Folder, Copy, ExternalLink,
-  Filter, Calendar, Tag, Sparkles, AlertCircle, GripVertical, Trash2, Maximize2,
+  Filter, Calendar, Tag, AlertCircle, GripVertical, Trash2, Maximize2,
   Table as TableIcon, BarChart3, PieChart, Info, Loader2, FolderOpen, ChevronUp
 } from 'lucide-react';
 import ReactFlow, { Background, Controls, MiniMap, Position, MarkerType } from 'reactflow';
@@ -199,7 +199,6 @@ const CoverageReport: React.FC<{ onClose: () => void }> = ({ onClose }) => (
   <div className="fixed inset-0 z-[160] bg-white dark:bg-zinc-950 flex flex-col animate-in fade-in duration-300">
     <header className="h-12 sm:h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 shrink-0">
       <div className="flex items-center gap-2 sm:gap-3"><Button variant="ghost" onClick={onClose} className="p-1"><X size={20} /></Button><h2 className="font-bold flex items-center gap-2 text-sm sm:text-base"><BarChart3 size={18} /> <span className="hidden sm:inline">Documentation</span> Coverage</h2></div>
-      <Button variant="accent" className="text-xs sm:text-sm px-2 sm:px-3"><Sparkles size={16} /> <span className="hidden sm:inline">Auto-Generate Missing</span><span className="sm:hidden">Generate</span></Button>
     </header>
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-12 max-w-5xl mx-auto w-full">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6 mb-8 sm:mb-12">
