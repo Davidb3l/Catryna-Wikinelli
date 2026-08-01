@@ -9,6 +9,7 @@ import type {
   DriftStatus,
   DriftResponse,
   CoverageResponse,
+  CoverageTrendResponse,
 } from '../types';
 
 /**
@@ -302,6 +303,35 @@ export function useDrift() {
   );
 
   return { drift, loading, statusFor, refetch: fetchDrift };
+}
+
+/**
+ * Coverage over time, from `GET /api/coverage/trend`.
+ *
+ * Derived from git history on request — there is no stored series, so the chart
+ * is always complete and always current. Costs two git reads per sample, hence
+ * the bounded `points`.
+ */
+export function useCoverageTrend(points = 40) {
+  const [trend, setTrend] = useState<CoverageTrendResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchTrend = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/coverage/trend?points=${points}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setTrend(await res.json());
+    } catch {
+      setTrend(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [points]);
+
+  useEffect(() => { fetchTrend(); }, [fetchTrend]);
+
+  return { trend, loading, refetch: fetchTrend };
 }
 
 /** Real documentation coverage from `GET /api/coverage`. */

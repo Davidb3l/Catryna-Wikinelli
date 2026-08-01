@@ -207,7 +207,7 @@ function docsApiPlugin(): Plugin {
       // than captured once.
       server.middlewares.use(async (req, res, next) => {
         const url = req.url?.split('?')[0];
-        if (url !== '/api/coverage' && url !== '/api/drift') {
+        if (url !== '/api/coverage' && url !== '/api/drift' && url !== '/api/coverage/trend') {
           return next();
         }
 
@@ -220,6 +220,15 @@ function docsApiPlugin(): Plugin {
           if (url === '/api/coverage') {
             const { computeCoverage } = await import('../src/coverage');
             res.end(JSON.stringify(await computeCoverage({ rootDir: projectRoot, docs, limit: 25 })));
+            return;
+          }
+
+          // Coverage over time, derived from git history — no persisted state.
+          if (url === '/api/coverage/trend') {
+            const { computeCoverageTrend } = await import('../src/trend');
+            const points = Number(new URL(req.url!, 'http://x').searchParams.get('points'));
+            const maxPoints = Number.isFinite(points) && points > 0 ? Math.min(points, 200) : 40;
+            res.end(JSON.stringify(await computeCoverageTrend(projectRoot, { maxPoints })));
             return;
           }
 

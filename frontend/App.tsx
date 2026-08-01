@@ -18,8 +18,8 @@ import { TurboEdgeGradient } from './components/TurboEdgeGradient';
 // Custom node and edge types for Turbo Flow style
 const nodeTypes = { turbo: TurboNode };
 const edgeTypes = { turbo: TurboEdge };
-import { NavItem, Document, Block, UserPreferences, HistoryEntry, DriftStatus, DocDrift } from './types';
-import { useDocsList, useDoc, useDocsSearch, useDrift, useCoverage, EMPTY_DOC } from './hooks/useDocs';
+import { NavItem, Document, Block, UserPreferences, HistoryEntry, DriftStatus, DocDrift, CoverageTrendResponse } from './types';
+import { useDocsList, useDoc, useDocsSearch, useDrift, useCoverage, useCoverageTrend, EMPTY_DOC } from './hooks/useDocs';
 
 // Initialize mermaid with Turbo Flow inspired theme
 const initMermaid = (isDark: boolean) => {
@@ -287,9 +287,89 @@ const StatCard: React.FC<{ label: string; value: React.ReactNode; tone?: string;
   </div>
 );
 
+/**
+ * Coverage over time. Plain inline SVG — a chart library is a lot of bytes for
+ * one line, and this view is the only consumer.
+ *
+ * The y-axis is pinned to 0–100 rather than fitted to the data: an
+ * auto-scaled axis makes a 2-point wobble look like a collapse, and this chart
+ * exists to show whether documentation is keeping pace, not to dramatize noise.
+ */
+const CoverageTrendChart: React.FC<{ trend: CoverageTrendResponse }> = ({ trend }) => {
+  const samples = trend.samples;
+  if (samples.length < 2) {
+    return (
+      <div className="text-xs text-zinc-500">
+        Not enough history yet — the trend needs at least two commits.
+      </div>
+    );
+  }
+
+  const W = 720, H = 140, PAD_L = 28, PAD_B = 18, PAD_T = 8;
+  const plotW = W - PAD_L - 8;
+  const plotH = H - PAD_B - PAD_T;
+  const x = (i: number) => PAD_L + (i / (samples.length - 1)) * plotW;
+  const y = (pct: number) => PAD_T + (1 - pct / 100) * plotH;
+
+  const line = samples.map((s, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(s.coveragePercent).toFixed(1)}`).join(' ');
+  const area = `${line} L ${x(samples.length - 1).toFixed(1)} ${(PAD_T + plotH).toFixed(1)} L ${x(0).toFixed(1)} ${(PAD_T + plotH).toFixed(1)} Z`;
+
+  const fmt = (ts: number) => new Date(ts).toISOString().slice(0, 10);
+  const first = samples[0], last = samples[samples.length - 1];
+  const delta = last.coveragePercent - first.coveragePercent;
+
+  // Biggest drop between consecutive samples — the thing worth looking at.
+  let worst = { drop: 0, at: -1 };
+  for (let i = 1; i < samples.length; i++) {
+    const drop = samples[i - 1].coveragePercent - samples[i].coveragePercent;
+    if (drop > worst.drop) worst = { drop, at: i };
+  }
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img"
+           aria-label={`Documentation coverage from ${fmt(first.timestamp)} to ${fmt(last.timestamp)}`}>
+        {[0, 50, 100].map(g => (
+          <g key={g}>
+            <line x1={PAD_L} x2={W - 8} y1={y(g)} y2={y(g)} className="stroke-zinc-200 dark:stroke-zinc-800" strokeWidth={1} />
+            <text x={PAD_L - 6} y={y(g) + 3} textAnchor="end" className="fill-zinc-400" style={{ fontSize: 8 }}>{g}</text>
+          </g>
+        ))}
+        <path d={area} className="fill-indigo-500/10" />
+        <path d={line} className="stroke-indigo-500" strokeWidth={2} fill="none" strokeLinejoin="round" strokeLinecap="round" />
+        {worst.at > 0 && worst.drop >= 5 && (
+          <circle cx={x(worst.at)} cy={y(samples[worst.at].coveragePercent)} r={3.5}
+                  className="fill-amber-500 stroke-white dark:stroke-zinc-950" strokeWidth={1.5}>
+            <title>{`−${worst.drop}% at ${samples[worst.at].commit.slice(0, 7)} (${fmt(samples[worst.at].timestamp)})`}</title>
+          </circle>
+        )}
+        {samples.map((s, i) => (
+          <circle key={s.commit} cx={x(i)} cy={y(s.coveragePercent)} r={2} className="fill-indigo-500">
+            <title>{`${fmt(s.timestamp)} · ${s.commit.slice(0, 7)} · ${s.coveragePercent}% (${s.documentedModules}/${s.totalModules} modules, ${s.totalDocs} docs)`}</title>
+          </circle>
+        ))}
+        <text x={PAD_L} y={H - 4} className="fill-zinc-400" style={{ fontSize: 8 }}>{fmt(first.timestamp)}</text>
+        <text x={W - 8} y={H - 4} textAnchor="end" className="fill-zinc-400" style={{ fontSize: 8 }}>{fmt(last.timestamp)}</text>
+      </svg>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-zinc-400 mt-1">
+        <span>
+          {delta === 0 ? 'Flat' : delta > 0 ? `Up ${delta} pts` : `Down ${Math.abs(delta)} pts`} over {samples.length} points
+        </span>
+        {worst.drop >= 5 && (
+          <span className="text-amber-600 dark:text-amber-500">
+            Largest drop −{worst.drop}% at {samples[worst.at].commit.slice(0, 7)}
+          </span>
+        )}
+        {trend.sampled && <span>sampled {samples.length} of {trend.totalCommits} commits</span>}
+      </div>
+    </div>
+  );
+};
+
 const CoverageReport: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const { coverage, loading, error } = useCoverage();
   const { drift } = useDrift();
+  const { trend, loading: trendLoading } = useCoverageTrend();
 
   return (
     <div className="fixed inset-0 z-[160] bg-white dark:bg-zinc-950 flex flex-col animate-in fade-in duration-300">
@@ -335,6 +415,26 @@ const CoverageReport: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                   ? `showing first ${coverage.undocumented.length}`
                   : 'complete list below'}
               />
+            </div>
+
+            <div className="mb-8">
+              <div className="text-xs font-bold uppercase text-zinc-400 mb-2">Coverage over time</div>
+              {/* The trend walks git history (two reads per sample), so it can lag
+                  the rest of the dashboard on a long history — say so rather than
+                  leaving a blank that looks like "no data". */}
+              {trendLoading && (
+                <div className="flex items-center gap-2 text-xs text-zinc-500 h-[140px]">
+                  <Loader2 size={14} className="animate-spin" /> Reading coverage from git history…
+                </div>
+              )}
+              {!trendLoading && trend && !trend.error && trend.samples.length > 0 && (
+                <CoverageTrendChart trend={trend} />
+              )}
+              {!trendLoading && (!trend || trend.error) && (
+                <div className="text-xs text-zinc-500">
+                  Trend unavailable{trend?.error ? ` — ${trend.error}` : ''}. It is derived from git history, so it needs a git repository.
+                </div>
+              )}
             </div>
 
             {drift && drift.gitRepo && (

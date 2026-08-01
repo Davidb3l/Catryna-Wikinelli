@@ -81,6 +81,24 @@ export interface UndocumentedModule {
   lastModified: number;
 }
 
+/** Coverage as of one commit, from `GET /api/coverage/trend`. Mirrors src/trend.ts. */
+export interface CoverageSample {
+  commit: string;
+  timestamp: number;
+  coveragePercent: number;
+  totalModules: number;
+  documentedModules: number;
+  totalDocs: number;
+}
+
+export interface CoverageTrendResponse {
+  samples: CoverageSample[];
+  totalCommits: number;
+  /** True when `samples` is a selection, not every commit — surface it, never hide it. */
+  sampled: boolean;
+  error?: string;
+}
+
 /** Coverage report from `GET /api/coverage`. Mirrors src/coverage.ts. */
 export interface CoverageResponse {
   totalModules: number;
