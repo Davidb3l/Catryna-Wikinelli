@@ -3,7 +3,7 @@ id: d37e0497-e75d-47d9-9d08-5ef7067ab81d
 title: "Architecture Overview"
 path: "architecture/overview"
 tags: ["architecture", "overview", "core"]
-relatedFiles: ["src/index.ts", "src/cli.ts", "src/storage.ts", "src/drift.ts", "src/events.ts", "src/consume.ts", "src/doctor.ts"]
+relatedFiles: ["src/index.ts", "src/cli.ts", "src/storage.ts", "src/drift.ts", "src/events.ts", "src/consume.ts", "src/doctor.ts", "src/lint.ts"]
 createdAt: 1767321236003
 updatedAt: 1767321656661
 createdBy: "claude-code"
@@ -23,7 +23,7 @@ Docs are not just stored — they are ANCHORED to code and checked against it. T
 
 The system has five parts:
 
-1. **MCP Server** (`src/index.ts`, bin `catryna-mcp`) - A Bun-run server using the Model Context Protocol SDK that exposes 14 tools for documentation management. Runs on stdio for Claude Code integration.
+1. **MCP Server** (`src/index.ts`, bin `catryna-mcp`) - A Bun-run server using the Model Context Protocol SDK that exposes 15 tools for documentation management. Runs on stdio for Claude Code integration.
 
 2. **CLI** (`src/cli.ts`, bin `catryna`) - A SEPARATE entry point from the MCP server, with hand-rolled arg parsing and six subcommands: `doctor`, `drift`, `lint`, `verify`, `repair`, `consume`. This is what CI, the Stop hook, and peer suite tools invoke.
 
@@ -99,6 +99,7 @@ catryna-wikinelli/
 │   ├── cli.ts                # CLI entry point (bin: catryna)
 │   ├── doctor.ts             # Suite discovery handshake
 │   ├── drift.ts              # Drift engine + verify
+│   ├── lint.ts               # Structural doc lint (catryna lint)
 │   ├── events.ts             # Spine emit + consume primitives
 │   ├── consume.ts            # code.changed → drift-suspect marking
 │   ├── storage.ts            # File-based storage layer
@@ -107,6 +108,7 @@ catryna-wikinelli/
 │       ├── search.ts         # Full-text search
 │       ├── diagrams.ts       # React Flow, Mermaid & tldraw
 │       ├── coverage.ts       # Documentation coverage
+│       ├── lint.ts           # lint_docs — structural doc health
 │       └── drift.ts          # check_drift / verify_doc / propose_doc_repair
 ├── hooks/                    # SessionStart + Stop (drift) hooks
 ├── scripts/                  # run-server.sh, check-catryna.sh
