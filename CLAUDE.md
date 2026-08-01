@@ -73,7 +73,7 @@ Close and reopen Claude Code (or the terminal running it) to load the MCP server
 
 ### Step 4: Verify Connection
 
-Run `/mcp` in Claude Code. You should see `catryna` listed with 14 tools.
+Run `/mcp` in Claude Code. You should see `catryna` listed with 15 tools.
 
 ---
 
@@ -138,6 +138,7 @@ catryna doctor          # health + suite discovery handshake
 catryna drift           # which docs the code has outgrown (exit 3 = gate)
 catryna verify <path>   # re-baseline a doc against HEAD
 catryna repair <path>   # repair bundle: doc content + anchor diffs
+catryna lint            # are the docs well-formed? (exit 3 = gate)
 ```
 
 ---
@@ -205,6 +206,7 @@ catryna-wikinelli/
 | `check_drift` | Which docs the code has outgrown (drifted/broken/unverified/clean) |
 | `verify_doc` | Re-baseline a doc against HEAD once it's accurate again |
 | `propose_doc_repair` | Repair bundle: doc content + git diff of each changed anchor |
+| `lint_docs` | Are the docs WELL-FORMED? (frontmatter, callout/fence balance, anchors, index agreement) |
 
 ### Reading Docs (No MCP Needed!)
 

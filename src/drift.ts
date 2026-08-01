@@ -64,6 +64,7 @@ import {
   type DocMetadata,
 } from "./storage";
 import { docUri, emitEvent } from "./events";
+import { lintDocFile, STRUCTURAL_RULES } from "./lint";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -995,6 +996,25 @@ export async function verifyDoc(cwd: string, path: string): Promise<VerifyResult
   if (!head) {
     return { ok: false, path, error: "cannot resolve HEAD (no commits yet?)" };
   }
+  // Option B: never record a baseline on a MALFORMED doc. `verify` is the
+  // chokepoint every doc passes through, so refusing here means nothing
+  // structurally broken can ever claim to be verified. Checked BEFORE the write,
+  // so a rejected verify leaves the doc's previous baseline untouched.
+  const lintIssues = await lintDocFile(cwd, path);
+  const lintErrors = lintIssues.filter(
+    (i) => i.severity === "error" && STRUCTURAL_RULES.has(i.rule),
+  );
+  if (lintErrors.length > 0) {
+    return {
+      ok: false,
+      path,
+      error:
+        `doc is malformed — refusing to record a baseline:\n` +
+        lintErrors.map((i) => `  [${i.rule}] ${i.message}`).join("\n") +
+        `\nRun \`catryna lint\` for details.`,
+    };
+  }
+
   const verifiedAt = new Date().toISOString();
   const meta = await recordVerification(path, head, verifiedAt);
   if (!meta) {

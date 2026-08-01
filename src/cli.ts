@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import { runConsumeCli } from "./consume";
 import { runDoctor, type DoctorEnv } from "./doctor";
 import { runDrift, runVerify } from "./drift";
+import { runLint } from "./lint";
 import { runRepair } from "./tools/drift";
 
 const USAGE = `catryna — living documentation for agents + humans
@@ -38,6 +39,9 @@ Usage:
   catryna repair [<path>] [--since <commit|date>] [--json]
                                    Repair context for drifted docs (hand to the agent).
                                    --since works like drift's, for never-verified corpora.
+  catryna lint [--json]            Check docs are WELL-FORMED — frontmatter, callout/fence
+                                   balance, anchors that resolve, index/file agreement.
+                                   Exits 3 on errors, like drift. Warnings never gate.
   catryna consume [--json]         Consume code.changed → mark docs drift-suspect (spine tail)
   catryna --help                   Show this help
 
@@ -137,6 +141,12 @@ export async function main(argv: string[]): Promise<number> {
       // gate — it never fails on found drift (repairing is the point).
       const target = positionals[1] ?? "all";
       const run = await runRepair({ json, cwd: process.cwd(), target, since });
+      if (run.stderr) process.stderr.write(run.stderr);
+      process.stdout.write(run.stdout);
+      return run.code;
+    }
+    case "lint": {
+      const run = await runLint({ json, cwd: process.cwd() });
       if (run.stderr) process.stderr.write(run.stderr);
       process.stdout.write(run.stdout);
       return run.code;

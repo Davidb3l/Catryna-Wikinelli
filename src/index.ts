@@ -21,6 +21,7 @@ import { registerSearchTools } from "./tools/search";
 import { registerDiagramTools } from "./tools/diagrams";
 import { registerCoverageTools } from "./tools/coverage";
 import { registerDriftTools } from "./tools/drift";
+import { registerLintTools } from "./tools/lint";
 
 /**
  * Read the version from package.json rather than hardcoding it — the server
@@ -50,6 +51,7 @@ registerSearchTools(server);
 registerDiagramTools(server);
 registerCoverageTools(server);
 registerDriftTools(server);
+registerLintTools(server);
 
 // Connect to stdio transport
 const transport = new StdioServerTransport();
