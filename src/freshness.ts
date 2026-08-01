@@ -17,7 +17,67 @@
  * side effects, so every call passes `emit: false`.
  */
 
-import { computeDrift, type DocDriftResult, type DriftStatus } from "./drift";
+import { computeDrift, gitHead, type DocDriftResult, type DriftStatus } from "./drift";
+import { stat } from "node:fs/promises";
+import { join } from "node:path";
+
+/**
+ * Read-path cache for the corpus drift report.
+ *
+ * READS ONLY. `catryna drift`, `check_drift`, and `verify` go straight to
+ * `computeDrift` and are never served from here — the authoritative gate must
+ * always re-measure. This exists because reads are frequent and repetitive: the
+ * viewer mounts two independent drift consumers, and an agent may call
+ * `list_docs` several times in a session with nothing having changed.
+ *
+ * Keyed on everything that can change a verdict: repo HEAD, and the doc index's
+ * mtime+size (docs can be edited or re-verified without a commit). If either
+ * moves, the entry is discarded. A stale badge is the exact failure this module
+ * exists to prevent, so the key is deliberately conservative — when in doubt it
+ * misses and re-measures rather than serving a possibly-wrong verdict.
+ */
+interface CacheEntry {
+  key: string;
+  report: Awaited<ReturnType<typeof computeDrift>>;
+}
+const reportCache = new Map<string, CacheEntry>();
+
+/** Cache key for `cwd`, or null when it cannot be established (never cache then). */
+async function cacheKey(cwd: string): Promise<string | null> {
+  const head = await gitHead(cwd);
+  if (!head) return null;
+  try {
+    const s = await stat(join(cwd, ".docs", "_index.json"));
+    return `${head}:${s.mtimeMs}:${s.size}`;
+  } catch {
+    // No index — nothing to be stale about, but also nothing worth caching.
+    return null;
+  }
+}
+
+/** Drop cached reports. Exported for tests and for callers that mutate docs. */
+export function clearFreshnessCache(): void {
+  reportCache.clear();
+}
+
+/**
+ * The corpus drift report for `cwd`, cached per (HEAD, index state).
+ *
+ * Always computes the FULL corpus rather than the `only` subset, so a single
+ * `get_doc` warms the same entry a later `list_docs` reads. That is the right
+ * trade now that drift costs one diff per baseline rather than one per doc.
+ */
+async function cachedReport(cwd: string) {
+  const key = await cacheKey(cwd);
+  if (!key) return await computeDrift(cwd, { emit: false });
+
+  const hit = reportCache.get(cwd);
+  if (hit && hit.key === key) return hit.report;
+
+  const report = await computeDrift(cwd, { emit: false });
+  reportCache.set(cwd, { key, report });
+  return report;
+}
 
 /**
  * A doc's freshness verdict. The four `DriftStatus` values, plus two states the
@@ -147,7 +207,7 @@ function byPath(
  * one doc's worth of git work rather than a corpus scan.
  */
 export async function docFreshness(cwd: string, path: string): Promise<DocFreshness> {
-  const report = await computeDrift(cwd, { emit: false, only: [path] });
+  const report = await cachedReport(cwd);
   const driftRan = report.gitRepo && !report.error;
   return toFreshness(byPath(report).get(path), report.head, driftRan);
 }
@@ -163,7 +223,7 @@ export async function docsFreshness(
   const out = new Map<string, DocFreshness>();
   if (paths.length === 0) return out;
 
-  const report = await computeDrift(cwd, { emit: false, only: paths });
+  const report = await cachedReport(cwd);
   const driftRan = report.gitRepo && !report.error;
   const found = byPath(report);
   for (const p of paths) out.set(p, toFreshness(found.get(p), report.head, driftRan));

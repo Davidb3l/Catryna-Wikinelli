@@ -753,6 +753,33 @@ export async function computeDrift(
     }
   }
 
+  // Per-baseline change sets, computed ONCE. Previously every doc ran its own
+  // pathspec-limited `git diff`, so a 300-doc corpus meant 300 subprocesses on
+  // every `list_docs` / `search_docs`. Docs commonly share a baseline, so this
+  // collapses to one diff per distinct verified commit.
+  //
+  // `null` marks a baseline whose range git rejected (commit not in history —
+  // rebase, squash, shallow clone), preserved so each doc still reports the
+  // conservative "re-verify" drifted verdict rather than a false clean.
+  const changesByBaseline = new Map<string, Set<string> | null>();
+  for (const { doc } of anchored) {
+    const baseline = baselineFor(doc);
+    if (!baseline || changesByBaseline.has(baseline)) continue;
+    // No pathspec: the whole change set for the range, intersected per doc below.
+    const r = await runGit(cwd, ["diff", "--name-only", `${baseline}..HEAD`]);
+    changesByBaseline.set(
+      baseline,
+      r.ok ? new Set(r.stdout.split("\n").map((l) => l.trim()).filter(Boolean)) : null,
+    );
+  }
+
+  /** This doc's changed anchors, from the shared per-baseline set. */
+  const changedForBaseline = (baseline: string, anchorFiles: string[]): ChangedResult => {
+    const all = changesByBaseline.get(baseline);
+    if (all === null || all === undefined) return { ok: false, files: [], stderr: "bad range" };
+    return { ok: true, files: anchorFiles.filter((f) => all.has(f)), stderr: "" };
+  };
+
   const drifted: DocDriftResult[] = [];
   const unverified: DocDriftResult[] = [];
   const clean: DocDriftResult[] = [];
@@ -806,7 +833,12 @@ export async function computeDrift(
 
     // Baseline sanity: if the range is unusable (commit not in history), be
     // conservative — DRIFTED with the same note as the pre-anchor MVP.
-    const rangeCheck = await changedFilesSince(cwd, verifiedCommit, anchorFiles);
+    //
+    // One `git diff` per BASELINE, not per doc: the per-baseline change set is
+    // computed once above and intersected with this doc's anchors here. On a
+    // corpus verified at a shared commit that is one subprocess instead of N,
+    // which is what made `list_docs` cost seconds on a large corpus.
+    const rangeCheck = changedForBaseline(verifiedCommit, anchorFiles);
     if (!rangeCheck.ok) {
       drifted.push({
         path: doc.path,

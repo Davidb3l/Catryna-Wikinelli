@@ -16,7 +16,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { computeDrift, runGit, runGitViaBun, runGitViaNode, selectGitRunner } from "./drift";
-import { docFreshness, docsFreshness, freshnessHeadline } from "./freshness";
+import { clearFreshnessCache, docFreshness, docsFreshness, freshnessHeadline } from "./freshness";
+
+import { beforeEach } from "bun:test";
+
+// Each fixture is a fresh repo; a cache entry from a previous test must never
+// answer for it.
+beforeEach(() => clearFreshnessCache());
 
 const dirs: string[] = [];
 afterAll(async () => {
@@ -426,5 +432,51 @@ describe("runGit dispatch (not just the fallback in isolation)", () => {
     const viaSelected = await selectGitRunner(false)(dir, ["rev-parse", "HEAD"]);
     expect(viaSelected.stdout.trim()).toBe(head);
     expect((await runGit(dir, ["rev-parse", "HEAD"])).stdout.trim()).toBe(head);
+  });
+});
+
+describe("read-path cache", () => {
+  test("serves a repeat read without re-running git, and re-measures when HEAD moves", async () => {
+    const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
+    const base = await git(dir, ["rev-parse", "HEAD"]);
+    await seedDocs(dir, [{ path: "doc-a", relatedFiles: ["src/a.ts"], verifiedCommit: base }]);
+
+    expect((await docFreshness(dir, "doc-a")).status).toBe("clean");
+    expect((await docFreshness(dir, "doc-a")).status).toBe("clean"); // cache hit
+
+    // A new commit touching the anchor must invalidate: serving the cached
+    // "clean" here would be exactly the stale-verdict failure this project exists
+    // to prevent.
+    await writeFileAt(dir, "src/a.ts", "export const a = 2;\n");
+    await git(dir, ["add", "-A"]);
+    await git(dir, ["commit", "-q", "-m", "change"]);
+
+    expect((await docFreshness(dir, "doc-a")).status).toBe("drifted");
+  });
+
+  test("re-measures when the index changes without a commit (re-verify)", async () => {
+    const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
+    await seedDocs(dir, [{ path: "doc-a", relatedFiles: ["src/a.ts"] }]);
+    expect((await docFreshness(dir, "doc-a")).status).toBe("unverified");
+
+    // Re-verifying writes the index but creates no commit — HEAD alone would
+    // have kept serving "unverified".
+    await new Promise((r) => setTimeout(r, 10)); // ensure a distinct mtime
+    const head = await git(dir, ["rev-parse", "HEAD"]);
+    await seedDocs(dir, [{ path: "doc-a", relatedFiles: ["src/a.ts"], verifiedCommit: head }]);
+
+    expect((await docFreshness(dir, "doc-a")).status).toBe("clean");
+  });
+
+  test("does not leak verdicts across different repos", async () => {
+    const a = await initRepo({ "src/a.ts": "export const a = 1;\n" });
+    const baseA = await git(a, ["rev-parse", "HEAD"]);
+    await seedDocs(a, [{ path: "shared/path", relatedFiles: ["src/a.ts"], verifiedCommit: baseA }]);
+
+    const b = await initRepo({ "src/a.ts": "export const a = 1;\n" });
+    await seedDocs(b, [{ path: "shared/path", relatedFiles: ["src/a.ts"] }]); // no baseline
+
+    expect((await docFreshness(a, "shared/path")).status).toBe("clean");
+    expect((await docFreshness(b, "shared/path")).status).toBe("unverified");
   });
 });
