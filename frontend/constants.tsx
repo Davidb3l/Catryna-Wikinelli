@@ -43,7 +43,7 @@ export const MOCK_DOCS: Record<string, Document> = {
       { id: 'b-diag', type: 'diagram', content: '', metadata: { diagramData: {} } },
       { id: 'b3', type: 'callout', content: 'Tip: You can now sketch ideas directly in the doc using our whiteboard block.', metadata: { level: 'info' } },
       { id: 'b-wb', type: 'whiteboard', content: '', metadata: { whiteboardData: {} } },
-      { id: 'b5', type: 'code', content: 'export const config = {\n  provider: "google-gemini",\n  model: "gemini-3-flash-preview"\n};', metadata: { language: 'typescript', filePath: 'catryna.config.ts' } }
+      { id: 'b5', type: 'code', content: 'export const config = {\n  docsRoot: ".docs",\n  viewerPort: 1307\n};', metadata: { language: 'typescript', filePath: 'catryna.config.ts' } }
     ]
   },
   'auth': {

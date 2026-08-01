@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs';
-import { defineConfig, loadEnv, Plugin } from 'vite';
+import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // Scan common directories for projects with .docs folders
@@ -507,9 +507,7 @@ function parseMdx(content: string): { metadata: Record<string, any>; blocks: any
   return { metadata, blocks };
 }
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, '.', '');
-
+export default defineConfig(() => {
   // SUITE_CONTRACTS §3.2: `catryna doctor` advertises the viewer at
   // http://localhost:<CATRYNA_VIEWER_PORT, default 1307>, so the viewer MUST
   // actually bind that exact port — otherwise the advertised `ui` URL lies.
@@ -534,10 +532,6 @@ export default defineConfig(({ mode }) => {
       react(),
       docsApiPlugin(),
     ],
-    define: {
-      'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
-    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "^1.34.0",
     "@tiptap/react": "2.1.13",
     "@tiptap/starter-kit": "2.1.13",
     "diff": "5.1.0",

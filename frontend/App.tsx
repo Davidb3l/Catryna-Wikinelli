@@ -20,7 +20,6 @@ const nodeTypes = { turbo: TurboNode };
 const edgeTypes = { turbo: TurboEdge };
 import { NavItem, Document, Block, UserPreferences, HistoryEntry } from './types';
 import { useDocsList, useDoc, useDocsSearch, EMPTY_DOC } from './hooks/useDocs';
-import { geminiService } from './services/geminiService';
 import * as Diff from 'diff';
 
 // Initialize mermaid with Turbo Flow inspired theme

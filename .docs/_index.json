@@ -221,32 +221,6 @@
       "driftSuspectReason": ""
     },
     {
-      "id": "bcef91fa-b73f-4934-9cba-8caafa22937e",
-      "path": "frontend/services",
-      "title": "Gemini AI Service",
-      "tags": [
-        "frontend",
-        "ai",
-        "gemini",
-        "service"
-      ],
-      "relatedFiles": [
-        "frontend/services/geminiService.ts",
-        "frontend/vite.config.ts",
-        "frontend/App.tsx"
-      ],
-      "createdAt": 1767321677827,
-      "updatedAt": 1767321677827,
-      "createdBy": "claude-code",
-      "evidence": [],
-      "refs": [],
-      "verifiedCommit": "cafd52ed6f86f1a48416eb02fc856009d1c5f19a",
-      "verifiedAt": "2026-08-01T19:01:53.833Z",
-      "anchors": [],
-      "driftSuspectSince": "",
-      "driftSuspectReason": ""
-    },
-    {
       "id": "49ba4ce6-9348-476a-9e54-58b48fdbab2c",
       "path": "styling/diagram-themes",
       "title": "Diagram Themes & Styling",
@@ -303,5 +277,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1785610913928
+  "lastUpdated": 1785616266469
 }

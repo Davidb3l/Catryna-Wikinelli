@@ -1,20 +1,28 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Catryna Wikinelli — Viewer
 
-# Run and deploy your AI Studio app
+The human-facing half of Catryna: a local React app that renders the `.docs/`
+folder Claude Code writes through MCP. Claude reads those `.mdx` files
+directly; this is how people read them.
 
-This contains everything you need to run your app locally.
+## Run locally
 
-View your app in AI Studio: https://ai.studio/apps/drive/1xvkNtmX6VJjDYTI1awCqev300cs4C5nZ
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
+**Prerequisites:** [Bun](https://bun.sh)
 
 1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+   `bun install`
+2. Run the viewer:
+   `bun run dev`
+
+Opens on <http://localhost:1307>. Override with `CATRYNA_VIEWER_PORT` — the
+port is `strictPort`, so it fails loudly rather than drifting off the address
+`catryna doctor` advertises.
+
+By default the viewer serves the `.docs/` folder of the repo above it. Point it
+at another project with `DOCS_ROOT`, or switch projects from the in-app picker.
+
+## Notes
+
+There is no backend to configure and no API key to set: the viewer is a
+read-only window onto files on disk, served by a dev-only Vite plugin
+(`docsApiPlugin` in [vite.config.ts](vite.config.ts)). Docs are created and
+updated by Claude Code through the MCP server, not from this UI.
