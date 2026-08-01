@@ -132,3 +132,7 @@ When creating new documentation with diagrams:
 2. **Mermaid**: Use the `create_mermaid_diagram` tool or embed in markdown blocks
 3. **Colors will match** the current theme (dark/light mode) — except React Flow edge strokes, see the warning above
 4. **No extra config needed** - themes are applied via CSS and `initMermaid()`
+
+## TurboNode typing
+
+`TurboNode` takes `NodeProps<TurboNodeData>` — in reactflow 11 `NodeProps<T>` is parameterized by the **data** type, not by `Node<T>`. It previously declared `NodeProps<Node<TurboNodeData>>`, which typed `data` as a node object and made every field access (`data.icon`, `data.title`, `data.subtitle`) a type error. Runtime was always correct; only the type was wrong, and it went unnoticed because the project had no React types at all.

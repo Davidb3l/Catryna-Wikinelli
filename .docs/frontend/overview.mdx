@@ -33,6 +33,8 @@ The frontend is a React application built with Vite, providing a visual interfac
 
 - **Lucide React** - Icon library
 
+TypeScript types come from `@types/react` / `@types/react-dom`. They were missing entirely until Phase 2 review, which meant every React API was untyped — the real cause of the long-standing "11 pre-existing type errors". Adding them cost zero new errors and turned both error clusters out to be genuine typing bugs the absence had hidden (`NodeProps` parameterized by the node type instead of the data type; `querySelector` returning `Element` where `HTMLElement` was needed). The frontend typechecks clean at **0 errors**, and `bun run typecheck` makes that enforceable.
+
 Dependencies are limited to what the viewer actually uses. `@tiptap/*` and `diff` were declared but dead (`@tiptap/*` never imported, `diff` imported by `App.tsx` and never called) and have been removed from `package.json` and the `index.html` importmap.
 
 The viewer has **no LLM dependency and no API key**. It previously shipped a `frontend/services/geminiService.ts` that called the Google Gemini API straight from the browser, with `vite.config.ts` inlining `GEMINI_API_KEY` into the bundle via `define` — for two methods nothing ever invoked. Both the service and the `define` block are gone; summarization and structure suggestion belong to Claude Code over MCP, which has the repo context this never did.
