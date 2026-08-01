@@ -72,10 +72,23 @@ export interface CoverageReport {
   generatedAt: number;
 }
 
-/** Should this relative path be scanned? */
-function isExcluded(relativePath: string): boolean {
+/**
+ * Should this relative path be scanned? Exported so the trend engine (which
+ * reads paths out of git trees rather than off disk) classifies identically —
+ * if the two ever diverged, the newest trend point would not match the current
+ * coverage number, and the chart would quietly lie about today.
+ */
+export function isExcludedPath(relativePath: string): boolean {
   const p = relativePath.split(sep).join("/");
   return EXCLUDE_PATTERNS.some((r) => r.test(p));
+}
+
+/** Is this a documentable source file, by extension? Path-only, no disk access. */
+export function isSourcePath(relativePath: string): boolean {
+  const p = relativePath.split(sep).join("/");
+  if (isExcludedPath(p)) return false;
+  const name = p.split("/").pop() ?? p;
+  return SOURCE_PATTERNS.some((r) => r.test(name));
 }
 
 /**
@@ -95,7 +108,7 @@ export async function findSourceFiles(dir: string, rootDir: string): Promise<str
   for (const entry of entries) {
     const fullPath = join(dir, entry.name);
     const relativePath = relative(rootDir, fullPath);
-    if (isExcluded(relativePath)) continue;
+    if (isExcludedPath(relativePath)) continue;
 
     if (entry.isDirectory()) {
       files.push(...(await findSourceFiles(fullPath, rootDir)));
