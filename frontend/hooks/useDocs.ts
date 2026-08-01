@@ -1,41 +1,118 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { Document, NavItem, Block } from '../types';
+import type {
+  Document,
+  NavItem,
+  Block,
+  DocAnchor,
+  DocVerification,
+  VerificationStatus,
+} from '../types';
 
-// API response types
-interface DocMetadata {
+/**
+ * Doc metadata as served by /api/docs. Mirrors `DocMetadata` in src/storage.ts —
+ * keep the two in sync. Notably this INCLUDES the drift fields (`anchors`,
+ * `verifiedCommit`, `verifiedAt`, `driftSuspect*`): without them the viewer
+ * cannot tell a verified doc from one the code has outgrown.
+ *
+ * The dev API serves `_index.json` verbatim, so a legacy index written before a
+ * field existed will simply omit it. `normalizeDocMetadata` fills those in with
+ * the same defaults the backend uses on read, which is why every field here is
+ * required — consumers never have to guard.
+ */
+export interface DocMetadata {
   id: string;
   path: string;
   title: string;
   tags: string[];
   relatedFiles: string[];
+  anchors: DocAnchor[];
+  evidence: string[];
+  refs: string[];
+  verifiedCommit: string;
+  verifiedAt: string;
+  driftSuspectSince: string;
+  driftSuspectReason: string;
   createdAt: number;
   updatedAt: number;
+  createdBy: string;
+}
+
+/**
+ * A doc entry straight off the wire: `path` is the only field we can rely on,
+ * since the dev API serves whatever `_index.json` holds.
+ */
+type RawDocMetadata = Partial<DocMetadata> & { path: string };
+
+/** Drop entries the rest of the pipeline would choke on (every read splits `path`). */
+function isUsable(doc: Partial<DocMetadata>): doc is RawDocMetadata {
+  return typeof doc?.path === 'string' && doc.path.length > 0;
+}
+
+/** Fill in fields a legacy index may omit, matching src/storage.ts defaults. */
+function normalizeDocMetadata(doc: RawDocMetadata): DocMetadata {
+  return {
+    id: doc.id ?? doc.path,
+    path: doc.path,
+    title: doc.title ?? '',
+    tags: doc.tags ?? [],
+    relatedFiles: doc.relatedFiles ?? [],
+    anchors: doc.anchors ?? [],
+    evidence: doc.evidence ?? [],
+    refs: doc.refs ?? [],
+    verifiedCommit: doc.verifiedCommit ?? '',
+    verifiedAt: doc.verifiedAt ?? '',
+    driftSuspectSince: doc.driftSuspectSince ?? '',
+    driftSuspectReason: doc.driftSuspectReason ?? '',
+    createdAt: doc.createdAt ?? 0,
+    updatedAt: doc.updatedAt ?? 0,
+    createdBy: doc.createdBy ?? '',
+  };
+}
+
+export function verificationStatus(v: DocVerification | undefined): VerificationStatus {
+  if (!v?.verifiedCommit) return 'unverified';
+  return v.driftSuspectSince ? 'suspect' : 'verified';
+}
+
+function toVerification(doc: DocMetadata): DocVerification {
+  return {
+    anchors: doc.anchors,
+    verifiedCommit: doc.verifiedCommit,
+    verifiedAt: doc.verifiedAt,
+    driftSuspectSince: doc.driftSuspectSince,
+    driftSuspectReason: doc.driftSuspectReason,
+  };
 }
 
 interface DocsIndex {
   version: number;
-  docs: DocMetadata[];
+  docs: RawDocMetadata[];
   lastUpdated: number | null;
 }
 
-interface DocResponse extends DocMetadata {
+// The single-doc endpoint spreads the index entry over {path, blocks, raw}. A
+// doc missing from the index yields metadata-less fields, hence Partial.
+type DocResponse = Partial<DocMetadata> & {
+  path: string;
   blocks: Block[];
   raw: string;
-}
+};
 
 interface SearchResult {
-  results: DocMetadata[];
+  results: RawDocMetadata[];
   query: string;
 }
 
 // Convert API doc to frontend Document type
 function toDocument(doc: DocResponse): Document {
+  const meta = normalizeDocMetadata(doc);
   return {
-    id: doc.id || doc.path,
-    title: doc.title,
-    path: doc.path.split('/'),
+    id: meta.id,
+    title: meta.title,
+    path: meta.path.split('/'),
     blocks: doc.blocks || [],
-    lastUpdated: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : new Date().toISOString(),
+    lastUpdated: meta.updatedAt ? new Date(meta.updatedAt).toISOString() : new Date().toISOString(),
+    verification: toVerification(meta),
   };
 }
 
@@ -91,8 +168,9 @@ export function useDocsList() {
       const res = await fetch('/api/docs');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: DocsIndex = await res.json();
-      setDocs(data.docs || []);
-      setNavItems(buildNavTree(data.docs || []));
+      const docs = (data.docs || []).filter(isUsable).map(normalizeDocMetadata);
+      setDocs(docs);
+      setNavItems(buildNavTree(docs));
     } catch (err) {
       setError(String(err));
       setDocs([]);
@@ -169,8 +247,9 @@ export function useDocsSearch() {
       const res = await fetch(`/api/docs/search?q=${encodeURIComponent(query)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: SearchResult = await res.json();
-      setResults(data.results || []);
-      return data.results || [];
+      const results = (data.results || []).filter(isUsable).map(normalizeDocMetadata);
+      setResults(results);
+      return results;
     } catch (err) {
       setError(String(err));
       setResults([]);
