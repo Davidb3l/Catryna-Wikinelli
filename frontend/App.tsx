@@ -1030,11 +1030,11 @@ const BlockRenderer: React.FC<{
                   <div id="diagram-content" class="mermaid-container transition-transform origin-center" style="transform: scale(1)"></div>
                 </div>
               `;
-              const content = modal.querySelector('#diagram-content')!;
+              const content = modal.querySelector<HTMLElement>('#diagram-content')!;
               content.innerHTML = document.querySelector(`[data-mermaid-id="${block.id}"]`)?.innerHTML || '';
-              modal.querySelector('#zoom-in')!.onclick = (e) => { e.stopPropagation(); zoom = Math.min(3, zoom + 0.25); content.style.transform = `scale(${zoom})`; modal.querySelector('#zoom-level')!.textContent = `${Math.round(zoom * 100)}%`; };
-              modal.querySelector('#zoom-out')!.onclick = (e) => { e.stopPropagation(); zoom = Math.max(0.25, zoom - 0.25); content.style.transform = `scale(${zoom})`; modal.querySelector('#zoom-level')!.textContent = `${Math.round(zoom * 100)}%`; };
-              modal.querySelector('#close-modal')!.onclick = () => modal.remove();
+              modal.querySelector<HTMLElement>('#zoom-in')!.onclick = (e) => { e.stopPropagation(); zoom = Math.min(3, zoom + 0.25); content.style.transform = `scale(${zoom})`; modal.querySelector<HTMLElement>('#zoom-level')!.textContent = `${Math.round(zoom * 100)}%`; };
+              modal.querySelector<HTMLElement>('#zoom-out')!.onclick = (e) => { e.stopPropagation(); zoom = Math.max(0.25, zoom - 0.25); content.style.transform = `scale(${zoom})`; modal.querySelector<HTMLElement>('#zoom-level')!.textContent = `${Math.round(zoom * 100)}%`; };
+              modal.querySelector<HTMLElement>('#close-modal')!.onclick = () => modal.remove();
               document.body.appendChild(modal);
             }} className="text-xs h-7 opacity-0 group-hover/item:opacity-100"><Maximize2 size={12} /> <span className="hidden sm:inline">Expand</span></Button>
           </div>

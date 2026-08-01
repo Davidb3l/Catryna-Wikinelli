@@ -1,5 +1,5 @@
 import React, { memo, type ReactNode } from 'react';
-import { Handle, Position, type Node, type NodeProps } from 'reactflow';
+import { Handle, Position, type NodeProps } from 'reactflow';
 import { Cloud } from 'lucide-react';
 
 export type TurboNodeData = {
@@ -9,7 +9,7 @@ export type TurboNodeData = {
   subtitle?: string;
 };
 
-export const TurboNode = memo(({ data }: NodeProps<Node<TurboNodeData>>) => {
+export const TurboNode = memo(({ data }: NodeProps<TurboNodeData>) => {
   return (
     <>
       <div className="cloud gradient">
