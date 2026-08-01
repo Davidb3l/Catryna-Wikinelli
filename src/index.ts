@@ -12,6 +12,8 @@
  * This dual-access model means BOTH Claude and humans benefit.
  */
 
+import { fileURLToPath } from "node:url";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { registerDocTools } from "./tools/docs";
@@ -20,10 +22,26 @@ import { registerDiagramTools } from "./tools/diagrams";
 import { registerCoverageTools } from "./tools/coverage";
 import { registerDriftTools } from "./tools/drift";
 
+/**
+ * Read the version from package.json rather than hardcoding it — the server
+ * declares this to every MCP client during initialize, and a hardcoded literal
+ * silently goes stale on release (it read "1.0.0" while the package was 1.3.0).
+ * Mirrors `readVersion()` in cli.ts.
+ */
+async function readVersion(): Promise<string> {
+  try {
+    const pkgPath = fileURLToPath(new URL("../package.json", import.meta.url));
+    const pkg = JSON.parse(await Bun.file(pkgPath).text());
+    return typeof pkg.version === "string" ? pkg.version : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
 // Create MCP server
 const server = new McpServer({
   name: "catryna-wikinelli",
-  version: "1.0.0",
+  version: await readVersion(),
 });
 
 // Register all tools
