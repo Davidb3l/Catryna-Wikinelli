@@ -97,8 +97,10 @@ Renders different block types with appropriate styling:
 
 The hook-level normalizers are the real fix; this is the floor beneath them. It states plainly that `.docs/` is untouched, since nothing in the viewer writes.
 
+It recovers by clearing the error state, so a transient failure does not require a reload.
+
 <Callout type="info">
-It declares its own `props`/`state` and recovers by reloading rather than calling `setState`. This project has no `@types/react`, so `React.Component`'s generics do not flow — the explicit members keep the file typechecking without adding a dependency.
+It was briefly written with hand-declared `props`/`state` and reload-only recovery, because the project had no `@types/react` and `React.Component`'s generics did not flow. Adding the types removed that constraint, so the workaround is gone.
 </Callout>
 
 ### Preview Mode (formerly "Edit")

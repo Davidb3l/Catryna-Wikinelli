@@ -12,12 +12,6 @@ import React from 'react';
  * The hook-level normalizers are the real fix; this is the floor beneath them,
  * for the throw nobody predicted. It shows what broke rather than hiding it —
  * a viewer whose job is surfacing untrustworthy docs should not fail silently.
- *
- * NOTE ON TYPING: this project has no `@types/react`, so `React.Component`'s
- * generics do not flow and `this.props` / `this.setState` are untyped. The
- * members are therefore declared explicitly and recovery is a reload rather
- * than a `setState`, which keeps the file typechecking without adding a
- * dependency or widening the error baseline.
  */
 interface Props {
   children: React.ReactNode;
@@ -28,16 +22,15 @@ interface State {
 }
 
 export class ErrorBoundary extends React.Component<Props, State> {
-  props!: Props;
   state: State = { error: null };
 
   static getDerivedStateFromError(error: Error): State {
     return { error };
   }
 
-  componentDidCatch(error: Error, info: { componentStack?: string }) {
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
     // Keep the detail in the console for whoever is debugging.
-    console.error('Catryna viewer crashed:', error, info?.componentStack);
+    console.error('Catryna viewer crashed:', error, info.componentStack);
   }
 
   render() {
@@ -58,10 +51,10 @@ export class ErrorBoundary extends React.Component<Props, State> {
             {error.message || String(error)}
           </pre>
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => this.setState({ error: null })}
             className="text-xs font-bold px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700"
           >
-            Reload the viewer
+            Try again
           </button>
         </div>
       </div>
