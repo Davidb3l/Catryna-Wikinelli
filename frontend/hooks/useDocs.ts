@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type {
   Document,
   NavItem,
@@ -8,6 +8,7 @@ import type {
   VerificationStatus,
   DriftStatus,
   DriftResponse,
+  DocDrift,
   CoverageResponse,
   CoverageTrendResponse,
 } from '../types';
@@ -70,6 +71,95 @@ function normalizeDocMetadata(doc: RawDocMetadata): DocMetadata {
     createdAt: doc.createdAt ?? 0,
     updatedAt: doc.updatedAt ?? 0,
     createdBy: doc.createdBy ?? '',
+  };
+}
+
+/**
+ * Normalizers for the trust endpoints.
+ *
+ * `useDocsList` already ran everything through `normalizeDocMetadata`; the three
+ * trust hooks assigned `await res.json()` straight to state. A malformed 200 —
+ * an older/newer dev server, a hand-edited index — therefore reached the
+ * renderer unchecked, where `new Date(undefined).toISOString()` throws a
+ * RangeError and, with no error boundary, unmounts the whole app. `res.ok` is
+ * true in that case, so the "unavailable" branch never fires.
+ *
+ * These coerce to a usable shape and return null when the payload is not
+ * recognisable, which routes to the existing "unavailable" UI.
+ */
+const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+const str = (v: unknown, d = ''): string => (typeof v === 'string' ? v : d);
+const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+
+export function normalizeDrift(raw: unknown): DriftResponse | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, any>;
+  const docs: Record<string, DocDrift> = {};
+  if (r.docs && typeof r.docs === 'object') {
+    for (const [k, v] of Object.entries(r.docs as Record<string, any>)) {
+      const status = v?.status;
+      // Only the four real verdicts pass; anything else is not a verdict and
+      // must not be rendered as one.
+      if (status !== 'clean' && status !== 'drifted' && status !== 'broken' && status !== 'unverified') continue;
+      docs[k] = {
+        status,
+        verifiedCommit: str(v.verifiedCommit),
+        changedFiles: arr<string>(v.changedFiles).filter(f => typeof f === 'string'),
+        ...(Array.isArray(v.brokenFiles) ? { brokenFiles: v.brokenFiles.filter((f: unknown) => typeof f === 'string') } : {}),
+      };
+    }
+  }
+  const s = r.summary && typeof r.summary === 'object' ? r.summary : {};
+  return {
+    gitRepo: r.gitRepo === true,
+    head: typeof r.head === 'string' ? r.head : null,
+    ...(typeof r.error === 'string' ? { error: r.error } : {}),
+    docs,
+    summary: {
+      clean: num(s.clean), drifted: num(s.drifted), broken: num(s.broken), unverified: num(s.unverified),
+    },
+  };
+}
+
+export function normalizeCoverage(raw: unknown): CoverageResponse | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, any>;
+  if (typeof r.totalModules !== 'number') return null; // not a coverage payload
+  return {
+    totalModules: num(r.totalModules),
+    documentedModules: num(r.documentedModules),
+    coveragePercent: num(r.coveragePercent),
+    totalDocs: num(r.totalDocs),
+    anchoringDocs: num(r.anchoringDocs),
+    brokenAnchors: arr<string>(r.brokenAnchors).filter(f => typeof f === 'string'),
+    undocumented: arr<any>(r.undocumented)
+      .filter(m => m && typeof m.filePath === 'string')
+      .map(m => ({ filePath: m.filePath, name: str(m.name, m.filePath), lastModified: num(m.lastModified) })),
+    totalUndocumented: num(r.totalUndocumented),
+    generatedAt: num(r.generatedAt),
+  };
+}
+
+export function normalizeTrend(raw: unknown): CoverageTrendResponse | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, any>;
+  // Drop samples missing the fields the chart dereferences — a sample without a
+  // timestamp or commit is what threw RangeError mid-render.
+  const samples = arr<any>(r.samples)
+    .filter(s => s && typeof s.commit === 'string' && typeof s.timestamp === 'number' && Number.isFinite(s.timestamp))
+    .map(s => ({
+      commit: s.commit,
+      timestamp: s.timestamp,
+      coveragePercent: num(s.coveragePercent),
+      totalModules: num(s.totalModules),
+      documentedModules: num(s.documentedModules),
+      totalDocs: num(s.totalDocs),
+    }));
+  return {
+    samples,
+    totalCommits: num(r.totalCommits, samples.length),
+    sampled: r.sampled === true,
+    ...(typeof r.error === 'string' ? { error: r.error } : {}),
   };
 }
 
@@ -197,28 +287,40 @@ export function useDoc(path: string | null) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Guards against out-of-order responses. Without it, clicking a slow doc then
+  // a fast one could resolve in the wrong order and leave the slow doc's content
+  // on screen — under the *other* doc's verified badge.
+  const inFlight = useRef<AbortController | null>(null);
+
   const fetchDoc = useCallback(async (docPath: string) => {
+    inFlight.current?.abort();
+    const ctrl = new AbortController();
+    inFlight.current = ctrl;
+
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/docs/${docPath}`);
+      const res = await fetch(`/api/docs/${docPath}`, { signal: ctrl.signal });
       if (!res.ok) {
         if (res.status === 404) {
-          setDoc(null);
+          if (inFlight.current === ctrl) { setDoc(null); setError(`Doc not found: ${docPath}`); }
           return null;
         }
         throw new Error(`HTTP ${res.status}`);
       }
       const data: DocResponse = await res.json();
       const document = toDocument(data);
+      if (inFlight.current !== ctrl) return document; // superseded — don't render
       setDoc(document);
       return document;
     } catch (err) {
+      // A superseded request is not an error to show the user.
+      if ((err as Error)?.name === 'AbortError') return null;
       setError(String(err));
       setDoc(null);
       return null;
     } finally {
-      setLoading(false);
+      if (inFlight.current === ctrl) setLoading(false);
     }
   }, []);
 
@@ -228,6 +330,7 @@ export function useDoc(path: string | null) {
     } else {
       setDoc(null);
     }
+    return () => inFlight.current?.abort();
   }, [path, fetchDoc]);
 
   return { doc, loading, error, refetch: () => path && fetchDoc(path) };
@@ -287,15 +390,35 @@ export function useDrift() {
     try {
       const res = await fetch('/api/drift');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setDrift(await res.json());
+      setDrift(normalizeDrift(await res.json()));
     } catch {
       setDrift(null);
     } finally {
+      lastFetch.current = Date.now();
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { fetchDrift(); }, [fetchDrift]);
+
+  // Refetch when the window regains focus — the real workflow is "leave the
+  // viewer, change code, come back", and drift was otherwise fetched once on
+  // mount and never again, so a green badge could outlive the code it describes
+  // for a whole session.
+  //
+  // Throttled: every refetch spawns git subprocesses, and alt-tabbing should not
+  // cost anything. Skipped entirely if we already refetched within the window.
+  const lastFetch = useRef(0);
+  useEffect(() => {
+    const MIN_INTERVAL_MS = 30_000;
+    const onFocus = () => {
+      if (Date.now() - lastFetch.current < MIN_INTERVAL_MS) return;
+      lastFetch.current = Date.now();
+      fetchDrift();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [fetchDrift]);
 
   const statusFor = useCallback(
     (path: string): DriftStatus | null => drift?.docs?.[path]?.status ?? null,
@@ -321,7 +444,7 @@ export function useCoverageTrend(points = 40) {
     try {
       const res = await fetch(`/api/coverage/trend?points=${points}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setTrend(await res.json());
+      setTrend(normalizeTrend(await res.json()));
     } catch {
       setTrend(null);
     } finally {
@@ -346,7 +469,7 @@ export function useCoverage() {
     try {
       const res = await fetch('/api/coverage');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setCoverage(await res.json());
+      setCoverage(normalizeCoverage(await res.json()));
     } catch (err) {
       setError(String(err));
       setCoverage(null);

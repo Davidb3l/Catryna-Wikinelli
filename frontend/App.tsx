@@ -564,6 +564,10 @@ export default function App() {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
   };
 
+  // The path of the doc actually rendered right now. EMPTY_DOC has an empty
+  // path array, which correctly yields no badge.
+  const renderedDocPath = currentDoc.path.length ? currentDoc.path.join('/') : null;
+
   const handleDocSelect = (path: string) => {
     setSelectedDocPath(path);
     setIsEditing(false);
@@ -763,6 +767,10 @@ export default function App() {
           <div className="flex items-center gap-1 sm:gap-2">
             <Button variant="ghost" onClick={() => setIsSearchOpen(true)} className="text-xs h-8 px-2 sm:px-3"><Search size={16} /> <kbd className="hidden md:inline ml-2 opacity-50 font-sans">⌘K</kbd></Button>
             <Button variant="ghost" onClick={() => setIsHistoryOpen(true)} className="text-xs h-8 px-2 sm:px-3 hidden sm:flex"><History size={16} /></Button>
+            {/* Drift is otherwise refetched only on mount and on window focus
+                (throttled). This is the explicit "re-check now" for when you
+                know something changed and don't want to wait. */}
+            <Button variant="ghost" title="Re-check documentation drift" onClick={() => { refetchDrift(); addToast('Re-checking drift…', 'info'); }} className="text-xs h-8 px-2 sm:px-3 hidden sm:flex"><RotateCcw size={16} /></Button>
             {/* The old "Save" ran an 800ms timer and toasted "Saved" with no write
                 path behind it — the docs API is GET-only, and the contentEditable
                 blocks are never read back into state, so the edits existed only in
@@ -798,9 +806,13 @@ export default function App() {
                 </div>
               )}
               <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black tracking-tight mb-3 sm:mb-4 text-navy dark:text-zinc-50">{currentDoc.title}</h1>
+              {/* Keyed off the doc actually on screen, not the selected path.
+                  Previously these disagreed while a fetch was in flight, so a
+                  slow response could render one doc's content beneath another
+                  doc's verified badge and baseline SHA. */}
               <DocTrust
-                status={selectedDocPath ? driftStatusFor(selectedDocPath) : null}
-                detail={selectedDocPath ? drift?.docs?.[selectedDocPath] : undefined}
+                status={renderedDocPath ? driftStatusFor(renderedDocPath) : null}
+                detail={renderedDocPath ? drift?.docs?.[renderedDocPath] : undefined}
               />
               <div className="space-y-1 sm:space-y-2">
                 {currentDoc.blocks
