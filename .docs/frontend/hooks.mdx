@@ -48,7 +48,9 @@ const {
 } = useDoc(path);  // path: string | null
 ```
 
-When `path` is null, returns null without fetching. On 404, sets doc to null without error.
+When `path` is null, returns null without fetching. On 404, sets doc to null **and** sets `error` — it previously did neither, so a doc listed in the index but missing on disk rendered "No Document Selected" with no explanation.
+
+Each fetch aborts the previous one, and its state writes are gated on still being the current request. Without that, clicking a slow doc then a fast one could resolve out of order and leave the slow doc's content on screen — beneath the *other* doc's verified badge.
 
 `refetch` is written as `() => path && fetchDoc(path)`, so it returns the falsy `path` rather than a promise when nothing is selected — always guard before awaiting it.
 
@@ -83,7 +85,9 @@ Fetches `GET /api/drift`, which runs the same git-backed engine as `catryna drif
 `null` is meaningful and must not be treated as verified. It means the doc anchors no code, or the viewer could not reach the endpoint (no git repo, or an older dev API). Callers render **no badge** in that case rather than a green one — failing to ask is not a clean bill of health. This mirrors the `unanchored` / `unknown` states in `src/freshness.ts`.
 </Callout>
 
-The hook degrades quietly: on any error `drift` is `null` and every `statusFor` returns `null`.
+The hook degrades quietly: on any error `drift` is `null` and every `statusFor` returns `null`. Responses pass through `normalizeDrift`, which drops any entry whose `status` is not one of the four real verdicts — a garbage status can never render as a badge.
+
+Refetches on **window focus**, throttled to at most once per 30 seconds, plus an explicit re-check button in the header. It was previously fetched once on mount and never again, so a green badge could outlive the code it described for a whole session. Polling was rejected: every refetch spawns git subprocesses.
 
 ## useCoverage
 

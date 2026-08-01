@@ -89,6 +89,16 @@ Renders different block types with appropriate styling:
 
 - **whiteboard** - A placeholder card that launches the full-screen tldraw editor. Stored `whiteboardData` is neither loaded into nor saved from the canvas.
 
+### Error Boundary
+
+`components/ErrorBoundary.tsx` wraps the whole app in `index.tsx`. Without it, a single render-time throw unmounted the React root to a blank white page — no message, no indication the *viewer* had failed rather than the project being empty.
+
+The hook-level normalizers are the real fix; this is the floor beneath them. It states plainly that `.docs/` is untouched, since nothing in the viewer writes.
+
+<Callout type="info">
+It declares its own `props`/`state` and recovers by reloading rather than calling `setState`. This project has no `@types/react`, so `React.Component`'s generics do not flow — the explicit members keep the file typechecking without adding a dependency.
+</Callout>
+
 ### Preview Mode (formerly "Edit")
 
 Content-editable blocks for previewing changes locally. **Nothing persists, and the UI now says so** — a banner names the `.mdx` file to edit and the `update_doc` MCP tool.

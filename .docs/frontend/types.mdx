@@ -140,6 +140,8 @@ interface CoverageResponse {
 }
 ```
 
+All three responses are validated by `normalizeDrift` / `normalizeCoverage` / `normalizeTrend` before reaching state. They were previously assigned straight from `res.json()`, so a malformed 200 threw mid-render and — with no error boundary — unmounted the app to a white screen.
+
 <Callout type="info">
 `DriftStatus` (the live, git-computed verdict) and `VerificationStatus` (derived from stored frontmatter) answer different questions. Frontmatter records which commit a doc was checked at; only the drift engine knows whether the code has moved on since. The badge uses `DriftStatus`.
 </Callout>

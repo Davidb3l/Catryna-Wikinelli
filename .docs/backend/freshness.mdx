@@ -53,8 +53,7 @@ There is a test asserting exactly this: an anchorless doc appears in zero drift 
 ## API
 
 ```typescript
-// One doc. Uses computeDrift's `only` filter, so it costs one doc's git work
-// rather than a corpus scan.
+// One doc, from the cached corpus report (see Performance below).
 docFreshness(cwd: string, path: string): Promise<DocFreshness>
 
 // Many docs in ONE drift pass — for list/search, where per-doc calls would
@@ -75,6 +74,19 @@ freshnessHeadline(all: Iterable<DocFreshness>): string
 | `search_docs` | `freshness` per result + a `warning` headline |
 
 Both list tools resolve the whole result set in a **single** drift pass.
+
+## Performance
+
+Two changes made reads cheap enough to run on every call:
+
+- **One `git diff` per baseline, not per doc.** The drift engine computes each distinct baseline's change set once and intersects it with each doc's anchors. Measured: 300 docs went from ~2,230ms to ~38ms.
+- **A read-path cache**, keyed on repo HEAD plus the doc index's mtime and size. Docs can be re-verified or edited with no commit, so HEAD alone is not a sufficient key. Measured on this repo: 377ms cold, 30ms warm.
+
+<Callout type="warning">
+The cache serves **reads only**. `catryna drift`, `check_drift`, and `verify_doc` always call `computeDrift` directly — the authoritative gate must re-measure every time. When a cache key cannot be established, nothing is cached at all: the key errs toward missing and re-measuring, because a stale verdict is precisely the failure this module exists to prevent.
+</Callout>
+
+`docFreshness` computes the **full corpus** rather than the `only` subset, so a single `get_doc` warms the entry a later `list_docs` reads. `only` remains a supported engine feature and stays tested; freshness simply no longer needs it.
 
 ## Invariants
 
