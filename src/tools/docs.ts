@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createDoc, getDoc, listDocs, updateDoc, deleteDoc } from "../storage";
+import { docFreshness, docsFreshness, freshnessHeadline } from "../freshness";
 
 // Block schema for documents
 const BlockSchema = z.object({
@@ -82,6 +83,9 @@ export function registerDocTools(server: McpServer): void {
         };
       }
 
+      // Phase 2 trust surface: warn INLINE, before the agent trusts the doc.
+      const freshness = await docFreshness(process.cwd(), path);
+
       return {
         content: [{ type: "text", text: JSON.stringify({
           success: true,
@@ -98,6 +102,7 @@ export function registerDocTools(server: McpServer): void {
             createdAt: doc.metadata.createdAt,
             updatedAt: doc.metadata.updatedAt,
           },
+          freshness,
           file: `.docs/${path}.mdx`,
         }) }],
       };
@@ -114,6 +119,9 @@ export function registerDocTools(server: McpServer): void {
     async ({ tag, pathPrefix }) => {
       const docs = await listDocs({ tag, pathPrefix });
 
+      // One drift pass for the whole result set, not one per entry.
+      const fresh = await docsFreshness(process.cwd(), docs.map(d => d.path));
+
       const results = docs.map(d => ({
         id: d.id,
         path: d.path,
@@ -121,13 +129,17 @@ export function registerDocTools(server: McpServer): void {
         tags: d.tags,
         file: `.docs/${d.path}.mdx`,
         updatedAt: d.updatedAt,
+        freshness: fresh.get(d.path),
       }));
+
+      const headline = freshnessHeadline(fresh.values());
 
       return {
         content: [{ type: "text", text: JSON.stringify({
           success: true,
           docs: results,
           count: results.length,
+          ...(headline ? { warning: headline } : {}),
           hint: "All docs are stored in .docs/ folder. Claude can read them directly.",
         }) }],
       };

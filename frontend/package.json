@@ -9,9 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@tiptap/react": "2.1.13",
-    "@tiptap/starter-kit": "2.1.13",
-    "diff": "5.1.0",
     "lucide-react": "^0.562.0",
     "mermaid": "^11.12.2",
     "react": "^19.2.3",

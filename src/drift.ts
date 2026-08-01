@@ -565,10 +565,15 @@ async function readDocs(cwd: string): Promise<DocMetadata[]> {
  * `opts.hayven` (default `realHayven`) is the Hayvenhurst client — injectable so
  * tests drive both the symbol-precise and git-diff-fallback branches without a
  * live daemon.
+ * `opts.only` (default: every doc) restricts the run to the given doc paths —
+ * additive, and the way the MCP read tools compute freshness for one doc without
+ * paying for a corpus scan. It narrows WHICH docs are evaluated, never how one is
+ * judged, so a doc's verdict is identical filtered or not. An empty array means
+ * "no docs" (an empty report), not "all docs"; omit the option for all.
  */
 export async function computeDrift(
   cwd: string,
-  opts: { emit?: boolean; hayven?: HayvenClient; since?: string } = {},
+  opts: { emit?: boolean; hayven?: HayvenClient; since?: string; only?: string[] } = {},
 ): Promise<DriftReport> {
   const emit = opts.emit ?? true;
   const hv = opts.hayven ?? realHayven;
@@ -611,7 +616,11 @@ export async function computeDrift(
   const baselineFor = (doc: DocMetadata): string =>
     baselineOverride ?? (typeof doc.verifiedCommit === "string" ? doc.verifiedCommit : "");
 
-  const docs = await readDocs(cwd);
+  const allDocs = await readDocs(cwd);
+  // Narrow BEFORE anchor resolution and the hayven probe, so a single-doc read
+  // never spawns the daemon on account of some other doc's symbol anchor.
+  const only = opts.only ? new Set(opts.only) : null;
+  const docs = only ? allDocs.filter((d) => only.has(d.path)) : allDocs;
 
   // Effective anchors per doc (structured ∪ file-level from relatedFiles). A doc
   // with no effective anchor is not driftable — nothing to diff (unchanged).

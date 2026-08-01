@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { searchDocs } from "../storage";
+import { docsFreshness, freshnessHeadline } from "../freshness";
 
 export function registerSearchTools(server: McpServer): void {
   server.tool(
@@ -19,6 +20,9 @@ export function registerSearchTools(server: McpServer): void {
       try {
         const results = await searchDocs(query, limit);
 
+        // One drift pass for the whole result set (Phase 2 trust surface).
+        const fresh = await docsFreshness(process.cwd(), results.map(r => r.path));
+
         const formattedResults = results.map(r => ({
           id: r.id,
           path: r.path,
@@ -27,7 +31,10 @@ export function registerSearchTools(server: McpServer): void {
           file: `.docs/${r.path}.mdx`,
           snippet: r.snippet,
           updatedAt: r.updatedAt,
+          freshness: fresh.get(r.path),
         }));
+
+        const headline = freshnessHeadline(fresh.values());
 
         return {
           content: [{ type: "text", text: JSON.stringify({
@@ -35,6 +42,7 @@ export function registerSearchTools(server: McpServer): void {
             results: formattedResults,
             count: formattedResults.length,
             query,
+            ...(headline ? { warning: headline } : {}),
             hint: "Read any doc directly with: Read .docs/{path}.mdx",
           }) }],
         };
