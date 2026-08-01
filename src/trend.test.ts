@@ -224,3 +224,88 @@ describe("computeCoverageTrend", () => {
     expect(await sampleAt(dir, ref)).toEqual(await sampleAt(dir, ref));
   });
 });
+
+describe("trend/coverage agreement — regressions found in review", () => {
+  // The original invariant test used ASCII filenames at the repo root, so it
+  // passed while the invariant was false in two independent ways. Both are
+  // pinned here.
+
+  test("non-ASCII filenames still match live coverage (git C-quoting)", async () => {
+    // `git ls-tree --name-only` C-quotes non-ASCII paths under the default
+    // core.quotePath=true, emitting "src/caf\303\251.ts". Parsed naively, those
+    // files vanished from the sample: live 33% vs trend 100%.
+    const dir = await initRepo();
+    await writeFileAt(dir, "src/plain.ts", "");
+    await writeFileAt(dir, "src/café.ts", "");
+    await writeFileAt(dir, "src/日本.ts", "");
+    await setDocs(dir, [{ path: "d", relatedFiles: ["src/plain.ts"] }]);
+    await commit(dir, "unicode filenames");
+
+    const trend = await computeCoverageTrend(dir);
+    const newest = trend.samples[trend.samples.length - 1];
+    const index = JSON.parse(await Bun.file(join(dir, ".docs/_index.json")).text());
+    const live = await computeCoverage({ rootDir: dir, docs: index.docs });
+
+    expect(newest.totalModules).toBe(3);
+    expect(newest.coveragePercent).toBe(live.coveragePercent);
+    expect(newest.totalModules).toBe(live.totalModules);
+  });
+
+  test("running from a SUBDIRECTORY still matches live coverage for that subtree", async () => {
+    // `git ls-tree` emits cwd-relative paths while `git show <sha>:<path>` is
+    // repo-root relative. Unreconciled, source paths lost their prefix while
+    // anchors kept theirs — a fully documented subtree reported a flat 0%.
+    // Reachable in production: the viewer passes a switchable project root.
+    const dir = await initRepo();
+    await writeFileAt(dir, "pkg/src/a.ts", "");
+    await writeFileAt(dir, "pkg/src/b.ts", "");
+    await writeFileAt(dir, "other/z.ts", "");
+    await writeFileAt(dir, "pkg/.docs/_index.json", JSON.stringify({
+      version: 1,
+      docs: [{
+        id: "d", path: "d", title: "D", tags: [], relatedFiles: ["src/a.ts"], anchors: [],
+        evidence: [], refs: [], verifiedCommit: "", verifiedAt: "",
+        driftSuspectSince: "", driftSuspectReason: "", createdAt: 0, updatedAt: 0, createdBy: "t",
+      }],
+    }));
+    await commit(dir, "monorepo-ish layout");
+
+    const sub = join(dir, "pkg");
+    const trend = await computeCoverageTrend(sub);
+    const newest = trend.samples[trend.samples.length - 1];
+    const index = JSON.parse(await Bun.file(join(sub, ".docs/_index.json")).text());
+    const live = await computeCoverage({ rootDir: sub, docs: index.docs });
+
+    expect(newest.totalModules).toBe(2);          // pkg/src/*.ts only, not other/z.ts
+    expect(newest.coveragePercent).toBe(50);
+    expect(newest.coveragePercent).toBe(live.coveragePercent);
+    expect(newest.totalModules).toBe(live.totalModules);
+  });
+
+  test("a fractional or NaN maxPoints is sanitized, not crashed on", async () => {
+    const dir = await initRepo();
+    await writeFileAt(dir, "src/a.ts", "");
+    await commit(dir, "one");
+    await commit(dir, "two");
+    await commit(dir, "three");
+
+    expect((await computeCoverageTrend(dir, { maxPoints: 2.5 })).samples.length).toBe(2);
+    expect((await computeCoverageTrend(dir, { maxPoints: NaN })).samples.length).toBeGreaterThan(0);
+    expect((await computeCoverageTrend(dir, { maxPoints: -3 })).error).toBeUndefined();
+  });
+
+  test("percent never rounds UP to 100 while modules remain undocumented", async () => {
+    // Math.round(199/200*100) === 100 would render "100% coverage" beside
+    // "1 undocumented".
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 200; i++) files[`src/f${i}.ts`] = "";
+    const dir = await initRepo();
+    for (const [rel, c] of Object.entries(files)) await writeFileAt(dir, rel, c);
+    await setDocs(dir, [{ path: "d", relatedFiles: Object.keys(files).slice(0, 199) }]);
+    await commit(dir, "199 of 200");
+
+    const newest = (await computeCoverageTrend(dir)).samples.slice(-1)[0];
+    expect(newest.coveragePercent).toBe(99);
+    expect(newest.documentedModules).toBe(199);
+  });
+});

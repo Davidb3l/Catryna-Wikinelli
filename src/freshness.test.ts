@@ -287,3 +287,68 @@ describe("runGit runtime portability", () => {
     expect(viaNode.stdout.trim()).toBe(viaDefault.stdout.trim());
   });
 });
+
+describe("the `only` filter must not change a verdict — symbol anchors", () => {
+  test("a filtered read reports the same verdict as an unfiltered run (hayven path)", async () => {
+    // REGRESSION. The original filter test used file-level anchors, which are
+    // genuinely per-doc independent, so it passed while the invariant was false
+    // for SYMBOL anchors.
+    //
+    // buildHayvenAffected derives its symbol universe from the docs in the run,
+    // and affected = changed ∪ impact(changed). Narrowing the run shrank that
+    // universe, so `affected` shrank — always a subset — meaning filtering could
+    // only ever UNDER-report drift. `get_doc` answered "clean / Safe to trust"
+    // for a doc `catryna drift` called drifted, because the symbol that changed
+    // lived in a DIFFERENT doc and impacted this one.
+    const dir = await initRepo({
+      "src/f1.ts": "export function foo(){}\n",
+      "src/f2.ts": "export function bar(){}\n",
+    });
+    const base = await git(dir, ["rev-parse", "HEAD"]);
+
+    const docsDir = join(dir, ".docs");
+    await mkdir(docsDir, { recursive: true });
+    const mk = (p: string, file: string, symbol: string) => ({
+      id: p, path: p, title: p, tags: [], relatedFiles: [],
+      anchors: [{ file, symbol }], evidence: [], refs: [],
+      verifiedCommit: base, verifiedAt: "x", driftSuspectSince: "", driftSuspectReason: "",
+      createdAt: 0, updatedAt: 0, createdBy: "test",
+    });
+    await writeFile(join(docsDir, "_index.json"), JSON.stringify({
+      version: 1,
+      docs: [mk("doc-a", "src/f1.ts", "foo"), mk("doc-b", "src/f2.ts", "bar")],
+    }));
+
+    // Only f2.ts changes; hayven reports that changing `bar` impacts `foo`.
+    await writeFileAt(dir, "src/f2.ts", "export function bar(){ return 42; }\n");
+    await git(dir, ["add", "-A"]);
+    await git(dir, ["commit", "-q", "-m", "change bar"]);
+
+    const hayven = {
+      doctorOk: async () => true,
+      context: async (_c: string, s: string) => ({
+        id: s, name: s, file: s === "foo" ? "src/f1.ts" : "src/f2.ts",
+        startLine: 1, endLine: 1, callees: [],
+      }),
+      impact: async (_c: string, id: string) => (id === "bar" ? ["bar", "foo"] : [id]),
+    } as any;
+
+    const bucketOf = (r: any, p: string) =>
+      (["broken", "drifted", "unverified", "clean"] as const).find((k) =>
+        r[k].some((d: any) => d.path === p),
+      ) ?? "absent";
+
+    const full = await computeDrift(dir, { emit: false, hayven });
+    const only = await computeDrift(dir, { emit: false, hayven, only: ["doc-a"] });
+
+    expect(bucketOf(full, "doc-a")).toBe("drifted");
+    expect(bucketOf(only, "doc-a")).toBe("drifted"); // was "clean" — a false all-clear
+    expect(bucketOf(only, "doc-a")).toBe(bucketOf(full, "doc-a"));
+
+    // Asserted on computeDrift rather than docFreshness deliberately: the latter
+    // cannot take an injected hayven client, so on a machine without the daemon
+    // it correctly falls back to git-diff and calls this doc clean. That is not
+    // the bug — the bug was the filter changing the verdict on the hayven path,
+    // and this is where that is observable.
+  });
+});

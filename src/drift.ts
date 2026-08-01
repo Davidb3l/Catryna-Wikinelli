@@ -672,25 +672,44 @@ export async function computeDrift(
     baselineOverride ?? (typeof doc.verifiedCommit === "string" ? doc.verifiedCommit : "");
 
   const allDocs = await readDocs(cwd);
-  // Narrow BEFORE anchor resolution and the hayven probe, so a single-doc read
-  // never spawns the daemon on account of some other doc's symbol anchor.
   const only = opts.only ? new Set(opts.only) : null;
   const docs = only ? allDocs.filter((d) => only.has(d.path)) : allDocs;
 
+  const withAnchors = (list: DocMetadata[]) =>
+    list
+      .map((doc) => ({ doc, anchors: effectiveAnchors(doc) }))
+      .filter((d) => d.anchors.length > 0);
+
   // Effective anchors per doc (structured ∪ file-level from relatedFiles). A doc
   // with no effective anchor is not driftable — nothing to diff (unchanged).
-  const anchored = docs
-    .map((doc) => ({ doc, anchors: effectiveAnchors(doc) }))
-    .filter((d) => d.anchors.length > 0);
+  const anchored = withAnchors(docs);
 
-  // Decide symbol precision ONCE per run (SUITE_CONTRACTS §3 gating). Only probe
-  // hayven when at least one doc has a SYMBOL anchor WITH a baseline — a purely
-  // file-level corpus stays zero-dependency and never spawns the daemon.
-  const symbolAnchorsWithBaseline = anchored.flatMap(({ doc, anchors }) =>
-    baselineFor(doc) ? anchors.filter((a) => a.symbol).map((a) => ({ doc, a })) : [],
-  );
-  const useHayven =
-    symbolAnchorsWithBaseline.length > 0 ? await hv.doctorOk(cwd) : false;
+  const symbolAnchors = (list: { doc: DocMetadata; anchors: DocAnchor[] }[]) =>
+    list.flatMap(({ doc, anchors }) =>
+      baselineFor(doc) ? anchors.filter((a) => a.symbol).map((a) => ({ doc, a })) : [],
+    );
+
+  // Decide symbol precision ONCE per run (SUITE_CONTRACTS §3 gating). Gate on the
+  // FILTERED set: if none of the docs being evaluated has a symbol anchor with a
+  // baseline, their verdicts come from git-diff alone and hayven is irrelevant —
+  // so a purely file-level corpus (or a file-level single-doc read) stays
+  // zero-dependency and never spawns the daemon.
+  const useHayven = symbolAnchors(anchored).length > 0 ? await hv.doctorOk(cwd) : false;
+
+  // ...but build the affected set from the FULL corpus, never the filtered one.
+  //
+  // `buildHayvenAffected` derives its symbol universe from the symbols handed to
+  // it, and `affected = changed ∪ impact(changed)`. Passing only the filtered
+  // docs' symbols shrinks that universe, so `affected` shrinks too — always a
+  // subset. Filtering could therefore only ever UNDER-report drift, flipping
+  // `drifted` to `clean`: `get_doc` would answer "Safe to trust" for a doc that
+  // `catryna drift` calls drifted, because a symbol in some *other* doc was the
+  // one that changed and impacted this one. Same engine, opposite answers, with
+  // the wrong one delivered at the exact moment of trust.
+  //
+  // The `only` filter must narrow which docs get a verdict, never how one is
+  // judged, so the universe is corpus-wide regardless of the filter.
+  const symbolAnchorsWithBaseline = symbolAnchors(withAnchors(allDocs));
 
   // When precise, build the affected set once PER DISTINCT BASELINE (docs may be
   // verified at different commits); the changed-symbol scan is baseline-relative.

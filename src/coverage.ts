@@ -42,6 +42,18 @@ const EXCLUDE_PATTERNS = [
   /(^|\/)\.git(\/|$)/,
 ];
 
+/**
+ * Percent that never rounds UP to 100. `Math.round(199/200*100)` is 100, which
+ * would render "100% coverage" beside "1 undocumented" — exactly the kind of
+ * displayed-number-that-is-false this project treats as a defect. 100 is
+ * reserved for genuinely complete coverage.
+ */
+export function coveragePct(documented: number, total: number): number {
+  if (total <= 0) return 0;
+  if (documented >= total) return 100;
+  return Math.min(99, Math.round((documented / total) * 100));
+}
+
 /** One undocumented source file. */
 export interface UndocumentedModule {
   filePath: string;
@@ -183,8 +195,7 @@ export async function computeCoverage(opts: {
   return {
     totalModules: sourceFiles.length,
     documentedModules: documented.length,
-    coveragePercent:
-      sourceFiles.length > 0 ? Math.round((documented.length / sourceFiles.length) * 100) : 0,
+    coveragePercent: coveragePct(documented.length, sourceFiles.length),
     totalDocs: docs.length,
     anchoringDocs: docs.filter((d) => effectiveAnchors(d).length > 0).length,
     brokenAnchors,

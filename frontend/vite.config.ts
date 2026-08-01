@@ -100,9 +100,29 @@ function docsApiPlugin(): Plugin {
             req.on('end', () => {
               try {
                 const { path: projectPath } = JSON.parse(body);
-                const newDocsRoot = path.join(projectPath, '.docs');
-                if (fs.existsSync(newDocsRoot)) {
-                  docsRoot = newDocsRoot;
+
+                // SECURITY: this used to accept ANY path on disk, and because the
+                // handler JSON.parses regardless of Content-Type it is a CORS
+                // *simple* request — no preflight — so any page the developer
+                // visited could silently repoint the viewer with a no-cors fetch.
+                // `docsRoot` also becomes the cwd for git subprocesses via
+                // `projectRoot`, so this was not merely a display concern.
+                //
+                // Only projects the server itself discovered are selectable.
+                const allowed = findProjects();
+                const match = allowed.find(p => path.resolve(p.path) === path.resolve(String(projectPath ?? '')));
+                if (!match) {
+                  res.statusCode = 403;
+                  res.end(JSON.stringify({
+                    error: 'Project not in the discovered set',
+                    hint: 'Only projects listed by GET /api/projects can be selected.',
+                    path: projectPath,
+                  }));
+                  return;
+                }
+
+                if (fs.existsSync(match.docsPath)) {
+                  docsRoot = match.docsPath;
                   res.end(JSON.stringify({ success: true, docsRoot }));
                 } else {
                   res.statusCode = 404;
@@ -115,6 +135,15 @@ function docsApiPlugin(): Plugin {
             });
             return;
           }
+
+          // Anything else under /api/projects: 404 explicitly. Falling through
+          // without calling next() or ending the response left the socket open
+          // forever — a GET to /api/projects/select hung until timeout, and a
+          // handful of those exhaust the browser's per-origin connection pool
+          // and wedge the whole viewer.
+          res.statusCode = 404;
+          res.end(JSON.stringify({ error: 'Not found', path: req.url }));
+          return;
         } catch (error) {
           res.statusCode = 500;
           res.end(JSON.stringify({ error: String(error) }));
@@ -167,8 +196,35 @@ function docsApiPlugin(): Plugin {
           }
 
           // GET /api/docs/:path - Get a specific doc
-          const docPath = req.url.replace('/api/docs/', '');
-          const filePath = path.join(docsRoot, `${docPath}.mdx`);
+          //
+          // SECURITY: `docPath` is attacker-controlled. Without containment this
+          // served ANY .mdx file on the machine — verified exploitable with
+          // `curl --path-as-is '/api/docs/../../../../etc/whatever'`, which
+          // returned the file body in `raw`. It is not a localhost-only concern
+          // either: `server.host` is '0.0.0.0', so every device on the same
+          // network could read the developer's disk unauthenticated.
+          //
+          // Strip the query string (otherwise `foo?x=1` becomes a literal path
+          // segment), decode percent-escapes so `%2e%2e` cannot smuggle a
+          // traversal past the check, then resolve and require the result to
+          // stay inside docsRoot.
+          const rawPath = req.url.replace('/api/docs/', '').split('?')[0].split('#')[0];
+          let docPath: string;
+          try {
+            docPath = decodeURIComponent(rawPath);
+          } catch {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ error: 'Malformed path' }));
+            return;
+          }
+
+          const rootResolved = path.resolve(docsRoot);
+          const filePath = path.resolve(rootResolved, `${docPath}.mdx`);
+          if (filePath !== rootResolved && !filePath.startsWith(rootResolved + path.sep)) {
+            res.statusCode = 403;
+            res.end(JSON.stringify({ error: 'Path outside docs root', path: docPath }));
+            return;
+          }
 
           if (fs.existsSync(filePath)) {
             const content = fs.readFileSync(filePath, 'utf-8');

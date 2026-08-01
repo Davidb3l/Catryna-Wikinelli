@@ -308,7 +308,17 @@ const CoverageTrendChart: React.FC<{ trend: CoverageTrendResponse }> = ({ trend 
   const W = 720, H = 140, PAD_L = 28, PAD_B = 18, PAD_T = 8;
   const plotW = W - PAD_L - 8;
   const plotH = H - PAD_B - PAD_T;
-  const x = (i: number) => PAD_L + (i / (samples.length - 1)) * plotW;
+
+  // x is scaled by TIME, not by commit index. Index-uniform spacing under
+  // date labels is a quietly false picture: on this repo a six-month gap and a
+  // 90-second gap rendered as identical widths, so a reader asking "when did
+  // our docs fall behind?" read the answer off the wrong part of the chart.
+  // Falls back to index spacing only when every sample shares a timestamp,
+  // where a time axis has no meaning.
+  const t0 = samples[0].timestamp;
+  const span = samples[samples.length - 1].timestamp - t0;
+  const x = (i: number) =>
+    PAD_L + (span > 0 ? (samples[i].timestamp - t0) / span : i / (samples.length - 1)) * plotW;
   const y = (pct: number) => PAD_T + (1 - pct / 100) * plotH;
 
   const line = samples.map((s, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(s.coveragePercent).toFixed(1)}`).join(' ');
@@ -357,7 +367,13 @@ const CoverageTrendChart: React.FC<{ trend: CoverageTrendResponse }> = ({ trend 
         </span>
         {worst.drop >= 5 && (
           <span className="text-amber-600 dark:text-amber-500">
-            Largest drop −{worst.drop}% at {samples[worst.at].commit.slice(0, 7)}
+            {/* When the series is downsampled, consecutive samples skip commits,
+                so naming one SHA blames it for a drop up to N commits wide.
+                Report the bracketing range instead of a false attribution. */}
+            Largest drop −{worst.drop}%{' '}
+            {trend.sampled
+              ? `between ${samples[worst.at - 1].commit.slice(0, 7)} and ${samples[worst.at].commit.slice(0, 7)}`
+              : `at ${samples[worst.at].commit.slice(0, 7)}`}
           </span>
         )}
         {trend.sampled && <span>sampled {samples.length} of {trend.totalCommits} commits</span>}
@@ -527,7 +543,7 @@ export default function App() {
   // Fetch docs list and nav tree from .docs folder
   const { docs, navItems, loading: listLoading, error: listError, refetch: refetchList } = useDocsList();
   // Phase 2 trust surface: real, git-computed per-doc status for the badges.
-  const { drift, statusFor: driftStatusFor } = useDrift();
+  const { drift, statusFor: driftStatusFor, refetch: refetchDrift } = useDrift();
 
   // Fetch current document
   const { doc: fetchedDoc, loading: docLoading, error: docError } = useDoc(selectedDocPath);
@@ -567,6 +583,12 @@ export default function App() {
         setSelectedDocPath(null);
         setIsProjectSelectorOpen(false);
         refetchList();
+        // Drift is keyed by doc PATH, and paths collide across projects
+        // (`architecture/overview`, `getting-started` are near-universal).
+        // Without this, switching projects left the previous repo's verdicts in
+        // place: an unverified doc in the new project rendered a green
+        // "Verified" dot, with a baseline SHA from a different repository.
+        refetchDrift();
         addToast(`Switched to ${projectPath.split('/').pop() || projectPath.split('\\').pop()}`);
       }
     } catch (e) {
