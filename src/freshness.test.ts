@@ -15,7 +15,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { computeDrift } from "./drift";
+import { computeDrift, runGit, runGitViaNode } from "./drift";
 import { docFreshness, docsFreshness, freshnessHeadline } from "./freshness";
 
 const dirs: string[] = [];
@@ -242,5 +242,48 @@ describe("docsFreshness + headline", () => {
     expect(freshnessHeadline([mk("broken"), mk("drifted"), mk("drifted"), mk("unverified"), mk("clean")]))
       .toBe("Trust warning: 1 BROKEN, 2 STALE, 1 unverified in these results.");
     expect(freshnessHeadline([mk("clean"), mk("clean")])).toBe("");
+  });
+});
+
+describe("runGit runtime portability", () => {
+  // Regression guard. The viewer's Vite plugin imports the drift engine in a
+  // module context with no `Bun` global. Because every git failure degrades
+  // quietly, a Bun-only spawn did not throw there — it reported a real git
+  // repository as "not a git repository" and every doc as unverified. Silent
+  // wrongness, which is exactly what this project exists to prevent.
+  //
+  // `Bun` is a non-configurable global, so a test cannot hide it to force the
+  // fallback; the Node implementation is exported and exercised directly.
+
+  test("the node fallback reads real git output", async () => {
+    const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
+    const head = await git(dir, ["rev-parse", "HEAD"]);
+
+    const inside = await runGitViaNode(dir, ["rev-parse", "--is-inside-work-tree"]);
+    expect(inside.ok).toBe(true);
+    expect(inside.stdout.trim()).toBe("true");
+
+    const rev = await runGitViaNode(dir, ["rev-parse", "HEAD"]);
+    expect(rev.stdout.trim()).toBe(head);
+  });
+
+  test("the node fallback degrades quietly outside a repo, matching the Bun path", async () => {
+    const plain = await mkdtemp(join(tmpdir(), "catryna-nogit-node-"));
+    dirs.push(plain);
+
+    const viaNode = await runGitViaNode(plain, ["rev-parse", "--is-inside-work-tree"]);
+    const viaDefault = await runGit(plain, ["rev-parse", "--is-inside-work-tree"]);
+    expect(viaNode.ok).toBe(false);
+    expect(viaDefault.ok).toBe(false);
+    expect(viaNode.stdout.trim()).toBe(viaDefault.stdout.trim());
+  });
+
+  test("both paths agree on identical git output", async () => {
+    const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
+    const args = ["rev-parse", "HEAD"];
+    const viaNode = await runGitViaNode(dir, args);
+    const viaDefault = await runGit(dir, args);
+    expect(viaNode.ok).toBe(viaDefault.ok);
+    expect(viaNode.stdout.trim()).toBe(viaDefault.stdout.trim());
   });
 });

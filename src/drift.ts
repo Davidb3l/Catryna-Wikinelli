@@ -78,19 +78,55 @@ interface GitResult {
  * Run `git <args>` in `cwd`. Never throws: a missing `git` binary (ENOENT) or
  * any spawn failure degrades to `{ok:false}` with the message in `stderr`, so
  * "not a git repo" / "no git" both flow through the same clean-degrade path.
+ *
+ * Runs under Bun OR plain Node. The MCP server and CLI are Bun, but the drift
+ * engine is also imported by the viewer's Vite dev plugin, whose module context
+ * has no `Bun` global — and because every failure degrades quietly, a
+ * Bun-only spawn there did not error, it just reported a real git repository as
+ * "not a git repository" and every doc as unverified. Feature-detect rather
+ * than assume the runtime.
  */
 export async function runGit(cwd: string, args: string[]): Promise<GitResult> {
   try {
-    const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
-    return { ok: code === 0, stdout, stderr };
+    if (typeof Bun !== "undefined" && typeof Bun.spawn === "function") {
+      const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+      const [stdout, stderr, code] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      return { ok: code === 0, stdout, stderr };
+    }
+
+    return await runGitViaNode(cwd, args);
   } catch (err) {
     return { ok: false, stdout: "", stderr: (err as Error).message };
   }
+}
+
+/**
+ * The Node half of `runGit`, exported so it can be tested directly — `Bun` is a
+ * non-configurable global, so a test cannot hide it to force this branch.
+ *
+ * `git diff` output can be large, so maxBuffer is raised well above Node's 1 MB
+ * default: truncation here would silently understate drift.
+ */
+export async function runGitViaNode(cwd: string, args: string[]): Promise<GitResult> {
+  const { execFile } = await import("node:child_process");
+  return await new Promise<GitResult>((resolve) => {
+    execFile(
+      "git",
+      args,
+      { cwd, maxBuffer: 256 * 1024 * 1024, encoding: "utf8" },
+      (err, stdout, stderr) => {
+        resolve({
+          ok: !err,
+          stdout: String(stdout ?? ""),
+          stderr: String(stderr ?? "") || (err ? err.message : ""),
+        });
+      },
+    );
+  });
 }
 
 /** True iff `cwd` is inside a git work tree. */

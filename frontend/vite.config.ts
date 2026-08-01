@@ -198,8 +198,71 @@ function docsApiPlugin(): Plugin {
           res.end(JSON.stringify({ error: String(error) }));
         }
       });
+
+      // Trust surface (PRODUCT_ROADMAP Phase 2): real coverage and per-doc drift.
+      //
+      // Both compute against the PROJECT root — the parent of the docs root, not
+      // the dev server's cwd (which is frontend/). `docsRoot` is switchable at
+      // runtime via POST /api/projects/select, so it is read per request rather
+      // than captured once.
+      server.middlewares.use(async (req, res, next) => {
+        const url = req.url?.split('?')[0];
+        if (url !== '/api/coverage' && url !== '/api/drift') {
+          return next();
+        }
+
+        res.setHeader('Content-Type', 'application/json');
+        const projectRoot = path.dirname(docsRoot);
+
+        try {
+          const { docs } = readIndexFile(docsRoot);
+
+          if (url === '/api/coverage') {
+            const { computeCoverage } = await import('../src/coverage');
+            res.end(JSON.stringify(await computeCoverage({ rootDir: projectRoot, docs, limit: 25 })));
+            return;
+          }
+
+          // /api/drift — per-doc status keyed by path, for the verified badge.
+          const { computeDrift } = await import('../src/drift');
+          // emit:false — rendering a badge must not write to the suite spine.
+          const report = await computeDrift(projectRoot, { emit: false });
+          const byPath: Record<string, unknown> = {};
+          for (const r of [...report.broken, ...report.drifted, ...report.unverified, ...report.clean]) {
+            byPath[r.path] = {
+              status: r.status,
+              verifiedCommit: r.verifiedCommit,
+              changedFiles: r.changedFiles,
+              ...(r.brokenFiles ? { brokenFiles: r.brokenFiles } : {}),
+            };
+          }
+          res.end(JSON.stringify({
+            gitRepo: report.gitRepo,
+            head: report.head,
+            ...(report.error ? { error: report.error } : {}),
+            docs: byPath,
+            summary: {
+              clean: report.clean.length,
+              drifted: report.drifted.length,
+              broken: report.broken.length,
+              unverified: report.unverified.length,
+            },
+          }));
+        } catch (error) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: String(error) }));
+        }
+      });
     }
   };
+}
+
+/** Read `_index.json` from a docs root, tolerating absence. */
+function readIndexFile(docsRoot: string): { docs: any[] } {
+  const indexPath = path.join(docsRoot, '_index.json');
+  if (!fs.existsSync(indexPath)) return { docs: [] };
+  const parsed = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+  return { docs: Array.isArray(parsed.docs) ? parsed.docs : [] };
 }
 
 // Parse MDX file into blocks
