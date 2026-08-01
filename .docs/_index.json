@@ -12,7 +12,14 @@
       "relatedFiles": [],
       "createdAt": 1735689600000,
       "updatedAt": 1735689600000,
-      "createdBy": "claude-code"
+      "createdBy": "claude-code",
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "anchors": [],
+      "driftSuspectSince": "",
+      "driftSuspectReason": ""
     },
     {
       "id": "d37e0497-e75d-47d9-9d08-5ef7067ab81d",
@@ -29,7 +36,14 @@
       ],
       "createdAt": 1767321236003,
       "updatedAt": 1767336003658,
-      "createdBy": "claude-code"
+      "createdBy": "claude-code",
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "anchors": [],
+      "driftSuspectSince": "",
+      "driftSuspectReason": ""
     },
     {
       "id": "7b2456cf-6907-4c1d-9670-66baaf04880a",
@@ -45,7 +59,14 @@
       ],
       "createdAt": 1767321253064,
       "updatedAt": 1767321658640,
-      "createdBy": "claude-code"
+      "createdBy": "claude-code",
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "anchors": [],
+      "driftSuspectSince": "",
+      "driftSuspectReason": ""
     },
     {
       "id": "3f76ea4c-d00d-4bc2-8c47-c70862631b43",
@@ -61,7 +82,14 @@
       ],
       "createdAt": 1767321315890,
       "updatedAt": 1767321660905,
-      "createdBy": "claude-code"
+      "createdBy": "claude-code",
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "anchors": [],
+      "driftSuspectSince": "",
+      "driftSuspectReason": ""
     },
     {
       "id": "2da43b16-2ffa-46eb-b07e-367d2173e777",
@@ -81,7 +109,14 @@
       ],
       "createdAt": 1767321316028,
       "updatedAt": 1767321661004,
-      "createdBy": "claude-code"
+      "createdBy": "claude-code",
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "anchors": [],
+      "driftSuspectSince": "",
+      "driftSuspectReason": ""
     },
     {
       "id": "8ba895db-7586-4187-92fb-7da033094537",
@@ -100,7 +135,14 @@
       ],
       "createdAt": 1767321379263,
       "updatedAt": 1767321691220,
-      "createdBy": "claude-code"
+      "createdBy": "claude-code",
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "anchors": [],
+      "driftSuspectSince": "",
+      "driftSuspectReason": ""
     },
     {
       "id": "a279005f-04b8-47a6-b67a-d58a8ebbd323",
@@ -116,7 +158,14 @@
       ],
       "createdAt": 1767321379351,
       "updatedAt": 1767321661199,
-      "createdBy": "claude-code"
+      "createdBy": "claude-code",
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "anchors": [],
+      "driftSuspectSince": "",
+      "driftSuspectReason": ""
     },
     {
       "id": "a3540b69-b97d-4466-adee-1d2dfd4e78dd",
@@ -132,7 +181,14 @@
       ],
       "createdAt": 1767321379449,
       "updatedAt": 1767321661283,
-      "createdBy": "claude-code"
+      "createdBy": "claude-code",
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "anchors": [],
+      "driftSuspectSince": "",
+      "driftSuspectReason": ""
     },
     {
       "id": "a9e0e994-0429-4edc-93be-140197ddcdcc",
@@ -145,7 +201,14 @@
       "relatedFiles": [],
       "createdAt": 1767321536865,
       "updatedAt": 1767323928237,
-      "createdBy": "claude-code"
+      "createdBy": "claude-code",
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "anchors": [],
+      "driftSuspectSince": "",
+      "driftSuspectReason": ""
     },
     {
       "id": "bcef91fa-b73f-4934-9cba-8caafa22937e",
@@ -162,7 +225,14 @@
       ],
       "createdAt": 1767321677827,
       "updatedAt": 1767321677827,
-      "createdBy": "claude-code"
+      "createdBy": "claude-code",
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "anchors": [],
+      "driftSuspectSince": "",
+      "driftSuspectReason": ""
     },
     {
       "id": "49ba4ce6-9348-476a-9e54-58b48fdbab2c",
@@ -183,8 +253,42 @@
       ],
       "createdAt": 1767494114128,
       "updatedAt": 1767494114128,
+      "createdBy": "claude-code",
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "anchors": [],
+      "driftSuspectSince": "",
+      "driftSuspectReason": ""
+    },
+    {
+      "id": "b936aeb6-47e2-4526-bd8d-f8d4457927f8",
+      "path": "guides/drift-adoption-playbook",
+      "title": "Drift Adoption Playbook — rolling catryna drift into a repo",
+      "tags": [
+        "drift",
+        "playbook",
+        "adoption",
+        "suite"
+      ],
+      "relatedFiles": [
+        "src/drift.ts",
+        "src/cli.ts",
+        "src/tools/drift.ts",
+        "src/consume.ts"
+      ],
+      "anchors": [],
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "137d05ef0212306b99b20d28141784a1922b267a",
+      "verifiedAt": "2026-08-01T18:37:12.415Z",
+      "driftSuspectSince": "",
+      "driftSuspectReason": "",
+      "createdAt": 1785609420180,
+      "updatedAt": 1785609420180,
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1767494114131
+  "lastUpdated": 1785609432415
 }

@@ -1,0 +1,124 @@
+---
+id: b936aeb6-47e2-4526-bd8d-f8d4457927f8
+title: "Drift Adoption Playbook — rolling catryna drift into a repo"
+path: "guides/drift-adoption-playbook"
+tags: ["drift", "playbook", "adoption", "suite"]
+relatedFiles: ["src/drift.ts", "src/cli.ts", "src/tools/drift.ts", "src/consume.ts"]
+anchors: []
+evidence: []
+refs: []
+verifiedCommit: "137d05ef0212306b99b20d28141784a1922b267a"
+verifiedAt: "2026-08-01T18:37:12.415Z"
+driftSuspectSince: ""
+driftSuspectReason: ""
+createdAt: 1785609420180
+updatedAt: 1785609420180
+createdBy: "claude-code"
+---
+
+# Drift Adoption Playbook
+
+How to take a repo whose `.docs/` have rotted and get it to **0 drifted, 0 broken, 0 unverified** — then keep it there. Written from the Virixia dogfood (2026-08-01): 101 docs, stale since 2026-02-18, repaired to 100/100 clean in four waves.
+
+This is the recipe for Sirius Forester, Hayvenhurst, Ametrite, and any other repo adopting Catryna.
+
+## The core insight
+
+Drift is measured from each doc's `verifiedCommit` baseline, **not** `updatedAt`. A corpus that has never been verified has no baseline, so plain `catryna drift` reports every doc `unverified` and finds nothing. You must supply a baseline for the first run.
+
+## Phase 1 — Survey
+
+Find the commit where the docs were last broadly true (the last big docs push, or the date they stopped being maintained), then:
+
+```bash
+catryna drift --since <commit-or-YYYY-MM-DD>
+```
+
+`--since` is a **global baseline override**: it diffs every anchored doc against that commit instead of its own (absent) baseline. It writes nothing.
+
+Read the summary before touching anything:
+
+- `broken` — an anchored file was deleted or renamed away. Highest severity, fix first.
+- `drifted` — anchored code changed since the baseline.
+- `unverified` — no baseline (expected on a first run without `--since`).
+- `clean` — anchored code untouched since the baseline.
+
+## Phase 2 — Bank the free wins
+
+Docs that come back **clean at the baseline** need no repair: their anchored code hasn't changed since they were written, so they're accurate by construction. Just record baselines:
+
+```bash
+catryna verify <path>   # one per clean doc
+```
+
+On Virixia this was 12 of 101 docs — done in one commit, no review needed.
+
+## Phase 3 — Repair in reviewed waves
+
+Group the flagged docs **by subsystem** (backend, frontend, guides, integrations…) and run one agent per group, in waves of 3–4 agents. Group by subsystem rather than splitting randomly: agents build up context about a subsystem and apply it across its docs.
+
+Per doc, the agent's loop is:
+
+```bash
+catryna repair <path> --since <baseline> --json
+```
+
+That returns the doc's current content plus the git diff of each changed anchor — everything needed to judge and fix in one call.
+
+### Rules that must be in every agent prompt
+
+1. **One doc per `repair` call.** `repair` with no path bundles every drifted doc — multi-MB.
+2. **Verify every claim you write against source you actually read.** Diffs alone mislead; read the current file.
+3. **Surgical edits.** Fix what's wrong, keep the doc's structure and voice. A doc that's still accurate should be left alone — "no change needed" is a valid, valuable outcome.
+4. **Frontmatter: only `relatedFiles` may change.** Never `id`/`title`/`createdAt`/`verifiedCommit`/etc. The parent syncs the index afterward.
+5. **No `catryna verify`, no git writes, no MCP tools.** See the traps below.
+6. **Finish each doc fully before starting the next**, so an interrupted agent still leaves usable work.
+
+### Traps that will bite you
+
+- **MCP cwd trap.** A Catryna MCP server resolves `.docs/` from *its own* working directory. If you drive a repair from a different repo's session, `mcp__catryna__*` writes to the **wrong repo's store**. Agents must edit `.mdx` files directly.
+- **`verify` must be serial, and run by the parent.** Index writes from separate processes aren't covered by the in-process lock; parallel `verify` can lose entries.
+- **Sync the index after hand-edits.** Drift reads `relatedFiles` from `.docs/_index.json`, not from frontmatter. If agents re-anchor docs, copy the new arrays into the index before verifying, or the new anchors are ignored.
+- **No trailing newline is normal.** Catryna's serializer omits it — it is *not* a truncation signal. Compare against `git show HEAD:<file>` before believing any truncation heuristic.
+- **Agents can die mid-wave** (usage limits). Validate the survivors (frontmatter parses, only `relatedFiles` changed, code fences balanced, ends at a natural boundary), commit them, re-dispatch the rest.
+- **Seed later waves with what earlier waves learned** (renamed subsystems, new enums/roles, gating rules). Agents converge instead of re-deriving, which saves tokens and keeps terminology consistent.
+
+### Parent integration checklist (per wave)
+
+1. Validate every edited doc: frontmatter parses, only `relatedFiles` differs, code fences balanced, all anchor paths exist.
+2. Spot-check the load-bearing claims yourself — especially from any agent that died before reporting.
+3. Sync `relatedFiles` (and any tag fixes) into `.docs/_index.json`.
+4. `catryna verify` each doc, serially.
+5. `catryna drift` (no `--since`) to confirm the wave is clean.
+6. Commit and push.
+
+After repairs, **plain `catryna drift` is the source of truth**. Re-running with `--since` will re-flag already-repaired docs by design — their new baselines are newer than the override.
+
+## Phase 4 — Anchor the unanchored
+
+Docs with empty `relatedFiles` can't drift at all — they're invisible to the tool. Identify the 2–5 source files each one actually describes and set them. Prefer **real entry points and modules** over per-service `CLAUDE.md` files: agent-instruction files churn constantly and produce noisy false drift.
+
+## Phase 5 — Keep it clean
+
+Once a repo is at 0 drifted, maintenance is nearly free:
+
+- `catryna drift` in CI — exits **3** when anything is drifted or broken.
+- The **Stop hook** nags at the end of any session that left docs drifted.
+- `catryna consume` marks docs drift-suspect in real time from hayven's `code.changed` events.
+- When you change code a doc describes: update the doc, then `catryna verify <path>`.
+
+## What to expect (Virixia numbers)
+
+| | |
+|---|---|
+| Corpus | 101 docs (96 anchored, 5 unanchored) |
+| Stale for | ~5 months |
+| First survey | 83 drifted + 3 broken + 13 clean |
+| Final state | **100/100 clean**, 0 drifted, 0 broken |
+| Waves | 4 (6 + 12 verify-only + 29 + 20 + 33) |
+
+## The unexpected payoff
+
+About a third of what the repair waves found wasn't drift at all — it was **documentation that was never true**, plus **real defects** the re-verification surfaced. On Virixia that included: a connection-pool subsystem documented in detail that never existed; an integration documented as "not yet built" that was fully shipped; webhooks documented as signature-verified when no route was wired and no verification code existed; six API endpoints that don't exist; and an anchor pointing at a directory that was never in the repo at any commit.
+
+Budget review time for these. They are the most valuable output of the exercise, and they only surface because repair forces someone to re-read the code against every claim.
