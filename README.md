@@ -9,6 +9,10 @@ Every project accumulates knowledge that lives nowhere: why the auth flow works 
 - Docs are `.mdx` files with YAML frontmatter in `.docs/` at your project root — no database, no cloud, git-versioned with your code.
 - **Agents read docs directly** as files (`Read .docs/backend/storage.mdx`) — no tool round-trip needed.
 - **Agents write docs via MCP tools** (`create_doc`, `update_doc`, `search_docs`, coverage reports, diagrams).
+- **Catryna tells you which docs the code has outgrown.** Each doc anchors to the
+  source files it describes; `catryna drift` diffs those files since the doc was
+  last verified and reports exactly which docs are now contradicted — then hands
+  an agent the doc plus the diffs so it can propose the fix.
 - **Humans browse the same docs** in a local React viewer at `http://localhost:1307`, with search, Mermaid/React Flow diagrams, tldraw whiteboards, and a doc-coverage report.
 
 ## Quickstart
@@ -94,6 +98,34 @@ relatedFiles: ["src/storage.ts"]
 Docs are written as blocks (text, code, mermaid, react-flow, whiteboard, ...)
 ```
 
+## Keeping docs true
+
+Generating docs is solved; keeping them correct isn't. A doc that contradicts
+the code is worse than no doc, because an agent will believe it.
+
+Every doc records the commit it was last verified against. `catryna drift`
+compares each doc's anchored source files against that baseline:
+
+```bash
+catryna drift                 # clean / drifted / broken / unverified — exit 3 if anything is wrong
+catryna repair <path>         # that doc's content + the git diff of each changed anchor
+catryna verify <path>         # re-baseline once the doc is accurate again
+```
+
+- **broken** — an anchored file was deleted or renamed away (highest severity).
+- **drifted** — anchored code changed since the doc was verified.
+- Anchors can be whole files, or precise: `{"file":"src/auth.ts","symbol":"login"}`
+  so only changes to that symbol count.
+- Exits **3** on drift, so it drops straight into CI. A Stop hook also reminds
+  you at the end of any session that left docs drifted.
+- Adopting an existing corpus that was never verified? Give it a starting point:
+  `catryna drift --since 2026-02-18`. See
+  [`.docs/guides/drift-adoption-playbook.mdx`](.docs/guides/drift-adoption-playbook.mdx).
+
+If [Hayvenhurst](https://github.com/Davidb3l/Hayvenhurst-dev) is running, drift
+uses its code graph for symbol-level precision; otherwise it falls back to plain
+git-diff. Zero dependencies either way.
+
 ## MCP tools
 
 | Tool | Description |
@@ -101,9 +133,13 @@ Docs are written as blocks (text, code, mermaid, react-flow, whiteboard, ...)
 | `create_doc` / `update_doc` / `delete_doc` | Write docs as `.docs/{path}.mdx` |
 | `get_doc` / `list_docs` | Fetch one doc as blocks / browse and filter all docs |
 | `search_docs` | Full-text search, returns paths + snippets |
+| `check_drift` / `verify_doc` / `propose_doc_repair` | Find drifted docs, re-baseline them, get repair context |
 | `create_mermaid_diagram` / `create_diagram` | Mermaid or React Flow architecture diagrams |
 | `create_whiteboard` | tldraw freeform canvas |
 | `get_doc_coverage` / `get_undocumented_modules` | Which source files have docs, which don't |
+
+The `catryna` CLI exposes the same drift workflow plus `catryna doctor` (health
+and suite discovery) and `catryna consume` — all with `--json` for scripting.
 
 ## Docs
 
@@ -115,6 +151,13 @@ This repo documents itself with Catryna — browse [`.docs/`](.docs/) for real e
 - [`skills/catryna/SKILL.md`](skills/catryna/SKILL.md) — the Agent Skill shipped with the plugin
 - [`CLAUDE.md`](CLAUDE.md) — block types reference and troubleshooting
 
+## Platform support
+
+Tested on **macOS and Windows**. `.docs/` travels between machines, so anchor
+paths always use forward slashes (git's format on every OS) and CRLF checkouts
+are handled on read. Linux is expected to work and is on the roadmap for
+official support and testing.
+
 ## Status & license
 
-Early-stage (v1.0.0) and moving fast; issues and PRs welcome. MIT licensed.
+Early-stage (v1.3.0) and moving fast; issues and PRs welcome. MIT licensed.

@@ -73,7 +73,7 @@ Close and reopen Claude Code (or the terminal running it) to load the MCP server
 
 ### Step 4: Verify Connection
 
-Run `/mcp` in Claude Code. You should see `catryna` listed with 11 tools.
+Run `/mcp` in Claude Code. You should see `catryna` listed with 14 tools.
 
 ---
 
@@ -131,8 +131,29 @@ bun run start
 
 # Start frontend viewer (for humans) - in another terminal
 cd frontend && bun install && bun run dev
-# Opens http://localhost:1307
+# Opens http://localhost:1307  (override with CATRYNA_VIEWER_PORT)
+
+# CLI (no MCP needed) - run from any repo with a .docs/ folder
+catryna doctor          # health + suite discovery handshake
+catryna drift           # which docs the code has outgrown (exit 3 = gate)
+catryna verify <path>   # re-baseline a doc against HEAD
+catryna repair <path>   # repair bundle: doc content + anchor diffs
 ```
+
+---
+
+## Two entry points
+
+Catryna ships **two separate binaries** — do not conflate them:
+
+| Bin | File | Purpose |
+|-----|------|---------|
+| `catryna-mcp` | `src/index.ts` | The MCP stdio server (what Claude Code launches) |
+| `catryna` | `src/cli.ts` | The human/CI CLI: `doctor`, `drift`, `verify`, `repair`, `consume` |
+
+The plugin's `scripts/run-server.sh` runs the **MCP** entry. Both resolve
+`.docs/` from the current working directory, so the server's cwd must stay the
+user's project.
 
 ---
 
@@ -141,16 +162,23 @@ cd frontend && bun install && bun run dev
 ```
 catryna-wikinelli/
 ├── .docs/                    # Documentation files (git-tracked)
-│   ├── _index.json           # Index of all docs
+│   ├── _index.json           # Index of all docs (a cache; .mdx is the record)
 │   └── *.mdx                 # Individual doc files
 ├── src/
-│   ├── index.ts              # MCP server entry point
+│   ├── index.ts              # MCP server entry point (bin: catryna-mcp)
+│   ├── cli.ts                # CLI entry point (bin: catryna)
+│   ├── doctor.ts             # Suite discovery handshake (SUITE_CONTRACTS §3)
+│   ├── drift.ts              # Drift engine: anchors, baselines, git/hayven
+│   ├── events.ts             # Suite event spine: emit + consume (.suite/)
+│   ├── consume.ts            # code.changed -> drift-suspect marking
 │   ├── storage.ts            # File-based storage layer
 │   └── tools/
 │       ├── docs.ts           # Document CRUD tools
 │       ├── search.ts         # Full-text search
 │       ├── diagrams.ts       # React Flow & tldraw
-│       └── coverage.ts       # Documentation coverage
+│       ├── coverage.ts       # Documentation coverage
+│       └── drift.ts          # check_drift / verify_doc / propose_doc_repair
+├── hooks/                    # SessionStart + Stop (drift reminder) hooks
 ├── frontend/                 # Vite viewer for humans (port 1307)
 ├── package.json
 ├── tsconfig.json
@@ -174,6 +202,9 @@ catryna-wikinelli/
 | `create_whiteboard` | Create tldraw whiteboard |
 | `get_undocumented_modules` | List source files without docs |
 | `get_doc_coverage` | Get documentation coverage report |
+| `check_drift` | Which docs the code has outgrown (drifted/broken/unverified/clean) |
+| `verify_doc` | Re-baseline a doc against HEAD once it's accurate again |
+| `propose_doc_repair` | Repair bundle: doc content + git diff of each changed anchor |
 
 ### Reading Docs (No MCP Needed!)
 
@@ -306,6 +337,13 @@ title: "Authentication Module"
 path: "modules/auth"
 tags: ["auth", "security"]
 relatedFiles: ["src/auth/index.ts"]
+anchors: [{"file":"src/auth/permissions.ts","symbol":"hasPermission"}]
+evidence: ["sirius:receipt/89"]
+refs: ["amt:decision/7"]
+verifiedCommit: "a1b2c3d..."
+verifiedAt: "2026-08-01T04:13:06.144Z"
+driftSuspectSince: ""
+driftSuspectReason: ""
 createdAt: 1704067200000
 updatedAt: 1704067200000
 createdBy: "claude-code"
@@ -315,6 +353,51 @@ createdBy: "claude-code"
 
 This module handles user authentication...
 ```
+
+Notes on the newer fields:
+
+- **`anchors`** — precise drift anchors `{file, symbol?, lines?}`, additive over
+  file-level `relatedFiles`. Both are merged by `effectiveAnchors()`.
+- **`verifiedCommit` / `verifiedAt`** — the drift baseline. Set by
+  `catryna verify` / `verify_doc`. Deliberately NOT `updatedAt`: editing prose
+  is not the same as re-checking the doc against code.
+- **`driftSuspectSince` / `driftSuspectReason`** — set by `catryna consume` when
+  a hayven `code.changed` event touches an anchored file; cleared on verify.
+- **`evidence` / `refs`** — suite URIs (`catryna:`/`amt:`/`hayven:`/`sirius:`),
+  stored **opaquely**: never validated or resolved (SUITE_CONTRACTS §1).
+- Frontmatter arrays are **JSON-encoded**, so values containing commas, quotes
+  or backslashes round-trip losslessly.
+
+---
+
+## Drift detection
+
+The reason Catryna exists: docs that contradict the code are worse than none.
+
+- `catryna drift` (or `check_drift`) diffs each doc's anchored files between its
+  `verifiedCommit` and HEAD. Statuses: **clean**, **drifted**, **broken**
+  (anchored file deleted/renamed — highest severity), **unverified** (no baseline).
+- Fix loop: `propose_doc_repair` → read the doc + anchor diffs → `update_doc` →
+  `verify_doc`. Request one doc at a time; `"all"` on a big corpus is multi-MB.
+- **First run on an existing corpus**: nothing has a baseline, so everything
+  reports `unverified` and no drift is found. Pass a baseline:
+  `catryna drift --since <commit|YYYY-MM-DD>` — the commit where the docs were
+  last broadly true. It writes nothing. See `.docs/guides/drift-adoption-playbook.mdx`.
+- Symbol precision is used automatically when Hayvenhurst is present and healthy
+  (`hayven doctor`); otherwise it falls back to plain git-diff. Zero-dependency
+  by default.
+- `catryna drift` exits **3** when anything is drifted or broken, so it is a CI
+  gate. A Stop hook nags at the end of a session that left docs drifted.
+
+### Cross-platform
+
+`.docs/` is git-versioned and travels between machines. **Windows and macOS are
+supported.** Anchor paths must use **forward slashes** — anchors are git
+pathspecs and git speaks `/` on every platform, so a `src\file.ts` anchor
+resolves to nothing on macOS and reports the doc broken. Catryna normalizes
+separators and tolerates CRLF checkouts on read, but write portable paths.
+Linux is expected to work and is on the roadmap to be officially supported and
+tested.
 
 ---
 
