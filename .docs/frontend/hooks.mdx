@@ -100,6 +100,24 @@ const {
 
 Fetches `GET /api/coverage`. On failure `coverage` is `null` and `error` is set; `CoverageReport` renders "Coverage unavailable" rather than inventing numbers.
 
+## useCoverageTrend
+
+Coverage over time, from `GET /api/coverage/trend`.
+
+```typescript
+const {
+  trend,     // CoverageTrendResponse | null
+  loading,   // boolean
+  refetch,   // () => Promise<void>
+} = useCoverageTrend(points = 40);
+```
+
+Derived from git history on request — there is no stored series, so the chart is always complete and always current, with no backfill period.
+
+<Callout type="info">
+Each sample costs two git reads, so this is the slowest call on the dashboard and lags the other panels on a long history. `loading` matters here: `CoverageReport` shows "Reading coverage from git history…" rather than leaving a blank that reads as "no data".
+</Callout>
+
 ## useDocsSearch
 
 Search across all documents.

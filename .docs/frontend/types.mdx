@@ -111,6 +111,22 @@ interface DriftResponse {
   summary: { clean: number; drifted: number; broken: number; unverified: number };
 }
 
+interface CoverageSample {
+  commit: string;
+  timestamp: number;
+  coveragePercent: number;
+  totalModules: number;
+  documentedModules: number;
+  totalDocs: number;
+}
+
+interface CoverageTrendResponse {
+  samples: CoverageSample[];   // oldest first
+  totalCommits: number;
+  sampled: boolean;            // true when samples is a selection, not every commit
+  error?: string;
+}
+
 interface CoverageResponse {
   totalModules: number;
   documentedModules: number;

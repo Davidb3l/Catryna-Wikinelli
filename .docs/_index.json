@@ -325,7 +325,32 @@
       "createdAt": 1785617858378,
       "updatedAt": 1785617858378,
       "createdBy": "claude-code"
+    },
+    {
+      "id": "05066cd8-5e8d-45dc-98d4-83c49eee618d",
+      "path": "backend/trend",
+      "title": "Coverage trend over time",
+      "tags": [
+        "phase2",
+        "coverage",
+        "trend",
+        "backend"
+      ],
+      "relatedFiles": [
+        "src/trend.ts",
+        "src/coverage.ts"
+      ],
+      "anchors": [],
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "driftSuspectSince": "",
+      "driftSuspectReason": "",
+      "createdAt": 1785619158337,
+      "updatedAt": 1785619158337,
+      "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1785617989367
+  "lastUpdated": 1785619158337
 }

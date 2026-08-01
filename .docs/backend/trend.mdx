@@ -1,0 +1,91 @@
+---
+id: 05066cd8-5e8d-45dc-98d4-83c49eee618d
+title: "Coverage trend over time"
+path: "backend/trend"
+tags: ["phase2", "coverage", "trend", "backend"]
+relatedFiles: ["src/trend.ts", "src/coverage.ts"]
+anchors: []
+evidence: []
+refs: []
+verifiedCommit: ""
+verifiedAt: ""
+driftSuspectSince: ""
+driftSuspectReason: ""
+createdAt: 1785619158337
+updatedAt: 1785619158337
+createdBy: "claude-code"
+---
+
+# Coverage trend over time
+
+`src/trend.ts` answers what a single coverage number cannot: **is documentation keeping pace with the code?**
+
+A line sliding downward means features shipped and nobody documented them. A cliff names the commit where it happened. That is the signal Catryna is uniquely positioned to show, because it is the only tool holding both halves — the code and the docs anchored to it.
+
+## Derived from git, not persisted
+
+Every sample is computed from what git already stores:
+
+- `git ls-tree -r --name-only <sha>` — the source files tracked at that commit
+- `git show <sha>:.docs/_index.json` — the doc index at that commit
+
+Nothing is written. No snapshot file accumulates.
+
+The alternative — appending a sample on every run — was rejected for three reasons: it bolts a write side-effect onto a read, it produces **no retroactive history** (the chart would start empty and fill in over months), and it silently drifts from reality whenever someone forgets to run the sampler. Git is already the record; this just reads it.
+
+## The invariant
+
+<Callout type="warning">
+The **newest sample must equal what `computeCoverage` reports live at HEAD.** That is the point a reader checks against the big number on the dashboard — if the two disagreed, the chart would quietly misstate today, the one figure trusted most.
+</Callout>
+
+Both paths therefore share `isSourcePath()` from `src/coverage.ts`, and a test pins the equality across `coveragePercent`, `totalModules`, and `documentedModules`.
+
+**Known caveat:** samples classify *committed* paths, so a file present on disk but never committed counts toward live coverage and not the trend. HEAD with a dirty working tree is the only place the two can legitimately differ.
+
+## API
+
+```typescript
+computeCoverageTrend(
+  cwd: string,
+  opts?: { maxPoints?: number },   // default 40
+): Promise<CoverageTrend>
+
+interface CoverageSample {
+  commit: string;
+  timestamp: number;          // committer date, ms
+  coveragePercent: number;
+  totalModules: number;
+  documentedModules: number;
+  totalDocs: number;
+}
+
+interface CoverageTrend {
+  samples: CoverageSample[];  // oldest first
+  totalCommits: number;       // considered before downsampling
+  sampled: boolean;           // true when samples is a selection
+  error?: string;
+}
+```
+
+## Sampling
+
+Each sample costs **two git reads**, so a long history is downsampled rather than walked commit by commit. `downsample()` picks evenly across the series and **always keeps the oldest and newest** — the newest is what a reader checks against today's number, the oldest anchors the left edge.
+
+`sampled: true` is reported whenever the series is a selection. A chart that silently dropped points would misrepresent *when* something changed, so consumers surface it ("sampled 40 of 76 commits").
+
+Samples run **sequentially**, not in parallel: two git processes per sample, and a wide fan-out on a long history would flood the process table for no real gain.
+
+## Edge cases
+
+| Case | Behaviour |
+|---|---|
+| Commit before `.docs/` existed | `totalDocs: 0`, `coveragePercent: 0` — not a crash |
+| Unparseable `_index.json` at a commit | Treated as no docs, not an error |
+| Not a git repository | Empty `samples` + `error`, never fabricated points |
+| Fewer than 2 commits | Consumers show "not enough history" rather than a one-point line |
+
+## Consumers
+
+- `GET /api/coverage/trend?points=N` (capped at 200) — the viewer's dev API
+- `CoverageTrendChart` in `frontend/App.tsx` — inline SVG, y-axis pinned to 0–100 so a small wobble is not dramatized into a collapse, with the largest single drop marked and named

@@ -40,6 +40,9 @@ Both learned from real bugs, both enforced by tests:
 ## API
 
 ```typescript
+isSourcePath(relativePath: string): boolean   // shared with src/trend.ts
+isExcludedPath(relativePath: string): boolean
+
 computeCoverage(opts: {
   rootDir: string;        // source tree to scan
   docs: DocMetadata[];    // already-loaded index
@@ -80,6 +83,10 @@ Exclusion patterns are anchored to **path segments**, so a directory named `dist
 An anchor pointing at a path that is not on disk. A doc pointing at a deleted file documents no module, so it is surfaced rather than quietly counted.
 
 An anchor on an **excluded-but-real** file (a test file, say) is legitimate and is *not* reported broken — only paths that are neither scanned source nor present on disk.
+
+## Shared classification
+
+`isSourcePath()` and `isExcludedPath()` are exported so `src/trend.ts` classifies paths identically. The trend reads paths out of **git trees** rather than off disk, and if the two rulesets ever diverged the newest trend point would stop matching the live coverage number — the chart would quietly misstate today. See the `backend/trend` doc.
 
 ## Consumers
 

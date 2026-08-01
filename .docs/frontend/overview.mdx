@@ -105,6 +105,21 @@ This screen previously displayed **hardcoded placeholders**: an 84% health score
 
 The header previously carried an **Auto-Generate Missing** button; it was scaffolding for the removed Gemini integration and never had a handler. Removed rather than left as a dead control.
 
+### Coverage Over Time
+
+`CoverageTrendChart` renders coverage across git history as inline SVG — no chart library, since this view is its only consumer.
+
+Two deliberate choices worth keeping:
+
+- The **y-axis is pinned to 0–100**, not fitted to the data. An auto-scaled axis turns a 2-point wobble into a visual collapse, and this chart exists to show whether documentation is keeping pace, not to dramatize noise.
+- The **largest single drop is marked and named**, because the actionable question is not "what is coverage" but "when did it fall, and to what". Every point carries a tooltip with commit, date, percent, modules, and doc count.
+
+`sampled N of M commits` appears whenever the series is a selection, so the chart never implies it plotted every commit.
+
+<Callout type="info">
+This is the slowest panel on the dashboard — two git reads per sample — so it has its own loading state. Without one the section sat blank while the rest of the page was populated, which reads as "no data" rather than "still working".
+</Callout>
+
 ### Verified Badge
 
 Per-doc drift status (PRODUCT_ROADMAP Phase 2), from `GET /api/drift` via `useDrift()`:
@@ -157,6 +172,8 @@ Nothing is proxied. `vite.config.ts` registers its own `docs-api` Vite plugin wh
 - `GET /api/coverage` - real coverage, via `computeCoverage()` from `src/coverage.ts`
 
 - `GET /api/drift` - per-doc drift status keyed by path, via `computeDrift()` from `src/drift.ts`, for the verified badge
+
+- `GET /api/coverage/trend?points=N` - coverage over time, via `computeCoverageTrend()` from `src/trend.ts` (default 40 points, capped at 200)
 
 The last two compute against the **project root** (the parent of the docs root), not the dev server's cwd — which is `frontend/`. They read `docsRoot` per request rather than capturing it, because `POST /api/projects/select` switches it at runtime. `/api/drift` passes `emit: false`: rendering a badge must not write to the suite event spine.
 
