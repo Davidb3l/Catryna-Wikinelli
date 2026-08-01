@@ -146,8 +146,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "f0616397e0eecb307cf839e1d263d9d0968db552",
-      "verifiedAt": "2026-08-01T21:46:20.771Z",
+      "verifiedCommit": "dbd1ef6527da312ff04a9b5b490b95379010a45d",
+      "verifiedAt": "2026-08-01T21:52:57.130Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -243,8 +243,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "f0616397e0eecb307cf839e1d263d9d0968db552",
-      "verifiedAt": "2026-08-01T21:46:20.807Z",
+      "verifiedCommit": "dbd1ef6527da312ff04a9b5b490b95379010a45d",
+      "verifiedAt": "2026-08-01T21:52:57.182Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -352,5 +352,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1785620780915
+  "lastUpdated": 1785621177183
 }
