@@ -31,8 +31,8 @@
         "core"
       ],
       "relatedFiles": [
-        "src\\index.ts",
-        "src\\storage.ts"
+        "src/index.ts",
+        "src/storage.ts"
       ],
       "createdAt": 1767321236003,
       "updatedAt": 1767336003658,
@@ -55,7 +55,7 @@
         "server"
       ],
       "relatedFiles": [
-        "src\\index.ts"
+        "src/index.ts"
       ],
       "createdAt": 1767321253064,
       "updatedAt": 1767321658640,
@@ -78,7 +78,7 @@
         "mdx"
       ],
       "relatedFiles": [
-        "src\\storage.ts"
+        "src/storage.ts"
       ],
       "createdAt": 1767321315890,
       "updatedAt": 1767321660905,
@@ -102,10 +102,10 @@
         "reference"
       ],
       "relatedFiles": [
-        "src\\tools\\docs.ts",
-        "src\\tools\\search.ts",
-        "src\\tools\\diagrams.ts",
-        "src\\tools\\coverage.ts"
+        "src/tools/docs.ts",
+        "src/tools/search.ts",
+        "src/tools/diagrams.ts",
+        "src/tools/coverage.ts"
       ],
       "createdAt": 1767321316028,
       "updatedAt": 1767321661004,
@@ -128,10 +128,10 @@
         "vite"
       ],
       "relatedFiles": [
-        "frontend\\App.tsx",
-        "frontend\\index.tsx",
-        "frontend\\vite.config.ts",
-        "frontend\\constants.tsx"
+        "frontend/App.tsx",
+        "frontend/index.tsx",
+        "frontend/vite.config.ts",
+        "frontend/constants.tsx"
       ],
       "createdAt": 1767321379263,
       "updatedAt": 1767321691220,
@@ -154,7 +154,7 @@
         "reference"
       ],
       "relatedFiles": [
-        "frontend\\types.ts"
+        "frontend/types.ts"
       ],
       "createdAt": 1767321379351,
       "updatedAt": 1767321661199,
@@ -177,7 +177,7 @@
         "react"
       ],
       "relatedFiles": [
-        "frontend\\hooks\\useDocs.ts"
+        "frontend/hooks/useDocs.ts"
       ],
       "createdAt": 1767321379449,
       "updatedAt": 1767321661283,
@@ -221,7 +221,7 @@
         "service"
       ],
       "relatedFiles": [
-        "frontend\\services\\geminiService.ts"
+        "frontend/services/geminiService.ts"
       ],
       "createdAt": 1767321677827,
       "updatedAt": 1767321677827,
@@ -265,7 +265,7 @@
     {
       "id": "b936aeb6-47e2-4526-bd8d-f8d4457927f8",
       "path": "guides/drift-adoption-playbook",
-      "title": "Drift Adoption Playbook — rolling catryna drift into a repo",
+      "title": "Drift Adoption Playbook \u2014 rolling catryna drift into a repo",
       "tags": [
         "drift",
         "playbook",
