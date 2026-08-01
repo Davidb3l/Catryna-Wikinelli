@@ -41,7 +41,7 @@ This is NOT the only entry point. `src/cli.ts` (bin `catryna`) is a separate CLI
 
 ## Tool Registration
 
-The server registers five tool modules — 14 tools in total:
+The server registers six tool modules — 15 tools in total:
 
 - **docs.ts** - Document CRUD operations (create_doc, get_doc, list_docs, update_doc, delete_doc)
 
@@ -50,6 +50,8 @@ The server registers five tool modules — 14 tools in total:
 - **diagrams.ts** - Visual content (create_diagram, create_mermaid_diagram, create_whiteboard)
 
 - **coverage.ts** - Documentation metrics (get_undocumented_modules, get_doc_coverage)
+
+- **lint.ts** - Structural doc health (lint_docs) — separate from drift because it answers a different question
 
 - **drift.ts** - Living-docs loop (check_drift, verify_doc, propose_doc_repair)
 
