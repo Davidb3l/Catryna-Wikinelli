@@ -1,56 +1,11 @@
+/**
+ * Coverage MCP tools. The computation lives in src/coverage.ts so the viewer's
+ * dev API answers with the same numbers — see that file for the design rules.
+ */
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { loadIndex } from "../storage";
-import { readdir, stat } from "node:fs/promises";
-import { join, relative } from "node:path";
-
-// Default patterns for source files
-const SOURCE_PATTERNS = [
-  /\.tsx?$/,
-  /\.jsx?$/,
-  /\.py$/,
-  /\.go$/,
-  /\.rs$/,
-];
-
-const EXCLUDE_PATTERNS = [
-  /node_modules/,
-  /\.test\./,
-  /\.spec\./,
-  /dist\//,
-  /build\//,
-  /__pycache__/,
-  /\.docs\//,
-];
-
-async function findSourceFiles(dir: string, rootDir: string): Promise<string[]> {
-  const files: string[] = [];
-
-  try {
-    const entries = await readdir(dir, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const fullPath = join(dir, entry.name);
-      const relativePath = relative(rootDir, fullPath);
-
-      // Skip excluded paths
-      if (EXCLUDE_PATTERNS.some(p => p.test(relativePath))) {
-        continue;
-      }
-
-      if (entry.isDirectory()) {
-        const subFiles = await findSourceFiles(fullPath, rootDir);
-        files.push(...subFiles);
-      } else if (SOURCE_PATTERNS.some(p => p.test(entry.name))) {
-        files.push(relativePath);
-      }
-    }
-  } catch {
-    // Directory doesn't exist or can't be read
-  }
-
-  return files;
-}
+import { computeCoverage } from "../coverage";
 
 export function registerCoverageTools(server: McpServer): void {
   // GET UNDOCUMENTED MODULES
@@ -58,58 +13,22 @@ export function registerCoverageTools(server: McpServer): void {
     "get_undocumented_modules",
     {
       rootDir: z.string().optional().describe("Root directory to scan (defaults to current directory)"),
-      patterns: z.array(z.string()).optional().describe("Glob patterns to include"),
     },
     async ({ rootDir }) => {
       const scanDir = rootDir || process.cwd();
 
       try {
-        // Find all source files
-        const sourceFiles = await findSourceFiles(scanDir, scanDir);
-
-        // Get all documented files from index
         const index = await loadIndex();
-        const documentedFiles = new Set<string>();
-
-        for (const doc of index.docs) {
-          for (const file of doc.relatedFiles) {
-            documentedFiles.add(file);
-          }
-        }
-
-        // Find undocumented files
-        const undocumented = sourceFiles.filter(f => !documentedFiles.has(f));
-
-        // Get file info
-        const modules = await Promise.all(
-          undocumented.slice(0, 50).map(async (filePath) => {
-            try {
-              const fullPath = join(scanDir, filePath);
-              const stats = await stat(fullPath);
-              return {
-                filePath,
-                name: filePath.split("/").pop() || filePath,
-                lastModified: stats.mtime.getTime(),
-                hasDocumentation: false,
-              };
-            } catch {
-              return {
-                filePath,
-                name: filePath.split("/").pop() || filePath,
-                lastModified: 0,
-                hasDocumentation: false,
-              };
-            }
-          })
-        );
+        const report = await computeCoverage({ rootDir: scanDir, docs: index.docs });
 
         return {
           content: [{ type: "text", text: JSON.stringify({
             success: true,
-            modules,
-            totalUndocumented: undocumented.length,
-            totalSourceFiles: sourceFiles.length,
-            hint: "Use create_doc with relatedFiles to document these modules",
+            modules: report.undocumented.map(m => ({ ...m, hasDocumentation: false })),
+            totalUndocumented: report.totalUndocumented,
+            totalSourceFiles: report.totalModules,
+            listed: report.undocumented.length,
+            hint: "Use create_doc with relatedFiles (or precise `anchors`) to document these modules",
           }) }],
         };
       } catch (error) {
@@ -130,62 +49,36 @@ export function registerCoverageTools(server: McpServer): void {
       const scanDir = rootDir || process.cwd();
 
       try {
-        // Find all source files
-        const sourceFiles = await findSourceFiles(scanDir, scanDir);
-
-        // Get all docs from index
         const index = await loadIndex();
-        const docs = index.docs;
+        const report = await computeCoverage({ rootDir: scanDir, docs: index.docs, limit: 20 });
 
-        // Get documented files
-        const documentedFiles = new Set<string>();
-        for (const doc of docs) {
-          for (const file of doc.relatedFiles) {
-            documentedFiles.add(file);
-          }
-        }
-
-        const totalModules = sourceFiles.length;
-        const documentedModules = sourceFiles.filter(f => documentedFiles.has(f)).length;
-        const coveragePercent = totalModules > 0
-          ? Math.round((documentedModules / totalModules) * 100)
-          : 0;
-
-        // Find recently updated docs
-        const sortedDocs = [...docs].sort((a, b) => b.updatedAt - a.updatedAt);
-        const recentlyUpdated = sortedDocs.slice(0, 5).map(d => ({
-          path: d.path,
-          title: d.title,
-          file: `.docs/${d.path}.mdx`,
-          updatedAt: d.updatedAt,
+        // Recency, kept from the original tool. `updatedAt` is edit time, not
+        // verification time — a recently edited doc is not a verified one, which
+        // is what `freshness` / `catryna drift` are for.
+        const sorted = [...index.docs].sort((a, b) => b.updatedAt - a.updatedAt);
+        const recentlyUpdated = sorted.slice(0, 5).map(d => ({
+          path: d.path, title: d.title, file: `.docs/${d.path}.mdx`, updatedAt: d.updatedAt,
         }));
-
-        // Find stale docs (not updated in 30 days)
-        const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
-        const staleDocs = docs
+        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        const staleDocs = index.docs
           .filter(d => d.updatedAt < thirtyDaysAgo)
           .slice(0, 10)
           .map(d => ({
-            path: d.path,
-            title: d.title,
-            file: `.docs/${d.path}.mdx`,
-            updatedAt: d.updatedAt,
+            path: d.path, title: d.title, file: `.docs/${d.path}.mdx`, updatedAt: d.updatedAt,
           }));
-
-        // Find undocumented files
-        const undocumentedFiles = sourceFiles
-          .filter(f => !documentedFiles.has(f))
-          .slice(0, 20);
 
         return {
           content: [{ type: "text", text: JSON.stringify({
             success: true,
             report: {
-              totalModules,
-              documentedModules,
-              coveragePercent,
-              totalDocs: docs.length,
-              undocumentedFiles,
+              totalModules: report.totalModules,
+              documentedModules: report.documentedModules,
+              coveragePercent: report.coveragePercent,
+              totalDocs: report.totalDocs,
+              anchoringDocs: report.anchoringDocs,
+              brokenAnchors: report.brokenAnchors,
+              undocumentedFiles: report.undocumented.map(m => m.filePath),
+              totalUndocumented: report.totalUndocumented,
               recentlyUpdated,
               staleDocs,
               docsFolder: ".docs/",
