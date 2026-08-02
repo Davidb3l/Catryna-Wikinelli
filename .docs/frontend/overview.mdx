@@ -3,7 +3,7 @@ id: 8ba895db-7586-4187-92fb-7da033094537
 title: "Frontend Application"
 path: "frontend/overview"
 tags: ["frontend", "react", "vite"]
-relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json"]
+relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx"]
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
@@ -90,6 +90,18 @@ Renders different block types with appropriate styling:
 - **diagram** - Mermaid (rendered via `MermaidRenderer` with an expand/zoom modal) when `metadata.diagramData.mermaid` is set, otherwise an interactive React Flow canvas
 
 - **whiteboard** - A placeholder card that launches the full-screen tldraw editor. Stored `whiteboardData` is neither loaded into nor saved from the canvas.
+
+### The trust surface is a set of PURE VIEWS
+
+`components/Trust.tsx` holds `VerifiedBadge`, `DocTrust`, `StatCard`, `CoverageTrendChart` and `CoverageView`. None of them fetch; every one takes its data as props. `CoverageReport` in `App.tsx` is now four lines of hook wiring around `CoverageView`.
+
+<Callout type="info">
+This split is a **safeguard**, not tidiness. A component that fetches its own data can always be edited to skip the fetch and keep the number — which is exactly how an 84% health score, 42 pages and 12 missing items sat on this screen with no API behind them. A component that only *receives* data structurally cannot display something it was not given.
+</Callout>
+
+`components/trust.test.tsx` renders these under happy-dom and asserts the property that would have caught the original bug: **with no data, no numbers.** A failed fetch must produce zero digits; a null drift status must produce no badge; an empty trend must explain itself rather than draw axis numbers. With real data, every digit on screen must trace to a prop. Mutation-checked by reintroducing the literal `84%` — the suite fails.
+
+The DOM registration lives in `happydom.ts`, imported by the test rather than wired as a `bunfig.toml` preload: a preload only applies when `bun test` runs from that directory, and `bun run check` runs from the repo root. A gate that passes from only one directory is not a gate.
 
 ### Error Boundary
 
