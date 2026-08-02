@@ -70,7 +70,11 @@ Matches the `drift` convention exactly:
 | `3` | One or more errors: the gate is hit |
 | `1` | Operational failure (unreadable `_index.json`) — distinct from the gate |
 
-`--json` emits exactly one object on stdout with stderr clean, per SUITE_CONTRACTS §4.
+<Callout type="warning">
+`--json` **always exits 0**, matching `drift --json`: a `--json` invocation is a REPORT whose consumers read the body (`ok`, `errors`), not the exit code. This shipped wrong. The Stop hook does `out=$(catryna lint --json) || out=""`, so the non-zero exit blanked the output in precisely the case worth reporting — the hook stayed silent on a malformed doc. Twenty-one green tests missed it because none asserted the `--json` exit code; it took a second consumer actually using the command to surface it.
+</Callout>
+
+Under `--json` there is exactly one object on stdout and stderr stays clean, per SUITE_CONTRACTS §4. Operational failure in human mode goes to stderr so stdout stays pipeline-safe.
 
 ## Interaction with `verify`
 

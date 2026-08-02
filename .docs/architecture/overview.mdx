@@ -39,7 +39,11 @@ Two shared, root-parameterized modules sit between the engine and every consumer
 
 - **`src/freshness.ts`** — a read-only projection over the drift engine, with a HEAD+index-keyed cache on the read path only (the CLI gate always re-measures). Attaches a status and a one-line warning to `get_doc` / `list_docs` / `search_docs`, so an agent is warned *before* trusting a stale doc. Adds `unanchored` and `unknown` so a doc with no verdict is never reported as clean.
 - **`src/coverage.ts`** — coverage over **effective anchors**, shared by the MCP tools and `GET /api/coverage`. Takes every root as a parameter and never reads `process.cwd()`.
-- **`src/lint.ts`** — the STRUCTURAL question (`catryna lint`), which drift cannot answer: unparseable frontmatter, orphaned callout tags, unclosed fences, anchors that resolve to nothing, index/file disagreement. Exits 3 like drift; `verify` refuses to baseline a structurally malformed doc.
+- **`src/lint.ts`** — the STRUCTURAL question (`catryna lint`), which drift cannot answer: unparseable frontmatter, orphaned callout tags, unclosed fences, anchors that resolve to nothing, index/file disagreement. Human mode exits 3 like drift; `--json` always exits 0 (a report, not a gate); `verify` refuses to baseline a structurally malformed doc.
+
+### Enforcement
+
+The gates are only worth having if something runs them. `bun run check` is typecheck + tests + lint + drift behind one exit code (~14s), `scripts/install-hooks.sh` installs a **pre-push** hook that runs it, and the Stop hook reports drift *and* lint advisorily without ever blocking a session. All local — no CI service, nothing over the network.
 - **`src/trend.ts`** — coverage over time, computed from git history (each commit's file tree + its `.docs/_index.json`) rather than a persisted series. No new state, no write side-effect, and full retroactive history. Shares path classification with `src/coverage.ts` so the newest sample always equals live coverage at HEAD.
 
 Discovery across the suite goes through `src/doctor.ts`: `catryna doctor --json` emits the SUITE_CONTRACTS §3 handshake envelope (`{tool, version, schemaVersion, ok, capabilities, ui, checks, report}`), advertising the capabilities that exist today — `mcp`, `events.emit`, `events.consume`, `drift`, `verify`, `ui`.
