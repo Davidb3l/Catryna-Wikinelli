@@ -254,6 +254,14 @@ async function makeFixture(): Promise<Fixture> {
   // Sits one level above the docs root — the exact containment boundary.
   await writeAt(alpha, 'outside-secret.mdx', `---\ntitle: "Secret"\n---\n\n${CANARY}\n`);
 
+  // A sibling whose path SHARES THE DOCS-ROOT PREFIX. Without this fixture the
+  // containment check's `+ path.sep` is unpinned: a bare
+  // `startsWith(rootResolved)` passes every other test while happily serving
+  // `<proj>/.docs-backup/…`. That is the single most commonly reintroduced form
+  // of this bug, and `.docs.bak` / `.docs-old` is exactly what a human leaves
+  // next to a docs folder.
+  await writeAt(alpha, '.docs-backup/leak.mdx', `---\ntitle: "Backup"\n---\n\n${CANARY}\n`);
+
   // --- beta: a second DISCOVERABLE project (a legitimate select target) ---
   await writeAt(beta, '.docs/_index.json', JSON.stringify({
     version: 1, lastUpdated: 0, docs: [docMeta('beta/only', 'Beta Only Doc')],
@@ -337,6 +345,21 @@ describe('GET /api/docs/:path containment', () => {
     const res = await get('/api/docs/../outside-secret');
     // Leak first: that is the actual harm, and asserting it before the status
     // code makes a regression report "the file came back" rather than "200 != 403".
+    expect(res.body).not.toContain(CANARY);
+    expect(res.status).toBe(403);
+  });
+
+  test('a sibling directory sharing the docs-root prefix is not servable', async () => {
+    // Kills the classic prefix bug: `startsWith(rootResolved)` without the
+    // trailing separator treats `<proj>/.docs-backup` as inside `<proj>/.docs`.
+    // Asserted on the leak first, so a regression reports the exposed body
+    // rather than only a status code.
+    const fx = await makeFixture();
+    const { port } = await mount({
+      docsRoot: join(fx.alpha, '.docs'),
+      projects: () => findProjects([fx.workspace]),
+    });
+    const res = await rawRequest(port, '/api/docs/../.docs-backup/leak', { timeoutMs: 3000 });
     expect(res.body).not.toContain(CANARY);
     expect(res.status).toBe(403);
   });
@@ -589,6 +612,15 @@ describe('/api/projects/* always responds', () => {
       // — the point is only that every one of these terminates.
       expect([200, 404]).toContain(res.status);
       expect(res.headers['content-type']).toBe('application/json');
+
+      // The API must ANSWER, not fall through. Content-Type alone cannot tell
+      // the difference: it is set before the if-chain, so a `next()` fallthrough
+      // inherits the header and looks identical here. In the real Vite server a
+      // fallthrough hands an API path to the SPA fallback — 200 with index.html.
+      // Asserting the body is what pins the explicit 404.
+      if (res.status === 404) {
+        expect(JSON.parse(res.body).error).toBe('Not found');
+      }
     });
   }
 });
