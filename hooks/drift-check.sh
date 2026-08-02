@@ -1,9 +1,16 @@
 #!/bin/sh
 # drift-check.sh — Claude Code Stop hook for the Catryna plugin.
 #
-# When a coding session ENDS, remind the agent (via stderr) if any anchored docs
-# have drifted from the code they document — "a session that touched anchored
-# files ends with 'update the affected docs'" (PRODUCT_ROADMAP Phase 1).
+# When a coding session ENDS, remind the agent (via stderr) about docs that need
+# attention. Two independent questions, both reported:
+#
+#   drift — has the CODE outgrown a doc? (PRODUCT_ROADMAP Phase 1: "a session
+#           that touched anchored files ends with 'update the affected docs'")
+#   lint  — is a doc MALFORMED? (orphaned callout tags, unclosed fences,
+#           unparseable frontmatter, anchors resolving to nothing)
+#
+# Lint matters here because a malformed doc is invisible to drift: drift only
+# speaks about docs that anchor code, and only about whether that code moved.
 #
 # INFORMATIONAL + NON-BLOCKING by contract:
 #   - always exit 0 (a Stop hook that exits non-zero can block the session; this
@@ -54,14 +61,35 @@ drifted=$(first_count drifted); broken=$(first_count broken)
 drifted=${drifted:-0}; broken=${broken:-0}
 
 # No parseable counts (e.g. gitRepo:false, empty output) → nothing to say.
-case "$drifted$broken" in *[!0-9]*|"") exit 0 ;; esac
+case "$drifted$broken" in *[!0-9]*|"") drifted=0; broken=0 ;; esac
 count=$((drifted + broken))
-[ "$count" -gt 0 ] || exit 0
 
-if [ "$count" -eq 1 ]; then
+if [ "$count" -eq 0 ]; then
+  : # no drift — fall through to the lint check below
+elif [ "$count" -eq 1 ]; then
   log "catryna: 1 doc no longer matches the code it documents (drifted or a broken anchor) — run \`catryna repair\` (or update the affected doc, then \`catryna verify\`)."
 else
   log "catryna: $count docs no longer match the code they document (drifted or broken anchors) — run \`catryna repair\` (or update the affected docs, then \`catryna verify\`)."
+fi
+
+# Structural health, reported alongside drift. Same contract: best-effort, and
+# any failure to parse degrades to silence rather than a spurious nag.
+#
+# `lint --json` exits 3 when errors exist, so its exit code is IGNORED here — a
+# non-zero exit from a Stop hook can block the session, and this hook must never
+# do that.
+lint_json=$(bun run "$CLI" lint --json 2>/dev/null) || lint_json=""
+if [ -n "$lint_json" ]; then
+  lint_errors=$(printf '%s' "$lint_json" | grep -o '"errors":[[:space:]]*[0-9][0-9]*' | head -n1 | grep -o '[0-9][0-9]*')
+  lint_errors=${lint_errors:-0}
+  case "$lint_errors" in *[!0-9]*|"") lint_errors=0 ;; esac
+  if [ "$lint_errors" -gt 0 ]; then
+    if [ "$lint_errors" -eq 1 ]; then
+      log "catryna: 1 doc is malformed (structure or anchors) — run \`catryna lint\` to see it. \`catryna verify\` will refuse to baseline it until fixed."
+    else
+      log "catryna: $lint_errors docs are malformed (structure or anchors) — run \`catryna lint\` to see them. \`catryna verify\` will refuse to baseline them until fixed."
+    fi
+  fi
 fi
 
 # Informational only — never block the session.

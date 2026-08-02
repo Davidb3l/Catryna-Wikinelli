@@ -10,7 +10,11 @@
     "start": "bun run src/index.ts",
     "dev": "bun run --watch src/index.ts",
     "doctor": "bun run src/cli.ts doctor",
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "cd frontend && bunx tsc --noEmit",
+    "lint": "bun run src/cli.ts lint",
+    "drift": "bun run src/cli.ts drift",
+    "check": "bun run typecheck && bun test && bun run lint && bun run drift"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.0",

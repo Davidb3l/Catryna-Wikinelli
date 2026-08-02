@@ -189,12 +189,24 @@ describe("runLint — the gate", () => {
     dirs.push(dir);
     await mkdir(join(dir, ".docs"), { recursive: true });
     await writeFile(join(dir, ".docs", "_index.json"), "{ not json");
-    expect((await runLint({ json: false, cwd: dir })).code).toBe(1);
+    const run = await runLint({ json: false, cwd: dir });
+    expect(run.code).toBe(1);
+    // Operational failure goes to stderr so stdout stays clean for pipelines.
+    expect(run.stderr).toContain("error");
+    expect(run.stdout).toBe("");
+    // ...but under --json it is still a body-on-stdout, exit-0 report.
+    const asJson = await runLint({ json: true, cwd: dir });
+    expect(asJson.code).toBe(0);
+    expect(JSON.parse(asJson.stdout).ok).toBe(false);
   });
 
-  test("--json emits exactly one JSON object with nothing on stderr", async () => {
+  test("--json ALWAYS exits 0, even with errors — it is a report, not a gate", async () => {
+    // SUITE_CONTRACTS §4, matching `drift --json`. Getting this wrong broke the
+    // Stop hook, which does `out=$(catryna lint --json) || out=""` — a non-zero
+    // exit blanked the output in exactly the case worth reporting.
     const dir = await project([{ path: "a", relatedFiles: ["src/gone.ts"] }]);
     const run = await runLint({ json: true, cwd: dir });
+    expect(run.code).toBe(0);
     expect(run.stderr).toBe("");
     const parsed = JSON.parse(run.stdout);
     expect(parsed.ok).toBe(false);

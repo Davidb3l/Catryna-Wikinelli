@@ -348,19 +348,35 @@ export function renderLintHuman(report: LintReport): string {
   return lines.join("\n");
 }
 
-/** CLI entry. Exit 3 on errors — same gate code as `drift`. Warnings never gate. */
+/**
+ * CLI entry.
+ *
+ * Exit codes follow `runDrift` exactly (SUITE_CONTRACTS §4), and the `--json`
+ * rule is the one that matters:
+ *
+ *   --json  → ALWAYS exit 0. It is a REPORT; machine consumers read the body,
+ *             not the exit code. Getting this wrong broke the Stop hook, which
+ *             does `out=$(catryna lint --json) || out=""` — a non-zero exit
+ *             blanked the output in precisely the case worth reporting.
+ *   human   → 3 when errors exist (the gate), 1 on operational failure
+ *             (unreadable index — the check could not run at all), else 0.
+ *             Warnings never gate.
+ */
 export async function runLint(opts: { json: boolean; cwd: string }): Promise<{
   stdout: string;
   stderr: string;
   code: number;
 }> {
   const report = await lintDocs(opts.cwd);
-  const stdout = opts.json
-    ? JSON.stringify(buildLintJson(report), null, 2) + "\n"
-    : renderLintHuman(report);
-  // A hard error (unreadable index) is a usage/environment failure, not a gate hit.
-  const code = report.error ? 1 : report.errors > 0 ? 3 : 0;
-  return { stdout, stderr: "", code };
+
+  if (opts.json) {
+    return { stdout: JSON.stringify(buildLintJson(report), null, 2) + "\n", stderr: "", code: 0 };
+  }
+
+  if (report.error) {
+    return { stdout: "", stderr: renderLintHuman(report), code: 1 };
+  }
+  return { stdout: renderLintHuman(report), stderr: "", code: report.errors > 0 ? 3 : 0 };
 }
 
 /**
