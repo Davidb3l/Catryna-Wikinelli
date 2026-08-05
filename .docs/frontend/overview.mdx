@@ -29,7 +29,7 @@ The frontend is a React application built with Vite, providing a visual interfac
 
 - **tldraw** - Whiteboard/canvas support
 
-- **Tailwind CSS** - Loaded from the `cdn.tailwindcss.com` script in `index.html`, not a build step. `darkMode: 'class'`, plus the custom `surface` / `navy` / `accent` colors configured inline there.
+- **Tailwind CSS v4** — a real build step via `@tailwindcss/vite`, configured **CSS-first** in `index.css` (`@import "tailwindcss"` + an `@theme` block). It previously loaded `cdn.tailwindcss.com`, which compiled Tailwind *in the browser on every page load* and kept the whole design system in an inline `<script>`; the viewer now ships ~70 KB of purged CSS and no runtime compiler.
 
 - **Lucide React** - Icon library
 
@@ -84,11 +84,19 @@ Two independent axes, and keeping them separate is what lets a second identity e
 
 ### How a whole theme swaps without touching the components
 
-Every Tailwind palette colour is declared in `index.html` as `rgb(var(--c-name) / <alpha-value>)` rather than a literal, and each theme defines that variable set in `index.css`. A named theme therefore re-skins the entire app by swapping one block of variables — no edits to the hundreds of `dark:bg-zinc-900`-style classes across `App.tsx`. The `<alpha-value>` placeholder keeps slash-opacity working, so `bg-zinc-900/50` still yields a translucent themed colour.
+Every palette colour is declared in `index.css`'s `@theme` block as `rgb(var(--c-name))` rather than a literal, and each theme defines that `--c-*` set further down the same file. A named theme therefore re-skins the entire app by swapping one block of variables — no edits to the hundreds of `dark:bg-zinc-900`-style classes across `App.tsx`. v4 composes opacity through `color-mix()`, so `bg-zinc-900/40` still yields a translucent *themed* colour.
+
+Class-based dark mode comes from `@custom-variant dark (&:where(.dark, .dark *))`, since v4 defaults to `prefers-color-scheme`.
 
 <Callout type="warning">
-`white` and `black` are deliberately **not** remapped. `bg-white` is a surface while `text-white` is ink on a coloured button, and a single variable cannot be both — remapping it would invert button labels. Atelier instead overrides `.bg-white` directly; the attribute selector out-specifies Tailwind's single-class rule, so no `!important` is needed.
+**`@source` is declared explicitly.** v4's automatic content detection produced **zero utilities** here — the compile succeeded and the theme variables were emitted, so every colour silently fell back to browser defaults instead of failing loudly. The explicit list also documents which files may contain class names.
 </Callout>
+
+<Callout type="warning">
+**The theme is applied by a blocking inline script in `index.html`, before first paint** — and that is not only about avoiding a flash of Classic-light. When `.dark` was added to `<html>` *after* paint, `<body>` was observed **not** to re-style for the descendant `dark:` selector: it matched `.dark\:bg-zinc-950:where(.dark, .dark *)` yet kept its `bg-white` background, while an identical `<div>` created afterwards resolved correctly. Setting the class before body is first styled removes the invalidation step entirely. Keep that script in lockstep with the theme effect in `App.tsx` and with `PREFS_KEY`.
+</Callout>
+
+`white` and `black` are deliberately **not** themed tokens: `bg-white` is a surface while `text-white` is ink on a coloured button, and one token cannot be both. No `.bg-white` override is needed either — all 25 uses are paired with a `dark:` variant and Atelier always runs dark, so the dark variant wins on its own. (An override did exist briefly; under the CDN, runtime-injected utilities landed *after* `index.css`, but with `@import "tailwindcss"` they now come *first*, so the override began beating `dark:bg-zinc-950` and lightened the canvas.)
 
 Doc headings render as `<div>`s rather than `<h1>`/`<h2>`, so the reading styles hang off a `catryna-doc` container class on the doc column instead of element selectors.
 
