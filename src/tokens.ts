@@ -35,7 +35,7 @@
  * `cwd`/`root` is injected everywhere (never `process.cwd()` directly), so the
  * viewer (whose root is switchable at runtime) and the MCP server agree.
  */
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat, realpath } from "node:fs/promises";
 import { join, resolve, sep, dirname, basename } from "node:path";
 
 /**
@@ -56,9 +56,16 @@ export interface TokenResult {
   error?: string;
 }
 
-// Bounds — a token must never be able to wedge a read.
+// Bounds — a token must never be able to wedge a read, and must never answer
+// with a number it isn't sure of. Exceeding any of these fails the token (→ the
+// raw form) rather than returning a truncated count: a confidently-wrong
+// repo-wide number is the exact failure this whole feature exists to prevent.
 const MAX_FILES = 5000;
 const MAX_TOTAL_BYTES = 64 * 1024 * 1024;
+/** Longest token argument accepted — the first ReDoS bound. */
+const MAX_GLOB_LEN = 256;
+/** Most `*`/`?` wildcards accepted in one argument — the second ReDoS bound. */
+const MAX_GLOB_WILDCARDS = 16;
 /** Directories never walked: build output, VCS, deps, and the suite's own dirs. */
 const SKIP_DIRS = new Set([
   "node_modules",
@@ -93,8 +100,22 @@ function escapeRe(s: string): string {
  * `src/`         → base `src`, a bare dir means everything under it, recursively
  * `Cargo.toml`   → base `.`,   matches exactly `Cargo.toml`
  */
-function compileGlob(arg: string): { base: string; re: RegExp } {
-  const cleaned = arg.replace(/\/+$/, (m) => (m ? "/**" : "")); // trailing "/" = recurse
+function compileGlob(arg: string): { base: string; re: RegExp } | null {
+  // ReDoS GUARD. Each `**/` compiles to `(?:.*/)?`, and nested optional greedy
+  // stars backtrack exponentially: an arg of `d/` + `**/`×14 + `zzz` took ~6s to
+  // match, ×24 never finished, and because matching is synchronous JS it wedged
+  // the whole event loop — starving every other request on the viewer, which is
+  // reachable on 0.0.0.0. The caps below make that unreachable:
+  //   1. collapse runs of `**/` to one (semantically identical — "any depth"
+  //      twice is still "any depth") which removes the nesting entirely;
+  //   2. bound the argument length and the wildcard count outright.
+  // Note MAX_FILES/MAX_TOTAL_BYTES bound the WALK, never the MATCH, so this
+  // guard is the only thing standing between a doc and a hung server.
+  if (arg.length > MAX_GLOB_LEN) return null;
+  const collapsed = arg.replace(/(?:\*\*\/)+/g, "**/");
+  if ((collapsed.match(/[*?]/g) ?? []).length > MAX_GLOB_WILDCARDS) return null;
+
+  const cleaned = collapsed.replace(/\/+$/, (m) => (m ? "/**" : "")); // trailing "/" = recurse
   const parts = cleaned.split("/");
   const baseParts: string[] = [];
   let i = 0;
@@ -128,20 +149,69 @@ function compileGlob(arg: string): { base: string; re: RegExp } {
   return { base, re: new RegExp(`^${re}$`) };
 }
 
-/** Resolve `rel` under `root`, or `null` if it escapes (containment guard). */
-function containedResolve(root: string, rel: string): string | null {
-  if (rel.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(rel)) return null; // absolute
+/**
+ * Resolve `rel` under `root`, or `null` if it escapes — the containment guard.
+ *
+ * TWO checks, and the second is the one that matters. The textual check
+ * (`resolve` + prefix) rejects `..` and absolute paths, but `path.resolve` does
+ * NOT resolve symlinks, so a committed symlink (`vendor -> /`) plus one `.mdx`
+ * walked straight out of the root and `{{version: vendor/etc/…}}` leaked file
+ * CONTENT off the machine — over the network, since the viewer binds 0.0.0.0.
+ * `.docs/` is git-shared and git stores symlinks, so that was a one-PR exploit.
+ *
+ * So the real containment is done on REALPATHS. A path that does not exist yet
+ * cannot be realpath'd, so we realpath its nearest existing ancestor instead and
+ * require THAT to stay inside — a nonexistent leaf under a contained directory
+ * is safe, while a nonexistent leaf under a symlinked one is not.
+ */
+async function containedResolve(root: string, rel: string): Promise<string | null> {
+  if (rel.startsWith("/") || rel.startsWith("\\") || /^[a-zA-Z]:[\\/]/.test(rel)) {
+    return null; // absolute
+  }
   const rootAbs = resolve(root);
   const abs = resolve(rootAbs, rel);
-  if (abs !== rootAbs && !abs.startsWith(rootAbs + sep)) return null;
-  return abs;
+  if (abs !== rootAbs && !abs.startsWith(rootAbs + sep)) return null; // textual `..`
+
+  let rootReal: string;
+  try {
+    rootReal = await realpath(rootAbs);
+  } catch {
+    return null; // no root, nothing is contained
+  }
+
+  // Realpath the deepest existing ancestor of `abs` (usually `abs` itself).
+  let probe = abs;
+  for (;;) {
+    try {
+      const real = await realpath(probe);
+      if (real !== rootReal && !real.startsWith(rootReal + sep)) return null;
+      return abs;
+    } catch {
+      const parent = dirname(probe);
+      if (parent === probe) return null; // walked past the filesystem root
+      probe = parent;
+    }
+  }
 }
 
-/** Every file under `baseAbs` (bounded), as paths relative to `baseAbs`. */
-async function walkFiles(baseAbs: string): Promise<string[]> {
+/**
+ * Every file under `baseAbs`, as paths relative to `baseAbs`.
+ *
+ * `truncated` is the important half of the return: hitting MAX_FILES used to
+ * return a SHORT list that the caller happily reported as the answer, so a
+ * 6,000-file tree rendered a confident "5000" that never changed as the repo
+ * grew — strictly worse than the literal number the token replaced. Callers
+ * must fail the token when this is set.
+ *
+ * Symlinked entries are skipped: a `Dirent` for a symlink reports neither
+ * `isFile()` nor `isDirectory()`, so a symlinked subdirectory is never
+ * descended into (no escape, and no infinite loop on a self-referential link).
+ */
+async function walkFiles(baseAbs: string): Promise<{ files: string[]; truncated: boolean }> {
   const out: string[] = [];
+  let truncated = false;
   async function walk(dir: string, rel: string): Promise<void> {
-    if (out.length >= MAX_FILES) return;
+    if (truncated) return;
     let entries;
     try {
       entries = await readdir(dir, { withFileTypes: true });
@@ -149,18 +219,22 @@ async function walkFiles(baseAbs: string): Promise<string[]> {
       return;
     }
     for (const e of entries) {
-      if (out.length >= MAX_FILES) return;
+      if (out.length >= MAX_FILES) {
+        truncated = true;
+        return;
+      }
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         if (SKIP_DIRS.has(e.name)) continue;
         await walk(join(dir, e.name), childRel);
+        if (truncated) return;
       } else if (e.isFile()) {
         out.push(childRel);
       }
     }
   }
   await walk(baseAbs, "");
-  return out;
+  return { files: out, truncated };
 }
 
 /**
@@ -173,49 +247,98 @@ async function walkFiles(baseAbs: string): Promise<string[]> {
  */
 async function matchFiles(root: string, arg: string): Promise<string[] | null> {
   const trimmed = arg.trim();
-  if (!trimmed) return null;
+  if (!trimmed || trimmed.length > MAX_GLOB_LEN) return null;
+  // Reject absolute forms BEFORE any normalization: stripping a trailing slash
+  // first turned "/" into "" and slipped past the absolute check, which then
+  // produced paths like "/src/a.rs" that every later resolve rejected — so
+  // `{{loc: /}}` rendered a silent, confident "0".
+  if (trimmed.startsWith("/") || trimmed.startsWith("\\") || /^[a-zA-Z]:[\\/]/.test(trimmed)) {
+    return null;
+  }
 
   // Plain path (no wildcard): a file matches itself; a directory recurses.
   if (!/[*?]/.test(trimmed)) {
-    const clean = trimmed.replace(/^\.\//, "").replace(/\/+$/, "");
-    const abs = containedResolve(root, clean);
+    // "./" and "." both mean the root; an empty `clean` would mean "" and
+    // silently mis-prefix every result.
+    const clean = trimmed.replace(/^\.\//, "").replace(/\/+$/, "") || ".";
+    const abs = await containedResolve(root, clean);
     if (!abs) return null;
     let st;
     try {
       st = await stat(abs);
     } catch {
-      return []; // nonexistent → zero matches, not a containment error
+      // A PLAIN path that doesn't exist is a typo, not an empty result — fail so
+      // the token renders raw. (`{{count: …}}` with a literal ellipsis used to
+      // render a confident "0".) A GLOB matching nothing is still a real 0,
+      // handled on the glob branch below.
+      return null;
     }
     if (st.isFile()) return [clean];
-    const rels = await walkFiles(abs);
-    return rels.map((r) => (clean === "." ? r : `${clean}/${r}`));
+    const { files, truncated } = await walkFiles(abs);
+    if (truncated) return null;
+    return files.map((r) => (clean === "." ? r : `${clean}/${r}`));
   }
 
-  const { base, re } = compileGlob(trimmed);
-  const baseAbs = containedResolve(root, base);
+  const compiled = compileGlob(trimmed);
+  if (!compiled) return null; // over the ReDoS bounds
+  const { base, re } = compiled;
+  const baseAbs = await containedResolve(root, base);
   if (!baseAbs) return null;
-  const rels = await walkFiles(baseAbs);
-  return rels
+  const { files, truncated } = await walkFiles(baseAbs);
+  if (truncated) return null;
+  return files
     .filter((r) => re.test(r))
     .map((r) => (base === "." ? r : `${base}/${r}`));
 }
 
-/** Parse a version string from a manifest file's text. */
+/**
+ * Parse a version string from a manifest file's text.
+ *
+ * TOML is SECTION-AWARE, and that is not a nicety: taking the first
+ * line-anchored `version = "…"` reported a DEPENDENCY's version as the
+ * project's whenever a `[dependencies.x]` or `[workspace.dependencies]` table
+ * appeared before `[package]` — which cargo accepts. A wrong number presented as
+ * authoritative is the one thing this module promises never to produce, so the
+ * `[package]`/`[project]`/`[tool.poetry]` table wins, and the loose first-match
+ * fallback applies only to a file with no recognizable table at all.
+ */
 function parseVersion(file: string, text: string): string | null {
   const name = basename(file).toLowerCase();
-  if (name === "package.json" || name.endsWith(".json")) {
+  if (name.endsWith(".json")) {
     try {
       const v = JSON.parse(text)?.version;
-      return typeof v === "string" ? v : null;
+      // A numeric version (`"version": 3`) is a legitimate manifest value;
+      // stringify rather than failing to raw.
+      if (typeof v === "string") return v || null;
+      if (typeof v === "number") return String(v);
+      return null;
     } catch {
       return null;
     }
   }
-  // TOML (Cargo.toml, pyproject.toml) or any KEY = "x" manifest: first
-  // `version = "…"`. Kept deliberately simple — a real TOML parser is a
-  // dependency, and the first version field is the package version in practice.
-  const m = text.match(/^\s*version\s*=\s*["']([^"']+)["']/m);
-  return m ? m[1] : null;
+
+  // TOML: walk tables, and only accept `version` inside a package-ish one.
+  const VERSION_LINE = /^\s*version\s*=\s*["']([^"']+)["']/;
+  const TABLE_LINE = /^\s*\[\s*([^\]]+?)\s*\]\s*$/;
+  const PACKAGE_TABLES = new Set(["package", "project", "tool.poetry"]);
+  let table = "";
+  let sawTable = false;
+  for (const line of text.split("\n")) {
+    const t = line.match(TABLE_LINE);
+    if (t) {
+      table = t[1].trim();
+      sawTable = true;
+      continue;
+    }
+    const v = line.match(VERSION_LINE);
+    if (v && PACKAGE_TABLES.has(table)) return v[1];
+  }
+  // No table structure at all (a plain `version = "x"` file) — accept the first.
+  if (!sawTable) {
+    const m = text.match(new RegExp(VERSION_LINE.source, "m"));
+    return m ? m[1] : null;
+  }
+  return null;
 }
 
 /** Evaluate one token against `root`. Never throws — failure is a result. */
@@ -228,7 +351,7 @@ export async function evaluateToken(
   if (!a) return { ok: false, error: "empty argument" };
 
   if (kind === "version") {
-    const abs = containedResolve(root, a);
+    const abs = await containedResolve(root, a);
     if (!abs) return { ok: false, error: "path escapes project root" };
     let text: string;
     try {
@@ -241,30 +364,43 @@ export async function evaluateToken(
   }
 
   const files = await matchFiles(root, a);
-  if (files === null) return { ok: false, error: "path escapes project root" };
+  // null = refused: escaped the root, or exceeded a bound. Either way the token
+  // must FAIL (render raw) rather than answer with a partial number.
+  if (files === null) {
+    return { ok: false, error: "query refused (outside project root, or too large)" };
+  }
 
   if (kind === "count") {
     return { ok: true, value: String(files.length) };
   }
 
-  // loc: sum line counts, bounded by total bytes read.
+  // loc: sum line counts, bounded by total bytes.
   let total = 0;
   let bytes = 0;
   for (const f of files) {
-    const abs = containedResolve(root, f);
+    const abs = await containedResolve(root, f);
     if (!abs) continue;
+    // Check the size BEFORE reading: checking after meant the cap never guarded
+    // the first file and could be overshot by one arbitrarily large file on
+    // every iteration, so a single huge file could still blow memory.
+    try {
+      const st = await stat(abs);
+      if (bytes + st.size > MAX_TOTAL_BYTES) {
+        return { ok: false, error: "loc query exceeds size cap" };
+      }
+      bytes += st.size;
+    } catch {
+      continue;
+    }
     let text: string;
     try {
       text = await readFile(abs, "utf-8");
     } catch {
       continue;
     }
-    bytes += Buffer.byteLength(text);
-    if (bytes > MAX_TOTAL_BYTES) {
-      return { ok: false, error: "loc query exceeds size cap" };
-    }
     // Line count: newline count, plus one for a final line without a trailing
-    // newline. An empty file is 0 lines.
+    // newline. An empty file is 0 lines. CRLF is counted the same as LF, since
+    // the "\n" split is unaffected by the preceding "\r".
     if (text.length === 0) continue;
     total += text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
   }
@@ -272,42 +408,125 @@ export async function evaluateToken(
 }
 
 /**
+ * Character ranges of `text` that are CODE — fenced blocks and inline code
+ * spans — and must therefore be left alone.
+ *
+ * A doc that documents this feature necessarily writes the token syntax as a
+ * literal, and substituting there destroys the very reference the reader came
+ * for. That is not hypothetical: before this guard, `features/computed-facts`
+ * rendered its own syntax table as `| 28 | how many files match the glob | …`,
+ * and the sentence explaining that a raw token survives a plain-file read
+ * rendered as "sees the raw `0` form". `catryna lint` already reads code spans
+ * as text (`stripCode`), so without this the two halves of the feature disagreed
+ * about what a code span means.
+ *
+ * Handles ``` / ~~~ fences (marker-matched, length-aware, per CommonMark) and
+ * inline spans of any backtick run length.
+ */
+function codeRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  const lines = text.split("\n");
+  let offset = 0;
+  let fenceMarker: string | null = null;
+  let fenceWidth = 0;
+
+  for (const line of lines) {
+    const start = offset;
+    const end = offset + line.length;
+    offset = end + 1; // + newline
+
+    const fence = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
+    if (fenceMarker === null) {
+      if (fence) {
+        const marker = fence[1][0];
+        if (!(marker === "`" && fence[2].includes("`"))) {
+          fenceMarker = marker;
+          fenceWidth = fence[1].length;
+          ranges.push([start, end]);
+          continue;
+        }
+      }
+    } else {
+      ranges.push([start, end]); // inside a fence: the whole line is code
+      if (
+        fence &&
+        fence[1][0] === fenceMarker &&
+        fence[1].length >= fenceWidth &&
+        fence[2].trim() === ""
+      ) {
+        fenceMarker = null;
+      }
+      continue;
+    }
+
+    // Prose line: mark inline code spans. A span opens on a run of N backticks
+    // and closes on the next run of exactly N.
+    const spanRe = /(`+)(?:[^`]|(?!\1)`)*?\1/g;
+    let s: RegExpExecArray | null;
+    while ((s = spanRe.exec(line)) !== null) {
+      ranges.push([start + s.index, start + s.index + s[0].length]);
+    }
+  }
+  return ranges;
+}
+
+/**
  * Replace every computed token in `text` with its evaluated value. A failed or
  * unknown token is left VERBATIM (raw, self-describing) — never a stale number.
- * Identical tokens are evaluated once.
+ * Tokens inside code fences or inline code spans are left alone (see
+ * `codeRanges`). Identical tokens are evaluated once.
  */
 export async function renderComputedTokens(text: string, root: string): Promise<string> {
   if (!text || !text.includes("{{")) return text;
 
-  // Collect distinct (kind, arg) pairs first, evaluate each once, then replace.
-  const cache = new Map<string, string>();
-  const jobs: Array<{ key: string; kind: TokenKind; arg: string }> = [];
+  const protectedRanges = codeRanges(text);
+  const isProtected = (i: number) =>
+    protectedRanges.some(([a, b]) => i >= a && i < b);
+
+  // Collect the tokens we will actually render (skipping code), evaluating each
+  // distinct (kind, arg) once.
+  const hits: Array<{ start: number; end: number; key: string; raw: string }> = [];
+  const jobs = new Map<string, { kind: TokenKind; arg: string }>();
   COMPUTED_TOKEN_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = COMPUTED_TOKEN_RE.exec(text)) !== null) {
+    if (isProtected(m.index)) continue;
     const kind = m[1].toLowerCase() as TokenKind;
     const arg = m[2];
     const key = `${kind}:${arg}`;
-    if (!cache.has(key)) {
-      cache.set(key, ""); // reserve
-      jobs.push({ key, kind, arg });
-    }
+    jobs.set(key, { kind, arg });
+    hits.push({ start: m.index, end: m.index + m[0].length, key, raw: m[0] });
   }
-  for (const j of jobs) {
+  if (hits.length === 0) return text;
+
+  const values = new Map<string, string | null>();
+  for (const [key, j] of jobs) {
     const r = await evaluateToken(j.kind, j.arg, root);
-    cache.set(j.key, r.ok && r.value !== undefined ? r.value : "");
+    values.set(key, r.ok && r.value !== undefined ? r.value : null);
   }
 
-  return text.replace(COMPUTED_TOKEN_RE, (raw, k: string, arg: string) => {
-    const val = cache.get(`${k.toLowerCase()}:${arg}`);
-    // Empty string = evaluation failed → keep the raw token, self-describing.
-    return val ? val : raw;
-  });
+  // Splice from the end so earlier indices stay valid.
+  let out = text;
+  for (let i = hits.length - 1; i >= 0; i--) {
+    const h = hits[i];
+    const v = values.get(h.key);
+    if (v === null || v === undefined) continue; // failed → keep raw
+    out = out.slice(0, h.start) + v + out.slice(h.end);
+  }
+  return out;
 }
 
 /**
+ * Block types whose content is CODE, not prose. Their text is shown verbatim to
+ * the reader, so a token inside one is a literal being documented — rendering it
+ * would destroy a syntax example, exactly as it did in this feature's own doc.
+ */
+const CODE_BLOCK_TYPES = new Set(["code", "mermaid", "react-flow", "whiteboard", "raw"]);
+
+/**
  * Render tokens in-place across a doc's block content (the shape `get_doc`
- * returns). Only string `content` fields are touched; structure is preserved.
+ * returns). Only string `content` fields on PROSE blocks are touched; structure
+ * is preserved and code-ish blocks pass through untouched.
  */
 export async function renderTokensInBlocks(
   blocks: Array<{ type: string; data?: Record<string, unknown> }>,
@@ -315,7 +534,12 @@ export async function renderTokensInBlocks(
 ): Promise<Array<{ type: string; data?: Record<string, unknown> }>> {
   const out = [];
   for (const b of blocks) {
-    if (b.data && typeof b.data.content === "string" && b.data.content.includes("{{")) {
+    if (
+      !CODE_BLOCK_TYPES.has(b.type) &&
+      b.data &&
+      typeof b.data.content === "string" &&
+      b.data.content.includes("{{")
+    ) {
       out.push({ ...b, data: { ...b.data, content: await renderComputedTokens(b.data.content, root) } });
     } else {
       out.push(b);

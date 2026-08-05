@@ -94,8 +94,10 @@ describe("evaluateToken — security containment (a doc is untrusted data)", () 
   test("a traversal argument is refused, not read", async () => {
     const root = await project({ "src/a.rs": "x" });
     const r = await evaluateToken("loc", "../../../etc/passwd", root);
+    // Assert the BEHAVIOR (refused, no value) rather than the wording — the
+    // message is UI, the containment is the contract.
     expect(r.ok).toBe(false);
-    expect(r.error).toContain("escapes");
+    expect(r.value).toBeUndefined();
   });
 
   test("an absolute path is refused", async () => {
@@ -107,6 +109,99 @@ describe("evaluateToken — security containment (a doc is untrusted data)", () 
   test("a glob whose base escapes root is refused", async () => {
     const root = await project({ "src/a.rs": "x" });
     expect((await evaluateToken("count", "../*", root)).ok).toBe(false);
+  });
+});
+
+/**
+ * REGRESSIONS from the adversarial review. Every one of these was a real,
+ * reproduced defect — the security pair especially: a doc is untrusted data,
+ * `.docs/` is git-shared, and the viewer binds 0.0.0.0.
+ */
+describe("evaluateToken — review regressions", () => {
+  test("a SYMLINK cannot walk out of the project root", async () => {
+    // `path.resolve` does not resolve symlinks, so a textual containment check
+    // passed and `stat`/`readFile` followed the link — `{{version: …}}` leaked
+    // file CONTENT from outside the root, over the network.
+    const root = await project({ "src/a.ts": "x\n" });
+    const outside = await project({ "secret.toml": 'version = "9.9.9-LEAKED"\n', "s.txt": "a\nb\n" });
+    const { symlink } = await import("node:fs/promises");
+    await symlink(outside, join(root, "escape"));
+
+    expect((await evaluateToken("count", "escape", root)).ok).toBe(false);
+    expect((await evaluateToken("loc", "escape", root)).ok).toBe(false);
+    const v = await evaluateToken("version", "escape/secret.toml", root);
+    expect(v.ok).toBe(false);
+    expect(v.value).toBeUndefined();
+  });
+
+  test("a symlinked FILE at the top level is refused too", async () => {
+    const root = await project({ "src/a.ts": "x\n" });
+    const outside = await project({ "secret.json": JSON.stringify({ version: "LEAKED" }) });
+    const { symlink } = await import("node:fs/promises");
+    await symlink(join(outside, "secret.json"), join(root, "sneak.json"));
+    expect((await evaluateToken("version", "sneak.json", root)).ok).toBe(false);
+  });
+
+  test("a ReDoS glob is refused fast, not matched slowly", async () => {
+    // `**/`×n compiled to nested `(?:.*/)?` and backtracked exponentially:
+    // n=14 took ~6s, n=24 never finished — wedging the event loop for every
+    // other request. Runs are collapsed and the arg is bounded.
+    const root = await project({ "src/a.ts": "x\n" });
+    const bomb = "d/" + "**/".repeat(24) + "zzz";
+    const t0 = Date.now();
+    await evaluateToken("count", bomb, root);
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+
+  test("an over-long or wildcard-heavy argument is refused", async () => {
+    const root = await project({ "src/a.ts": "x\n" });
+    expect((await evaluateToken("count", "a".repeat(300), root)).ok).toBe(false);
+    expect((await evaluateToken("count", "*".repeat(40), root)).ok).toBe(false);
+  });
+
+  test("hitting the file cap FAILS rather than reporting a truncated count", async () => {
+    // Returning the truncated 5000 was strictly worse than the literal it
+    // replaced: a confident repo-wide number that never changes as the repo grows.
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 5200; i++) files[`src/f${i}.ts`] = "x\n";
+    const root = await project(files);
+    const c = await evaluateToken("count", "src/*.ts", root);
+    expect(c.ok).toBe(false);
+    expect(c.value).toBeUndefined();
+  }, 60_000);
+
+  test("'.' and './' both mean the root — './' used to render a silent 0", async () => {
+    const root = await project({ "a.ts": "l1\nl2\n", "b.ts": "l1\n" });
+    expect((await evaluateToken("loc", ".", root)).value).toBe("3");
+    expect((await evaluateToken("loc", "./", root)).value).toBe("3");
+  });
+
+  test("'/' is absolute and refused, not normalized into the root", async () => {
+    const root = await project({ "a.ts": "l1\n" });
+    for (const a of ["/", "//", "///"]) {
+      expect((await evaluateToken("loc", a, root)).ok).toBe(false);
+      expect((await evaluateToken("count", a, root)).ok).toBe(false);
+    }
+  });
+
+  test("version reads the [package] table, not a dependency's", async () => {
+    const root = await project({
+      "Cargo.toml": `[dependencies.serde]\nversion = "1.0.200"\n\n[package]\nname = "x"\nversion = "0.3.1"\n`,
+    });
+    expect((await evaluateToken("version", "Cargo.toml", root)).value).toBe("0.3.1");
+  });
+
+  test("a numeric JSON version is stringified, not failed", async () => {
+    const root = await project({ "schema.json": JSON.stringify({ version: 3 }) });
+    expect((await evaluateToken("version", "schema.json", root)).value).toBe("3");
+  });
+
+  test("a nonexistent PLAIN path fails (typo), while a glob matching nothing is 0", async () => {
+    const root = await project({ "src/a.ts": "x\n" });
+    // `{{count: …}}` (a literal ellipsis in a doc) used to render a cheerful 0.
+    expect((await evaluateToken("count", "…", root)).ok).toBe(false);
+    expect((await evaluateToken("count", "nope/", root)).ok).toBe(false);
+    expect((await evaluateToken("count", "src/*.py", root)).value).toBe("0");
   });
 });
 
@@ -169,7 +264,61 @@ describe("renderComputedTokens", () => {
   });
 });
 
+/**
+ * The corruption the review caught in the wild: the evaluator had no notion of
+ * code, so it rewrote the syntax table in this feature's OWN documentation
+ * ("| 28 | how many files match the glob |") and turned the sentence about raw
+ * tokens into "sees the raw `0` form". Lint already read code spans as text, so
+ * the two halves of the feature disagreed about what a code span means.
+ */
+describe("renderComputedTokens — code is left alone", () => {
+  test("a token inside an inline code span is a literal, not a value", async () => {
+    const root = await project({ "src/a.ts": "x\n" });
+    const out = await renderComputedTokens(
+      "Write `{{count: src/*.ts}}` to get **{{count: src/*.ts}}** files.",
+      root,
+    );
+    expect(out).toBe("Write `{{count: src/*.ts}}` to get **1** files.");
+  });
+
+  test("multi-backtick spans protect too", async () => {
+    const root = await project({ "src/a.ts": "x\n" });
+    expect(await renderComputedTokens("``{{count: src/*.ts}}``", root)).toBe(
+      "``{{count: src/*.ts}}``",
+    );
+  });
+
+  test("a token inside a fenced block is untouched", async () => {
+    const root = await project({ "src/a.ts": "x\n" });
+    const doc = "Before {{count: src/*.ts}}\n\n```md\n{{count: src/*.ts}}\n```\n\nAfter.";
+    const out = await renderComputedTokens(doc, root);
+    expect(out).toContain("Before 1");
+    expect(out).toContain("```md\n{{count: src/*.ts}}\n```");
+  });
+
+  test("~~~ fences protect as well", async () => {
+    const root = await project({ "src/a.ts": "x\n" });
+    const out = await renderComputedTokens("~~~\n{{count: src/*.ts}}\n~~~", root);
+    expect(out).toContain("{{count: src/*.ts}}");
+  });
+});
+
 describe("renderTokensInBlocks", () => {
+  test("code-ish blocks are skipped; prose blocks render", async () => {
+    const root = await project({ "src/a.ts": "x\n" });
+    const out = await renderTokensInBlocks(
+      [
+        { type: "code", data: { content: "Write {{count: src/*.ts}}" } },
+        { type: "mermaid", data: { content: "%% {{count: src/*.ts}}" } },
+        { type: "text", data: { content: "Has {{count: src/*.ts}} files" } },
+      ],
+      root,
+    );
+    expect(out[0].data?.content).toBe("Write {{count: src/*.ts}}");
+    expect(out[1].data?.content).toBe("%% {{count: src/*.ts}}");
+    expect(out[2].data?.content).toBe("Has 1 files");
+  });
+
   test("renders string content fields, leaves structure intact", async () => {
     const root = await project({ "src/a.rs": "x", "src/b.rs": "y" });
     const blocks = [

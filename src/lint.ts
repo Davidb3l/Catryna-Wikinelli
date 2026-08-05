@@ -223,11 +223,12 @@ const VOLATILE_PATTERNS: Array<{ kind: VolatileFact["kind"]; re: RegExp }> = [
   // Two guards, each earned by a real false positive:
   //   - PLURAL noun separates "6,600 lines" (a measurement) from "line 42" (a
   //     source reference, which is good practice and must never flag).
-  //   - the leading (?<![-–—]) skips a number that continues a RANGE ("2–5
-  //     source files" is guidance, not a point measurement).
+  //   - the leading lookbehind skips a number that continues a RANGE ("2–5
+  //     source files", "2 – 5 files") — guidance, not a point measurement.
+  //     Spaces around the dash are allowed, since authors write both.
   {
     kind: "count",
-    re: /(?<![-–—])\b\d[\d,]*(?:\.\d+)?\s+(?:[a-z]+\s+)?(?:lines|modules|files|tests|loc)\b/gi,
+    re: /(?<![-–—]\s?)\b\d[\d,]*(?:\.\d+)?\s+(?:[a-z]+\s+)?(?:lines|modules|files|tests|loc)\b/gi,
   },
   // VERSION: a DOTTED version only ("v1.3.0", "version 1.3.0"). Dotted is the
   // guard that lets "schema version 1" — an invariant — through untouched.
@@ -284,11 +285,16 @@ export function findVolatileFacts(body: string): VolatileFact[] {
       continue;
     }
 
-    // Prose line. Neutralize inline code and computed tokens before scanning —
-    // replace with spaces so column-free line matching is unaffected.
+    // Prose line. Neutralize computed tokens, inline code, and URLs before
+    // scanning — replaced with spaces so line matching is unaffected.
+    //   - inline code accepts ANY backtick-run length: ``6,600 lines`` is a
+    //     valid CommonMark span, and the single-backtick-only pattern flagged it.
+    //   - a URL/path can carry what looks like a version (".../v1.2.3/docs"),
+    //     which is a reference, not a claim about this repo.
     const prose = line
       .replace(COMPUTED_TOKEN_RE, (m) => " ".repeat(m.length))
-      .replace(/`[^`\n]*`/g, (m) => " ".repeat(m.length));
+      .replace(/(`+)(?:[^`]|(?!\1)`)*?\1/g, (m) => " ".repeat(m.length))
+      .replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, (m) => " ".repeat(m.length));
 
     for (const { kind, re } of VOLATILE_PATTERNS) {
       re.lastIndex = 0;

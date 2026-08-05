@@ -341,6 +341,24 @@ describe("volatile-fact — the unpoliceable-claim rule", () => {
   test("it is a WARNING, never structural — verify still baselines the doc", () => {
     expect(STRUCTURAL_RULES.has("volatile-fact" as never)).toBe(false);
   });
+
+  // ── review regressions ─────────────────────────────────────────────────────
+
+  test("a MULTI-backtick inline span protects, not just single", () => {
+    // ``6,600 lines`` is a valid CommonMark span; the single-backtick-only
+    // pattern flagged it as a claim.
+    expect(kinds("Has ``6,600 lines`` inside.\n")).toEqual([]);
+    expect(kinds("Has ```28 tests``` inside.\n")).toEqual([]);
+  });
+
+  test("a version inside a URL is a reference, not a claim", () => {
+    expect(kinds("See https://example.com/v1.2.3/docs for details.\n")).toEqual([]);
+  });
+
+  test("a SPACED range is guidance too", () => {
+    expect(kinds("Identify the 2 – 5 files each doc describes.\n")).toEqual([]);
+    expect(kinds("Identify the 2 - 5 files each doc describes.\n")).toEqual([]);
+  });
 });
 
 describe("lintDocs — corpus rules", () => {

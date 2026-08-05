@@ -43,11 +43,31 @@ Globs support `*` (one segment), `**` (recursive), and `?`. A bare directory (`s
 
 ## Graceful degradation — the raw token is the fallback
 
-An agent that reads `.docs/*.mdx` **directly** as a file (no evaluator in the loop) sees the raw `{{count: …}}` form. That is deliberate: the token is self-describing, so a plain-file read still communicates intent. A token that fails to evaluate — a bad glob, a missing file, a containment violation — is **left raw as well, never replaced with a stale or wrong number**.
+An agent that reads `.docs/*.mdx` **directly** as a file (no evaluator in the loop) sees the raw token form. That is deliberate: the token is self-describing, so a plain-file read still communicates intent. A token that fails to evaluate — a bad glob, a missing file, a containment violation, an exceeded bound — is **left raw as well, never replaced with a stale or wrong number**.
+
+A *glob* matching nothing is a real answer (`0`); a *plain path* that doesn't exist is treated as a typo and fails to raw, so a literal like `{{count: …}}` in prose can't render a confident zero.
+
+## Code is left alone
+
+Tokens inside **fenced blocks and inline code spans** are never evaluated, and `get_doc` skips `code`/`mermaid` blocks entirely. Without this the feature corrupted its own documentation: the syntax table above rendered as `| 28 | how many files match the glob | …`, destroying the reference a reader came for. `catryna lint` already reads code spans as text, so this also keeps the two halves of the feature agreeing on what a code span means.
+
+<Callout type="info">
+`get_doc` returns **rendered** blocks. If an agent does `get_doc` → edit → `update_doc`, the rendered numbers get written back into the `.mdx`, converting a live token into the frozen literal it was meant to replace. Edit `.docs/*.mdx` directly, or use `propose_doc_repair`, which reads the raw file.
+</Callout>
 
 ## Why the vocabulary is tiny (the security posture)
 
-A doc is **data**, authored by anyone, and letting data run commands is an injection surface. So this is not a shell — it is three read-only filesystem queries over an explicit allowlist, and every one is **contained to the project root**: `{{loc: ../../etc}}` resolves to a containment error and renders raw, never a file read. Work is bounded (file-count and total-byte caps, heavy directories like `node_modules`/`target`/`.git` skipped) so a `{{loc: /}}`-shaped query cannot wedge a read. The allowlist is `src/tokens.ts`; extend it only there, explicitly.
+A doc is **data**, authored by anyone, and `.docs/` is git-shared between machines — so letting data run commands is an injection surface. This is not a shell: three read-only filesystem queries over an explicit allowlist, every one **contained to the project root**. The allowlist is `src/tokens.ts`; extend it only there, explicitly.
+
+<Callout type="warning">
+Two containment defects were found by adversarial review **after** the first implementation, and both are worth knowing because the naive version looks correct:
+
+**Symlinks defeated a textual check.** `path.resolve` does not resolve symlinks, so `{{version: vendor/etc/anything}}` with a committed `vendor -> /` symlink walked straight out of the root and leaked **file content** — over the network, since the viewer binds `0.0.0.0`. Containment is now enforced on **realpaths** (of the nearest existing ancestor, for paths that don't exist yet), and `walkFiles` never descends a symlinked directory.
+
+**A glob could wedge the server.** Each `**/` compiled to a nested optional greedy `(?:.*/)?`, which backtracks exponentially: 14 of them took ~6s and 24 never finished, blocking the event loop for every other request. Runs of `**/` are now collapsed and the argument is bounded in length and wildcard count. Note the file/byte caps bound the *walk*, never the *match* — this guard is the only thing standing between one doc and a hung server.
+</Callout>
+
+Bounds are **fail-closed**: exceeding the file-count or byte cap makes the token render raw rather than return a truncated number. Reporting "5000" for a 6,000-file tree would be exactly the confidently-wrong repo-wide number this feature exists to eliminate — and worse than the literal it replaced, since it would never change as the repo grew.
 
 ## Relationship to lint
 
