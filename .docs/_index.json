@@ -38,15 +38,16 @@
         "src/events.ts",
         "src/consume.ts",
         "src/doctor.ts",
-        "src/lint.ts"
+        "src/lint.ts",
+        "src/tokens.ts"
       ],
       "createdAt": 1767321236003,
       "updatedAt": 1767336003658,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "fe49f35fb096bfee43eaa1f7deea956ea0326d41",
-      "verifiedAt": "2026-08-05T07:10:24.695Z",
+      "verifiedCommit": "77651c079065333e7c61c8d1057fb5d5dec3d276",
+      "verifiedAt": "2026-08-05T17:45:45.328Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -121,8 +122,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "fe49f35fb096bfee43eaa1f7deea956ea0326d41",
-      "verifiedAt": "2026-08-05T07:10:24.730Z",
+      "verifiedCommit": "77651c079065333e7c61c8d1057fb5d5dec3d276",
+      "verifiedAt": "2026-08-05T17:45:45.344Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -255,7 +256,7 @@
     {
       "id": "b936aeb6-47e2-4526-bd8d-f8d4457927f8",
       "path": "guides/drift-adoption-playbook",
-      "title": "Drift Adoption Playbook \u2014 rolling catryna drift into a repo",
+      "title": "Drift Adoption Playbook — rolling catryna drift into a repo",
       "tags": [
         "drift",
         "playbook",
@@ -282,7 +283,7 @@
     {
       "id": "73a55b74-3ef2-4733-8c6a-85d8115aa4a8",
       "path": "backend/freshness",
-      "title": "Freshness \u2014 the read trust surface",
+      "title": "Freshness — the read trust surface",
       "tags": [
         "phase2",
         "drift",
@@ -297,8 +298,8 @@
       "anchors": [],
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "a6ef1fb380b29499c7c1becab5d252ecd1e3759b",
-      "verifiedAt": "2026-08-01T22:08:32.325Z",
+      "verifiedCommit": "77651c079065333e7c61c8d1057fb5d5dec3d276",
+      "verifiedAt": "2026-08-05T17:45:45.357Z",
       "driftSuspectSince": "",
       "driftSuspectReason": "",
       "createdAt": 1785617835645,
@@ -357,7 +358,7 @@
     {
       "id": "18949801-5661-497c-a183-26132900fdc6",
       "path": "backend/lint",
-      "title": "catryna lint \u2014 structural doc health",
+      "title": "catryna lint — structural doc health",
       "tags": [
         "lint",
         "backend",
@@ -372,8 +373,8 @@
       "anchors": [],
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "fe49f35fb096bfee43eaa1f7deea956ea0326d41",
-      "verifiedAt": "2026-08-05T07:10:24.707Z",
+      "verifiedCommit": "77651c079065333e7c61c8d1057fb5d5dec3d276",
+      "verifiedAt": "2026-08-05T17:45:45.370Z",
       "driftSuspectSince": "",
       "driftSuspectReason": "",
       "createdAt": 1785627863145,
@@ -399,8 +400,8 @@
       "anchors": [],
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "",
-      "verifiedAt": "",
+      "verifiedCommit": "77651c079065333e7c61c8d1057fb5d5dec3d276",
+      "verifiedAt": "2026-08-05T17:45:45.382Z",
       "driftSuspectSince": "",
       "driftSuspectReason": "",
       "createdAt": 1785928800000,
@@ -408,5 +409,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1785951622389
+  "lastUpdated": 1785951945382
 }
