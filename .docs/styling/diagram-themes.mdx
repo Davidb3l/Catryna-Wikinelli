@@ -109,6 +109,12 @@ Contains the CSS half of the Turbo Flow styling:
 - Dark/light mode variants, via `.dark` and `:root:not(.dark)`
 - Glow and shadow effects
 
+It also carries the app-wide **theme system** (the palette variable sets for
+`classic` / `atelier`, the reading, trust and search polish). Those are separate
+concerns that share a file: the diagram styling above keys off the `.dark`
+class, while the named themes key off `[data-theme]`, so the two do not
+interact. See the `frontend/overview` doc.
+
 The rest lives in TSX: Mermaid's `themeVariables` and the SVG post-processing in `App.tsx`, and the gradient `<defs>` in `components/TurboEdgeGradient.tsx`.
 
 ### Key CSS Classes

@@ -172,13 +172,20 @@ interface NavItem {
 ## User Preferences
 
 ```typescript
+type ThemeStyle = 'classic' | 'atelier';   // the named identity
+
 interface UserPreferences {
-  theme: 'light' | 'dark' | 'system';
+  theme: 'light' | 'dark' | 'system';      // the MODE
+  themeStyle?: ThemeStyle;                 // optional: absent loads as 'classic'
   whiteboardStyle: 'clean' | 'sketchy';
   fontSize: 'small' | 'medium' | 'large';
   editorLineNumbers: boolean;
 }
 ```
+
+`themeStyle` (the named identity) and `theme` (the light/dark mode) are separate axes, and only `classic` honours both: `atelier` is dark by design, so it pins the `dark` class and the mode control is disabled rather than hidden. `themeStyle` is **optional** purely for backward compatibility — a preference persisted before it existed loads as `classic`, so no existing viewer changes appearance on upgrade.
+
+Preferences persist to `localStorage` under the versioned key `catryna.prefs.v1`, merged over defaults on read so an unknown or corrupt value degrades to the default instead of throwing.
 
 ## Backend Types (storage.ts)
 

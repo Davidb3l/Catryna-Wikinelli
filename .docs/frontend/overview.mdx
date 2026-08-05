@@ -63,13 +63,34 @@ It also sets **`strictPort: true`**, so a taken port is a hard startup failure i
 
 - Table of contents (sticky sidebar) with an IntersectionObserver scroll spy
 
-- Theme switching (light/dark/system)
+- Theme switching on two axes: a named **style** (`classic` / `atelier`) and a light/dark **mode** (see below)
 
-- Settings modal for preferences
+- Settings modal for preferences, persisted to `localStorage` (`catryna.prefs.v1`)
 
 - Version history sidebar
 
 - Toast notifications
+
+## Theming
+
+Two independent axes, and keeping them separate is what lets a second identity exist without a rewrite:
+
+| Axis | Values | Applied as |
+|---|---|---|
+| **Style** (`themeStyle`) | `classic`, `atelier` | `<html data-theme="…">` |
+| **Mode** (`theme`) | `light`, `dark`, `system` | `.dark` class on `<html>` |
+
+**Classic** is the original Stripe-inspired look and honours the mode. **Atelier** is the [catrynawiki.com](https://catrynawiki.com) identity — `#0d0d16` canvas, the Turbo Flow gradient as signature, Fraunces display type over Hanken Grotesk, radial glows and film grain — and is **dark only**, so it pins the `dark` class and disables the mode control rather than hiding it.
+
+### How a whole theme swaps without touching the components
+
+Every Tailwind palette colour is declared in `index.html` as `rgb(var(--c-name) / <alpha-value>)` rather than a literal, and each theme defines that variable set in `index.css`. A named theme therefore re-skins the entire app by swapping one block of variables — no edits to the hundreds of `dark:bg-zinc-900`-style classes across `App.tsx`. The `<alpha-value>` placeholder keeps slash-opacity working, so `bg-zinc-900/50` still yields a translucent themed colour.
+
+<Callout type="warning">
+`white` and `black` are deliberately **not** remapped. `bg-white` is a surface while `text-white` is ink on a coloured button, and a single variable cannot be both — remapping it would invert button labels. Atelier instead overrides `.bg-white` directly; the attribute selector out-specifies Tailwind's single-class rule, so no `!important` is needed.
+</Callout>
+
+Doc headings render as `<div>`s rather than `<h1>`/`<h2>`, so the reading styles hang off a `catryna-doc` container class on the doc column instead of element selectors.
 
 ## Key Features
 
