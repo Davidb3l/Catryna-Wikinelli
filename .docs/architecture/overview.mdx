@@ -7,8 +7,8 @@ relatedFiles: ["src/index.ts", "src/cli.ts", "src/storage.ts", "src/drift.ts", "
 createdAt: 1767321236003
 updatedAt: 1767321656661
 createdBy: "claude-code"
-verifiedCommit: "f23bf3036c9ca1d040809484b2c891f4272b2552"
-verifiedAt: "2026-08-02T00:36:57.889Z"
+verifiedCommit: "fe49f35fb096bfee43eaa1f7deea956ea0326d41"
+verifiedAt: "2026-08-05T07:10:24.695Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -39,7 +39,7 @@ Two shared, root-parameterized modules sit between the engine and every consumer
 
 - **`src/freshness.ts`** — a read-only projection over the drift engine, with a HEAD+index-keyed cache on the read path only (the CLI gate always re-measures). Attaches a status and a one-line warning to `get_doc` / `list_docs` / `search_docs`, so an agent is warned *before* trusting a stale doc. Adds `unanchored` and `unknown` so a doc with no verdict is never reported as clean.
 - **`src/coverage.ts`** — coverage over **effective anchors**, shared by the MCP tools and `GET /api/coverage`. Takes every root as a parameter and never reads `process.cwd()`.
-- **`src/lint.ts`** — the STRUCTURAL question (`catryna lint`), which drift cannot answer: unparseable frontmatter, orphaned callout tags, unclosed fences, anchors that resolve to nothing, index/file disagreement. Human mode exits 3 like drift; `--json` always exits 0 (a report, not a gate); `verify` refuses to baseline a structurally malformed doc.
+- **`src/lint.ts`** — the STRUCTURAL question (`catryna lint`), which drift cannot answer: unparseable frontmatter, orphaned callout tags, unclosed fences, **empty** fences (balance is not content — a doc can be structurally perfect and entirely hollow), anchors that resolve to nothing, index/file disagreement. Human mode exits 3 like drift; `--json` always exits 0 (a report, not a gate); `verify` refuses to baseline a structurally malformed doc.
 
 ### Enforcement
 
@@ -126,7 +126,7 @@ catryna-wikinelli/
 </Callout>
 
 <Callout type="info">
-**Dual Index**: _index.json maintains metadata for fast listing/search without parsing every MDX file. It is also the queryable source of truth for the drift fields (`anchors`, `verifiedCommit`, `driftSuspect*`), which are mirrored into each .mdx frontmatter.
+**Dual Index**: _index.json maintains metadata for fast listing/search without parsing every MDX file. It is what `catryna drift` queries for the drift fields (`anchors`, `verifiedCommit`, `driftSuspect*`), and each .mdx mirrors them in its frontmatter. Direction matters: for **anchors** the .mdx is the record and the index is a cache, reconciled frontmatter → index by `catryna verify` — otherwise hand-editing a doc's anchors changes nothing that drift ever reads. Index writes take an in-process chain **and** a cross-process lock file, so parallel agents each running `catryna verify` cannot clobber each other's baselines.
 </Callout>
 
 <Callout type="info">

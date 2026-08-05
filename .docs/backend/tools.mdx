@@ -7,8 +7,8 @@ relatedFiles: ["src/tools/docs.ts", "src/tools/search.ts", "src/tools/diagrams.t
 createdAt: 1767321316028
 updatedAt: 1767321661004
 createdBy: "claude-code"
-verifiedCommit: "c3ff07e8b8d5f3ce6e7ea1d41c9f9c9851e2d63e"
-verifiedAt: "2026-08-01T23:45:18.765Z"
+verifiedCommit: "fe49f35fb096bfee43eaa1f7deea956ea0326d41"
+verifiedAt: "2026-08-05T07:10:24.730Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -207,11 +207,13 @@ The in-session half of the living-docs loop — the same logic behind the `catry
 
 ### check_drift
 
-Takes no parameters. Returns the full drift report as JSON for the current working directory: `summary` counts plus the `broken`, `drifted`, `unverified`, and `clean` buckets, and whether Hayvenhurst symbol precision was used. Read-only — it never emits `doc.drifted` on the spine (the CLI gate and Stop hook own emission).
+Takes no parameters. Returns the full drift report as JSON for the current working directory: `summary` counts plus the `broken`, `drifted`, `unverified`, and `clean` buckets, whether Hayvenhurst symbol precision was used, and `dirtyFiles` — how many files are modified but not committed, which is work drift structurally **cannot** see (it walks committed history). Read-only — it never emits `doc.drifted` on the spine (the CLI gate and Stop hook own emission).
 
 ### verify_doc
 
 Records the repo's current HEAD as a doc's drift baseline (`verifiedCommit` + `verifiedAt`), clears any drift-suspect marker, and emits `doc.verified`. Warns via `brokenAnchors` when an anchored file no longer exists — a warning, not a failure.
+
+It also reconciles the `.mdx` frontmatter's `relatedFiles`/`anchors` into `_index.json`, which is what makes a hand-edited anchor take effect (drift reads the index). A field written in a form the frontmatter parser cannot decode — a YAML block sequence, a flow mapping — is left alone and reported in `unsyncedAnchorFields`, never mistaken for an empty list, since adopting that would delete the doc's working anchors. See the `backend/storage` doc.
 
 ```typescript
 // Parameters
@@ -222,7 +224,7 @@ Records the repo's current HEAD as a doc's drift baseline (`verifiedCommit` + `v
 
 ### propose_doc_repair
 
-Returns the REPAIR CONTEXT for drifted docs: the current `.docs/<path>.mdx` content plus the `git diff <verifiedCommit>..HEAD` of each changed anchor. A repair flagged `broken: true` means an anchored file was deleted or renamed (see `brokenFiles`) — there is no diff, the fix is to update the doc's anchors.
+Returns the REPAIR CONTEXT for drifted docs: the current `.docs/<path>.mdx` content plus the `git diff <verifiedCommit>..HEAD` of each changed anchor. A repair flagged `broken: true` means an anchored file was deleted or renamed (see `brokenFiles`) — there is no diff, the fix is to update the doc's anchors. Carries `dirtyFiles` for the same reason `check_drift` does: repairing against an uncommitted tree means working from an undercount.
 
 ```typescript
 // Parameters
