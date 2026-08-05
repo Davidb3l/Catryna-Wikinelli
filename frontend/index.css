@@ -1,3 +1,90 @@
+@import "tailwindcss";
+
+/* Sources are declared EXPLICITLY rather than left to v4's automatic detection.
+   Auto-detection produced zero utilities here — the compile succeeded and the
+   theme variables were emitted, but no class rules existed, so every colour
+   silently fell back to the browser default. An explicit list also documents
+   exactly which files may contain class names. */
+@source "./index.html";
+@source "./*.tsx";
+@source "./components/**/*.tsx";
+
+/* Class-based dark mode. v4 defaults to `prefers-color-scheme`, but the viewer
+   drives dark from a `.dark` class on <html> (see the theme effect in App.tsx),
+   which is what lets Atelier pin dark regardless of the OS setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* -----------------------------------------------------------------------------
+   DESIGN TOKENS (Tailwind v4 is CSS-first — this replaces the old JS config)
+   -----------------------------------------------------------------------------
+   Each colour points at a runtime `--c-*` variable rather than a literal, which
+   is what lets a whole named theme swap by redefining that variable set on
+   `<html data-theme>`. v4 handles opacity modifiers through `color-mix()`, so
+   `bg-zinc-900/50` composes correctly without the v3 `<alpha-value>` shim.
+
+   `white` and `black` are deliberately absent: `bg-white` is a surface while
+   `text-white` is ink on a coloured button, and one token cannot be both.
+   Atelier overrides `.bg-white` directly, further down.
+   -------------------------------------------------------------------------- */
+@theme {
+  --color-zinc-50:  rgb(var(--c-zinc-50));
+  --color-zinc-100: rgb(var(--c-zinc-100));
+  --color-zinc-200: rgb(var(--c-zinc-200));
+  --color-zinc-300: rgb(var(--c-zinc-300));
+  --color-zinc-400: rgb(var(--c-zinc-400));
+  --color-zinc-500: rgb(var(--c-zinc-500));
+  --color-zinc-600: rgb(var(--c-zinc-600));
+  --color-zinc-700: rgb(var(--c-zinc-700));
+  --color-zinc-800: rgb(var(--c-zinc-800));
+  --color-zinc-900: rgb(var(--c-zinc-900));
+  --color-zinc-950: rgb(var(--c-zinc-950));
+
+  --color-surface:       rgb(var(--c-surface));
+  --color-surface-light: rgb(var(--c-surface-light));
+  --color-navy:          rgb(var(--c-navy));
+  --color-navy-light:    rgb(var(--c-navy-light));
+  --color-accent:        rgb(var(--c-accent));
+  --color-accent-hover:  rgb(var(--c-accent-hover));
+
+  --color-green-100: rgb(var(--c-green-100));
+  --color-green-200: rgb(var(--c-green-200));
+  --color-green-300: rgb(var(--c-green-300));
+  --color-green-400: rgb(var(--c-green-400));
+  --color-green-500: rgb(var(--c-green-500));
+  --color-green-700: rgb(var(--c-green-700));
+  --color-green-900: rgb(var(--c-green-900));
+  --color-green-950: rgb(var(--c-green-950));
+
+  --color-amber-50:  rgb(var(--c-amber-50));
+  --color-amber-100: rgb(var(--c-amber-100));
+  --color-amber-200: rgb(var(--c-amber-200));
+  --color-amber-300: rgb(var(--c-amber-300));
+  --color-amber-500: rgb(var(--c-amber-500));
+  --color-amber-700: rgb(var(--c-amber-700));
+  --color-amber-800: rgb(var(--c-amber-800));
+  --color-amber-900: rgb(var(--c-amber-900));
+  --color-amber-950: rgb(var(--c-amber-950));
+
+  --color-red-50:  rgb(var(--c-red-50));
+  --color-red-100: rgb(var(--c-red-100));
+  --color-red-200: rgb(var(--c-red-200));
+  --color-red-300: rgb(var(--c-red-300));
+  --color-red-400: rgb(var(--c-red-400));
+  --color-red-500: rgb(var(--c-red-500));
+  --color-red-600: rgb(var(--c-red-600));
+  --color-red-700: rgb(var(--c-red-700));
+  --color-red-800: rgb(var(--c-red-800));
+  --color-red-900: rgb(var(--c-red-900));
+  --color-red-950: rgb(var(--c-red-950));
+
+  --color-indigo-100: rgb(var(--c-indigo-100));
+  --color-indigo-400: rgb(var(--c-indigo-400));
+  --color-indigo-500: rgb(var(--c-indigo-500));
+  --color-indigo-600: rgb(var(--c-indigo-600));
+  --color-indigo-900: rgb(var(--c-indigo-900));
+  --color-indigo-950: rgb(var(--c-indigo-950));
+}
+
 /* =============================================================================
    THEME SYSTEM
    -----------------------------------------------------------------------------
@@ -37,7 +124,8 @@
   --c-accent-hover:  88 81 234;
 
   --c-green-100: 220 252 231;  --c-green-200: 187 247 208;
-  --c-green-300: 134 239 172;  --c-green-500: 34 197 94;
+  --c-green-300: 134 239 172;  --c-green-400: 74 222 128;
+  --c-green-500: 34 197 94;
   --c-green-700: 21 128 61;    --c-green-900: 20 83 45;
   --c-green-950: 5 46 22;
 
@@ -102,6 +190,7 @@
   --c-green-300: 122 240 190;  --c-green-950: 6 40 32;
   --c-green-900: 12 66 52;     --c-green-500: 52 211 153;
   --c-green-200: 150 245 205;  --c-green-100: 20 80 62;
+  --c-green-400: 110 240 190;
   --c-green-700: 122 240 190;
 
   --c-amber-300: 255 180 84;   --c-amber-950: 50 28 6;   /* --amber #ffb454 */
@@ -131,10 +220,17 @@
 /* Body font follows the theme. */
 body { font-family: var(--font-body); }
 
-/* `white` is not a themed variable (see index.html), so Atelier retargets the
-   surface use of it directly. Attribute selector out-specifies Tailwind's
-   single-class rule, so no !important is needed. */
-[data-theme='atelier'] .bg-white { background-color: rgb(var(--c-zinc-900)); }
+/* NOTE — there is deliberately NO `.bg-white` override here.
+   `white` is not a themed token (`bg-white` is a surface while `text-white` is
+   ink on a coloured button, and one token cannot be both), so Atelier briefly
+   retargeted `.bg-white` directly. That was unnecessary and, after the v4
+   migration, actively wrong: every one of the app's `bg-white` uses is paired
+   with a `dark:bg-*` variant, and Atelier always runs dark — so the dark
+   variant already wins and `bg-white` never paints. The override only mattered
+   under the v3 CDN, whose runtime-injected utilities landed AFTER this file;
+   with `@import "tailwindcss"` at the top, utilities now come FIRST, so the
+   override started beating `dark:bg-zinc-950` and lightened the page canvas
+   from #0d0d16 to the panel colour. */
 
 /* --- Sidebar as a distinct plane ------------------------------------------
    It previously sat at the same value as the canvas with a hard 1px rule, so

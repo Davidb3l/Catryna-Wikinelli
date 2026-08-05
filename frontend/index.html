@@ -5,48 +5,38 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Catryna Wikinelli — Developer Docs</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      // THEME ARCHITECTURE
+      // Apply the stored theme BEFORE first paint.
       //
-      // Every palette colour resolves through a CSS variable rather than a
-      // literal, so a named theme can re-skin the whole app by swapping one set
-      // of variables on <html data-theme="…"> — no rewriting of the hundreds of
-      // `dark:bg-zinc-900`-style classes across the UI. The `<alpha-value>`
-      // placeholder keeps Tailwind's slash-opacity modifiers working, so
-      // `bg-zinc-900/50` still yields a translucent themed colour.
+      // Two reasons, and the second is not optional:
+      //  1. No flash. React's theme effect runs after mount, so the page
+      //     otherwise paints Classic-light for a frame before Atelier lands.
+      //  2. Correctness. When `.dark` is added to <html> after paint, the
+      //     browser was observed NOT to re-style <body> for the descendant
+      //     `dark:` selector — body matched `.dark\:bg-zinc-950:where(.dark,
+      //     .dark *)` yet kept the `bg-white` background, while an identical
+      //     div created afterwards resolved correctly. Setting the class before
+      //     the body is styled removes the invalidation step entirely.
       //
-      // `white` and `black` are DELIBERATELY not remapped: `bg-white` is a
-      // surface while `text-white` is ink on a coloured button, and one variable
-      // cannot be both. Atelier overrides `.bg-white` directly in index.css.
-      const v = (name) => `rgb(var(--c-${name}) / <alpha-value>)`;
-      const scale = (prefix, steps) =>
-        Object.fromEntries(steps.map((s) => [s, v(`${prefix}-${s}`)]));
-
-      tailwind.config = {
-        darkMode: 'class',
-        theme: {
-          extend: {
-            colors: {
-              // Neutral spine of the UI.
-              zinc: scale('zinc', [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]),
-              // Brand.
-              surface: { DEFAULT: v('surface'), light: v('surface-light') },
-              navy:    { DEFAULT: v('navy'),    light: v('navy-light') },
-              accent:  { DEFAULT: v('accent'),  hover: v('accent-hover') },
-              // Semantic — the trust surface (verified / stale / broken) lives
-              // here, so each theme tunes them to sit correctly on its canvas.
-              green:  scale('green',  [100, 200, 300, 500, 700, 900, 950]),
-              amber:  scale('amber',  [50, 100, 200, 300, 500, 700, 800, 900, 950]),
-              red:    scale('red',    [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]),
-              indigo: scale('indigo', [100, 400, 500, 600, 900, 950]),
-            },
-            fontFamily: {
-              display: ['var(--font-display)'],
-            },
-          }
+      // Deliberately inline, blocking, and dependency-free; it must run before
+      // the first style resolution. Kept in lockstep with the theme effect in
+      // App.tsx and the PREFS_KEY there.
+      (function () {
+        try {
+          var p = JSON.parse(localStorage.getItem('catryna.prefs.v1') || '{}');
+          var style = p.themeStyle === 'atelier' ? 'atelier' : 'classic';
+          var dark =
+            style === 'atelier' ||
+            p.theme === 'dark' ||
+            ((p.theme === 'system' || !p.theme) &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var r = document.documentElement;
+          r.classList.toggle('dark', dark);
+          r.setAttribute('data-theme', style);
+        } catch (e) {
+          /* No storage (private mode) — fall through to the app's defaults. */
         }
-      }
+      })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -109,7 +99,6 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
 <body class="bg-white dark:bg-zinc-950 text-navy dark:text-zinc-100 transition-colors duration-200">
     <div id="root"></div>

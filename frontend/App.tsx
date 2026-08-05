@@ -154,7 +154,7 @@ const CommandPalette: React.FC<{ isOpen: boolean; onClose: () => void; onSelect:
           {loading ? <Loader2 size={18} className="text-zinc-400 animate-spin shrink-0" /> : <Search size={18} className="text-zinc-400 shrink-0" />}
           <input autoFocus value={query} onChange={e => setQuery(e.target.value)} className="flex-1 bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 text-sm min-w-0" placeholder="Search docs..." />
           <button onClick={() => setShowFilters(!showFilters)} className={`p-1.5 rounded-md shrink-0 ${showFilters ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}><Filter size={16} /></button>
-          <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded border border-zinc-200 dark:border-zinc-800 text-[10px] text-zinc-400 font-sans shrink-0">ESC</kbd>
+          <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded-sm border border-zinc-200 dark:border-zinc-800 text-[10px] text-zinc-400 font-sans shrink-0">ESC</kbd>
         </div>
         <div className="p-2 max-h-[50vh] sm:max-h-[400px] overflow-y-auto">
           {displayDocs.length === 0 ? (
@@ -192,7 +192,7 @@ const VersionHistorySidebar: React.FC<{
                 <span className="text-xs sm:text-sm font-bold text-navy dark:text-zinc-50 truncate">{entry.summary}</span>
                 <span className="text-[9px] sm:text-[10px] text-zinc-400 font-mono">{new Date(entry.timestamp).toLocaleString()}</span>
               </div>
-              <div className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-[8px] sm:text-[9px] font-bold text-zinc-500 uppercase shrink-0">{entry.author}</div>
+              <div className="px-2 py-0.5 rounded-sm bg-zinc-100 dark:bg-zinc-800 text-[8px] sm:text-[9px] font-bold text-zinc-500 uppercase shrink-0">{entry.author}</div>
             </div>
             <div className="p-2 bg-zinc-50 dark:bg-zinc-900/30 rounded-lg text-[10px] sm:text-[11px] font-mono text-zinc-500 mb-3 sm:mb-4 border border-zinc-100 dark:border-zinc-800">
               {entry.blocks.length} blocks changed
@@ -410,7 +410,7 @@ export default function App() {
         <div className="flex flex-col h-full w-64">
           <div className="p-4 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 shrink-0 h-14">
             <div className="flex items-center gap-2 font-bold tracking-tight text-navy dark:text-zinc-50">
-              <div className="w-6 h-6 bg-accent dark:bg-zinc-100 rounded flex items-center justify-center text-white dark:text-zinc-900 shadow-lg">
+              <div className="w-6 h-6 bg-accent dark:bg-zinc-100 rounded-sm flex items-center justify-center text-white dark:text-zinc-900 shadow-lg">
                 <span className="text-xs">🐱</span>
               </div>
               Catryna
@@ -679,8 +679,8 @@ const BlockRenderer: React.FC<{
     <div className="group relative">
       {isEditing && (
         <div className="absolute -left-12 top-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded cursor-grab"><GripVertical size={14} className="text-zinc-300" /></div>
-          <button onClick={() => onDelete(block.id)} className="p-1 hover:bg-red-50 text-red-400 rounded"><Trash2 size={14} /></button>
+          <div className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-sm cursor-grab"><GripVertical size={14} className="text-zinc-300" /></div>
+          <button onClick={() => onDelete(block.id)} className="p-1 hover:bg-red-50 text-red-400 rounded-sm"><Trash2 size={14} /></button>
         </div>
       )}
       {children}
@@ -713,7 +713,7 @@ const BlockRenderer: React.FC<{
       // Inline code `text`
       const codeMatch = remaining.match(/^`(.+?)`/);
       if (codeMatch) {
-        parts.push(<code key={key++} className="px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded text-sm font-mono">{codeMatch[1]}</code>);
+        parts.push(<code key={key++} className="px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded-sm text-sm font-mono">{codeMatch[1]}</code>);
         remaining = remaining.slice(codeMatch[0].length);
         continue;
       }
@@ -761,10 +761,10 @@ const BlockRenderer: React.FC<{
                 <div class="flex items-center justify-between p-4 border-b border-zinc-800">
                   <span class="text-sm font-bold text-zinc-300">Diagram View</span>
                   <div class="flex items-center gap-2">
-                    <button id="zoom-out" class="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-sm text-zinc-300">−</button>
+                    <button id="zoom-out" class="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-sm text-sm text-zinc-300">−</button>
                     <span id="zoom-level" class="text-sm text-zinc-400 w-16 text-center">100%</span>
-                    <button id="zoom-in" class="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-sm text-zinc-300">+</button>
-                    <button id="close-modal" class="ml-4 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-sm text-zinc-300">Close</button>
+                    <button id="zoom-in" class="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-sm text-sm text-zinc-300">+</button>
+                    <button id="close-modal" class="ml-4 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-sm text-sm text-zinc-300">Close</button>
                   </div>
                 </div>
                 <div class="flex-1 overflow-auto p-8 flex items-center justify-center">
@@ -830,8 +830,8 @@ const BlockRenderer: React.FC<{
 
     // Fallback placeholder for empty diagrams
     return wrapper(
-      <div className="my-4 sm:my-8 rounded-xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/40 dark:bg-zinc-900/40 p-6 sm:p-12 flex flex-col items-center justify-center transition-all hover:border-indigo-500/30 min-h-[200px] sm:min-h-[300px] group/item shadow-inner">
-         <div className="px-3 py-1 bg-white dark:bg-zinc-800 rounded-full border border-zinc-200 dark:border-zinc-700 text-[10px] font-black uppercase mb-4 sm:mb-6 flex items-center gap-2 shadow-sm"><Layout size={12} className="text-indigo-500" /> Architecture Flow</div>
+      <div className="my-4 sm:my-8 rounded-xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/40 dark:bg-zinc-900/40 p-6 sm:p-12 flex flex-col items-center justify-center transition-all hover:border-indigo-500/30 min-h-[200px] sm:min-h-[300px] group/item inset-shadow-sm">
+         <div className="px-3 py-1 bg-white dark:bg-zinc-800 rounded-full border border-zinc-200 dark:border-zinc-700 text-[10px] font-black uppercase mb-4 sm:mb-6 flex items-center gap-2 shadow-xs"><Layout size={12} className="text-indigo-500" /> Architecture Flow</div>
          <Activity size={32} className="text-zinc-200 dark:text-zinc-800 mb-4 sm:mb-6 sm:w-10 sm:h-10" />
          <Button variant="secondary" onClick={() => onOpenEditor('diag')} className="opacity-0 group-hover/item:opacity-100 text-xs sm:text-sm"><Maximize2 size={14} /> Open Editor</Button>
       </div>
@@ -839,7 +839,7 @@ const BlockRenderer: React.FC<{
   }
 
   if (block.type === 'whiteboard') return wrapper(
-    <div className={`my-4 sm:my-8 rounded-xl sm:rounded-2xl border-2 ${whiteboardStyle === 'sketchy' ? 'border-dashed border-zinc-200' : 'border-zinc-100 dark:border-zinc-800'} bg-white dark:bg-zinc-950 p-6 sm:p-12 min-h-[250px] sm:min-h-[400px] flex flex-col items-center justify-center group/item shadow-sm`}>
+    <div className={`my-4 sm:my-8 rounded-xl sm:rounded-2xl border-2 ${whiteboardStyle === 'sketchy' ? 'border-dashed border-zinc-200' : 'border-zinc-100 dark:border-zinc-800'} bg-white dark:bg-zinc-950 p-6 sm:p-12 min-h-[250px] sm:min-h-[400px] flex flex-col items-center justify-center group/item shadow-xs`}>
        <div className="px-3 py-1 bg-zinc-50 dark:bg-zinc-900 rounded-full border border-zinc-200 dark:border-zinc-700 text-[10px] font-black uppercase mb-4 sm:mb-6 flex items-center gap-2"><Box size={12} className="text-amber-500" /> Whiteboard</div>
        <Share2 size={32} className="text-zinc-100 dark:text-zinc-900 mb-4 sm:mb-6 sm:w-10 sm:h-10" />
        <Button variant="outline" onClick={() => onOpenEditor('wb')} className="opacity-0 group-hover/item:opacity-100 text-xs sm:text-sm"><Edit3 size={14} /> Launch</Button>
@@ -851,8 +851,8 @@ const BlockRenderer: React.FC<{
       <div className="px-3 sm:px-4 py-2 sm:py-2.5 bg-zinc-900 border-b border-zinc-800 flex justify-between items-center">
         <span className="text-[9px] sm:text-[10px] font-mono text-zinc-500 flex items-center gap-1.5 sm:gap-2 uppercase tracking-widest font-bold truncate max-w-[60%]"><Terminal size={12} className="shrink-0" /> <span className="truncate">{block.metadata?.filePath || 'app.ts'}</span></span>
         <div className="flex gap-1 sm:gap-2 opacity-100 sm:opacity-0 group-hover/code:opacity-100 transition-opacity">
-           <button onClick={onCopy} className="p-1.5 sm:p-1 hover:bg-zinc-800 rounded text-zinc-500 hover:text-white"><Copy size={14} className="sm:w-3 sm:h-3" /></button>
-           <a href={`vscode://file/${block.metadata?.filePath}`} className="p-1.5 sm:p-1 hover:bg-zinc-800 rounded text-zinc-500 hover:text-white hidden sm:block"><ExternalLink size={12} /></a>
+           <button onClick={onCopy} className="p-1.5 sm:p-1 hover:bg-zinc-800 rounded-sm text-zinc-500 hover:text-white"><Copy size={14} className="sm:w-3 sm:h-3" /></button>
+           <a href={`vscode://file/${block.metadata?.filePath}`} className="p-1.5 sm:p-1 hover:bg-zinc-800 rounded-sm text-zinc-500 hover:text-white hidden sm:block"><ExternalLink size={12} /></a>
         </div>
       </div>
       <div className="flex bg-zinc-950 overflow-x-auto">
@@ -923,7 +923,7 @@ const SidebarItem: React.FC<{ item: NavItem; depth: number; selectedId: string; 
   const status = item.type === 'file' && statusFor ? statusFor(item.id) : null;
   return (
     <div className="select-none mb-0.5">
-      <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer text-xs transition-all ${isSelected ? 'bg-white dark:bg-zinc-800 text-navy dark:text-zinc-50 font-bold shadow-sm' : 'text-navy-light dark:text-zinc-400 hover:bg-white/60 dark:hover:bg-zinc-900'}`} style={{ paddingLeft: `${(depth * 16) + 12}px` }} onClick={() => item.type === 'folder' ? setIsOpen(!isOpen) : onSelect(item.id)}>
+      <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer text-xs transition-all ${isSelected ? 'bg-white dark:bg-zinc-800 text-navy dark:text-zinc-50 font-bold shadow-xs' : 'text-navy-light dark:text-zinc-400 hover:bg-white/60 dark:hover:bg-zinc-900'}`} style={{ paddingLeft: `${(depth * 16) + 12}px` }} onClick={() => item.type === 'folder' ? setIsOpen(!isOpen) : onSelect(item.id)}>
         {item.type === 'folder' ? (isOpen ? <ChevronDown size={12} className="text-navy-light dark:text-zinc-400" /> : <ChevronRight size={12} className="text-navy-light dark:text-zinc-400" />) : <FileText size={14} className={isSelected ? 'text-accent' : 'text-navy-light/60 dark:text-zinc-400'} />}
         <span className="truncate">{item.title}</span>
         {/* Only render a dot when there is a real verdict — absence of data must

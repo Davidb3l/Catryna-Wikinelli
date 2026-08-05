@@ -1,4 +1,7 @@
 
+// Tailwind v4 compiles through Vite now, so the stylesheet must be a module
+// import rather than a plain <link> in index.html.
+import './index.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';

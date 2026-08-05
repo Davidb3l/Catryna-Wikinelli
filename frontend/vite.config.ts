@@ -2,6 +2,9 @@ import path from 'path';
 import fs from 'fs';
 import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+// Tailwind v4 is a BUILD step now, not the runtime CDN compiler the viewer used
+// to load from cdn.tailwindcss.com. See index.css for the CSS-first theme.
+import tailwindcss from '@tailwindcss/vite';
 
 import { createDocsApi, defaultScanRoots, findProjects } from './docs-api';
 
@@ -62,6 +65,7 @@ export default defineConfig(() => {
       host: '0.0.0.0',
     },
     plugins: [
+      tailwindcss(),
       react(),
       docsApiPlugin(),
     ],
