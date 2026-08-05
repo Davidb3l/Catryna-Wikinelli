@@ -187,7 +187,9 @@ export function createDocsApi(opts: {
   };
 
   // ---- /api/docs -----------------------------------------------------------
-  const docsMiddleware: Middleware = (req, res, next) => {
+  // Async: serving a single doc evaluates computed-fact tokens (CAT-2), which
+  // reads the project tree. Every branch still ends in a synchronous `res.end`.
+  const docsMiddleware: Middleware = async (req, res, next) => {
     if (!req.url?.startsWith('/api/docs')) return next();
 
     res.setHeader('Content-Type', 'application/json');
@@ -262,7 +264,21 @@ export function createDocsApi(opts: {
 
       if (fs.existsSync(filePath)) {
         const content = fs.readFileSync(filePath, 'utf-8');
-        const parsed = parseMdx(content);
+
+        // CAT-2: evaluate computed-fact tokens against the PROJECT root (parent
+        // of `.docs/`, where `{{count: src/*.rs}}` means the project's src) so
+        // the human viewer shows a value regenerated from the live tree, never a
+        // stale number. Failed tokens stay raw. Render before parsing so blocks
+        // and `raw` agree. Best-effort: a render error must not fail the read.
+        const projectRoot = path.dirname(path.resolve(docsRoot));
+        let rendered = content;
+        try {
+          const { renderComputedTokens } = await import('../src/tokens');
+          rendered = await renderComputedTokens(content, projectRoot);
+        } catch {
+          rendered = content;
+        }
+        const parsed = parseMdx(rendered);
 
         // Get metadata from index
         const indexPath = path.join(docsRoot, '_index.json');
@@ -277,7 +293,7 @@ export function createDocsApi(opts: {
           ...metadata,
           path: docPath,
           blocks: parsed.blocks,
-          raw: content,
+          raw: rendered,
         }));
       } else {
         res.statusCode = 404;

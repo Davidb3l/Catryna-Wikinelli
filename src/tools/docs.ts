@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createDoc, getDoc, listDocs, updateDoc, deleteDoc } from "../storage";
 import { docFreshness, docsFreshness, freshnessHeadline } from "../freshness";
+import { renderTokensInBlocks } from "../tokens";
 
 // Block schema for documents
 const BlockSchema = z.object({
@@ -86,6 +87,12 @@ export function registerDocTools(server: McpServer): void {
       // Phase 2 trust surface: warn INLINE, before the agent trusts the doc.
       const freshness = await docFreshness(process.cwd(), path);
 
+      // CAT-2: evaluate computed-fact tokens ({{count:…}}/{{loc:…}}/{{version:…}})
+      // at read time, so a number the doc carries is regenerated from the live
+      // tree and can't be stale. Resolves against the project root (cwd). A
+      // failed token stays raw, so nothing here can throw or fabricate a value.
+      const blocks = await renderTokensInBlocks(doc.blocks, process.cwd());
+
       return {
         content: [{ type: "text", text: JSON.stringify({
           success: true,
@@ -93,7 +100,7 @@ export function registerDocTools(server: McpServer): void {
             id: doc.metadata.id,
             path: doc.metadata.path,
             title: doc.metadata.title,
-            blocks: doc.blocks,
+            blocks,
             tags: doc.metadata.tags,
             relatedFiles: doc.metadata.relatedFiles,
             anchors: doc.metadata.anchors,

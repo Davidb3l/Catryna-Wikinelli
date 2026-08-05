@@ -30,6 +30,16 @@
  *                       diagram, and it passed a full repair pass reported clean
  *                       throughout. It renders as headings wrapped around blank
  *                       boxes, and only a human going looking ever found it.
+ * - `volatile-fact`   — drift polices claims about ANCHORED files; a repo-wide
+ *                       measurement in prose ("6,600 lines", "14 modules", a
+ *                       version, a date) has no anchor that can fire, so it rots
+ *                       INVISIBLY. Found in the field: Sirius Forester's overview
+ *                       claimed "6,600 lines across 14 modules" while the true
+ *                       count had drifted to 6,869 and the doc still verified
+ *                       clean. Author-time is the only moment the class is
+ *                       catchable, so lint — not drift — is where it belongs. A
+ *                       computed token (`{{loc: src/}}`, CAT-2) is the CORRECT
+ *                       form and is never flagged.
  * - `missing-anchor`  — an anchor pointing at a path not on disk documents
  *                       nothing. Drift calls this `broken` ONLY once the doc has
  *                       a baseline; lint catches it immediately.
@@ -50,6 +60,10 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { normalizeAnchorPath, parseMdx, readIndexAt, type DocMetadata } from "./storage";
+// The COMPUTED-FACT TOKEN grammar (CAT-2) lives in `./tokens` — the evaluator
+// owns it. Lint imports the SAME regex so the form `volatile-fact` stays silent
+// on is exactly the form the viewer/`get_doc` evaluate; they cannot drift.
+import { COMPUTED_TOKEN_RE } from "./tokens";
 
 /** A single problem with a single doc. */
 export interface LintIssue {
@@ -82,6 +96,7 @@ export type LintRule =
   | "unclosed-callout"
   | "unclosed-fence"
   | "empty-fence"
+  | "volatile-fact"
   | "missing-anchor"
   | "windows-anchor"
   | "index-mismatch"
@@ -169,6 +184,122 @@ export function scanFences(body: string): { empty: EmptyFence[]; unclosedAt: num
 /** Just the empty blocks — the shape the `empty-fence` rule reports. */
 export function findEmptyFences(body: string): EmptyFence[] {
   return scanFences(body).empty;
+}
+
+/** A volatile fact found in prose — a number/version/date no anchor can police. */
+export interface VolatileFact {
+  /** 1-based line, relative to the text passed in. */
+  line: number;
+  /** The offending span, verbatim (e.g. "6,600 lines"). */
+  text: string;
+  /** Which pattern matched — shapes the hint. */
+  kind: "count" | "version" | "date";
+}
+
+// Each pattern is deliberately TIGHT: a validator that cries wolf gets ignored,
+// so every pattern below was chosen to fire on rot and stay silent on the
+// invariants and references that look superficially similar.
+//
+// The set was CALIBRATED against this repo's real corpus, and two of the issue's
+// (CAT-1) four suggested triggers were pulled back because ground truth showed
+// them to be mostly noise — the issue is intent, the field test is truth:
+//
+//   - PERCENT ("%") was DROPPED. On the real docs it fired almost entirely on
+//     algorithm boundary constants ("rounds up to 100", "100% coverage beside 1
+//     undocumented"), an idiom ("100% CPU"), and narrative bug examples ("33%
+//     live vs 100% trend") — none of them standing claims about the repo, and
+//     structurally indistinguishable from the one that would rot ("84%
+//     coverage"). A volatile percentage is better served by a CAT-2 computed
+//     token anyway, so lint stays silent rather than cry wolf on every "%".
+//   - DATE is CUE-GATED. A bare date in prose is usually HISTORICAL and
+//     immutable ("the Virixia dogfood (2026-08-01)") — flagging it is a false
+//     positive. Only a date carrying a currency cue ("as of", "current",
+//     "today", "latest", "updated"…) is a claim that rots.
+//
+// COUNT and VERSION survived unchanged: they are the strong signal, and the
+// exact rot the issue was filed about ("6,600 lines", "28 tests", a version).
+const VOLATILE_PATTERNS: Array<{ kind: VolatileFact["kind"]; re: RegExp }> = [
+  // COUNT: a number then an optional single adjective then a PLURAL count noun.
+  // Two guards, each earned by a real false positive:
+  //   - PLURAL noun separates "6,600 lines" (a measurement) from "line 42" (a
+  //     source reference, which is good practice and must never flag).
+  //   - the leading (?<![-–—]) skips a number that continues a RANGE ("2–5
+  //     source files" is guidance, not a point measurement).
+  {
+    kind: "count",
+    re: /(?<![-–—])\b\d[\d,]*(?:\.\d+)?\s+(?:[a-z]+\s+)?(?:lines|modules|files|tests|loc)\b/gi,
+  },
+  // VERSION: a DOTTED version only ("v1.3.0", "version 1.3.0"). Dotted is the
+  // guard that lets "schema version 1" — an invariant — through untouched.
+  { kind: "version", re: /\b(?:v|version\s+)\d+\.\d+(?:\.\d+)?\b/gi },
+  // DATE: a bare ISO date, but only when a currency cue precedes it on the line,
+  // so a historical date ("shipped 2026-07-05") stays silent while a standing
+  // claim ("current as of 2026-08-05") fires.
+  {
+    kind: "date",
+    re: /\b(?:as[ -]of|current(?:ly)?|today|now|latest|updated|effective)\b[^.\n]{0,24}?\b\d{4}-\d{2}-\d{2}\b/gi,
+  },
+];
+
+/**
+ * Volatile facts in a doc body — numbers/versions/dates written as prose that
+ * no anchor can police.
+ *
+ * Scans LINE BY LINE (like `scanFences`) so line numbers are exact and fenced
+ * code is skipped wholesale — a number inside a ```code block is data or an
+ * example, never a prose claim. Two more exclusions run per prose line:
+ *   - inline code spans (`` `1.3.0` ``) are stripped — same reasoning as fences.
+ *   - COMPUTED TOKENS (`{{loc: src/}}`) are stripped FIRST, because the token is
+ *     the correct form of exactly this claim; flagging it would punish the fix.
+ */
+export function findVolatileFacts(body: string): VolatileFact[] {
+  const lines = body.split("\n");
+  const out: VolatileFact[] = [];
+  let fenceMarker: string | null = null;
+  let fenceWidth = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const fence = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
+    if (fenceMarker === null) {
+      if (fence) {
+        const marker = fence[1][0];
+        if (!(marker === "`" && fence[2].includes("`"))) {
+          fenceMarker = marker;
+          fenceWidth = fence[1].length;
+          continue;
+        }
+      }
+    } else {
+      // Inside a fence: only a matching, long-enough closer with trailing
+      // whitespace ends it. Everything between is code, so we scan nothing.
+      if (
+        fence &&
+        fence[1][0] === fenceMarker &&
+        fence[1].length >= fenceWidth &&
+        fence[2].trim() === ""
+      ) {
+        fenceMarker = null;
+      }
+      continue;
+    }
+
+    // Prose line. Neutralize inline code and computed tokens before scanning —
+    // replace with spaces so column-free line matching is unaffected.
+    const prose = line
+      .replace(COMPUTED_TOKEN_RE, (m) => " ".repeat(m.length))
+      .replace(/`[^`\n]*`/g, (m) => " ".repeat(m.length));
+
+    for (const { kind, re } of VOLATILE_PATTERNS) {
+      re.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(prose)) !== null) {
+        out.push({ line: i + 1, text: m[0].trim(), kind });
+        if (m.index === re.lastIndex) re.lastIndex++; // zero-width guard
+      }
+    }
+  }
+  return out;
 }
 
 /** Split frontmatter from body. `null` frontmatter means none was parseable. */
@@ -276,6 +407,29 @@ export function lintContent(path: string, raw: string): LintIssue[] {
         shown.join(", ") +
         (more > 0 ? `, +${more} more` : ""),
       hint: "An empty fence renders as a blank box — headings and prose wrapped around nothing. Fill it in or drop the fence; balance alone does not make a doc well-formed.",
+    });
+  }
+
+  // Volatile facts. ONE issue per doc (like empty-fence), first few shown with
+  // file-relative lines. WARNING, never a gate: a stated number is sometimes the
+  // clearest thing to write, and a fresh doc legitimately carries some. The point
+  // is to nudge the author toward a computed token before the number rots
+  // invisibly — drift will never catch it, because no anchor spans "the repo".
+  const volatile = findVolatileFacts(body);
+  if (volatile.length > 0) {
+    const shown = volatile
+      .slice(0, 5)
+      .map((v) => `line ${v.line + offset} ("${v.text}")`);
+    const more = volatile.length - shown.length;
+    issues.push({
+      path,
+      rule: "volatile-fact",
+      severity: "warning",
+      message:
+        `${volatile.length} volatile fact(s) in prose: ` +
+        shown.join(", ") +
+        (more > 0 ? `, +${more} more` : ""),
+      hint: "A repo-wide number/version/date in prose has no anchor, so drift can never flag it when it rots. Prefer a computed token — {{loc: src/}}, {{count: src/*.rs}}, {{version: Cargo.toml}} — or drop the number if it isn't load-bearing.",
     });
   }
 

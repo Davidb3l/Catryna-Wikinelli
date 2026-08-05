@@ -45,7 +45,7 @@ Creates a new documentation page. Fails (without overwriting) if a doc already e
 
 ### get_doc
 
-Retrieves a document by path. Returns metadata (including `anchors`, `evidence`, `refs`), blocks, and a **`freshness`** object (Phase 2 trust surface).
+Retrieves a document by path. Returns metadata (including `anchors`, `evidence`, `refs`), blocks, and a **`freshness`** object (Phase 2 trust surface). Its blocks are passed through `renderTokensInBlocks` first, so **computed-fact tokens** (`{{count: …}}` / `{{loc: …}}` / `{{version: …}}`) are evaluated against the project root at read time — the agent sees a live number, never a stale one, and a failed token stays raw. See [features/computed-facts](../features/computed-facts).
 
 ### list_docs
 

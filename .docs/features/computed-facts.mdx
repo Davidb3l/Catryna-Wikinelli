@@ -1,0 +1,54 @@
+---
+id: cat-feat-computed-facts
+title: "Computed-fact tokens"
+path: "features/computed-facts"
+tags: ["feature", "tokens", "mcp", "viewer", "drift"]
+relatedFiles: ["src/tokens.ts", "src/tools/docs.ts", "frontend/docs-api.ts"]
+anchors: []
+evidence: []
+refs: []
+verifiedCommit: ""
+verifiedAt: ""
+driftSuspectSince: ""
+driftSuspectReason: ""
+createdAt: 1785928800000
+updatedAt: 1785928800000
+createdBy: "claude-code"
+---
+
+# Computed-fact tokens
+
+The honest extension of the living-docs thesis. Drift detects when prose *died*; computed facts make a whole class of prose **unable to die**.
+
+## The problem they solve
+
+Some volatile facts genuinely belong in a doc — a line count, a file count, a version. Written as a literal number they rot the instant the code moves, and `catryna drift` can never catch it because **no anchor spans "the whole repo"**. That is exactly what the `volatile-fact` lint rule (see [backend/lint](../backend/lint)) warns about. This is the fix for the facts you want to *keep*: store the **query**, not the **answer**.
+
+## The three tokens
+
+| Token | Answers | Example value |
+|---|---|---|
+| `{{count: src/*.ts}}` | how many files match the glob | this repo has **{{count: src/*.ts}}** top-level TS files |
+| `{{loc: src/}}` | total line count under a path/glob | **{{loc: src/}}** lines live under `src/` |
+| `{{version: package.json}}` | the version field of a manifest | Catryna is at **{{version: package.json}}** |
+
+Every number in that table is a live token. Open this doc in the viewer (or read it through MCP `get_doc`) and each is regenerated from the tree at read time — it **cannot** be stale, because there is no stored answer to go stale.
+
+Globs support `*` (one segment), `**` (recursive), and `?`. A bare directory (`src/`) means every file under it, recursively. `version` parses `package.json` (the `version` field) and TOML manifests like `Cargo.toml` (the first `version = "…"`).
+
+## Where they render
+
+- **MCP `get_doc`** (`src/tools/docs.ts`) — `renderTokensInBlocks` evaluates tokens against the project root (cwd) before returning blocks to an agent.
+- **The viewer** (`frontend/docs-api.ts`) — evaluates against the project root (the parent of `.docs/`) when serving `/api/docs/:path`, so the human sees live values too.
+
+## Graceful degradation — the raw token is the fallback
+
+An agent that reads `.docs/*.mdx` **directly** as a file (no evaluator in the loop) sees the raw `{{count: …}}` form. That is deliberate: the token is self-describing, so a plain-file read still communicates intent. A token that fails to evaluate — a bad glob, a missing file, a containment violation — is **left raw as well, never replaced with a stale or wrong number**.
+
+## Why the vocabulary is tiny (the security posture)
+
+A doc is **data**, authored by anyone, and letting data run commands is an injection surface. So this is not a shell — it is three read-only filesystem queries over an explicit allowlist, and every one is **contained to the project root**: `{{loc: ../../etc}}` resolves to a containment error and renders raw, never a file read. Work is bounded (file-count and total-byte caps, heavy directories like `node_modules`/`target`/`.git` skipped) so a `{{loc: /}}`-shaped query cannot wedge a read. The allowlist is `src/tokens.ts`; extend it only there, explicitly.
+
+## Relationship to lint
+
+`volatile-fact` and computed tokens are two sides of one habit: lint flags a bare number that will rot, the token is the form that answers the flag, and lint **never warns on a token**. The grammar is defined once (`COMPUTED_TOKEN_RE` in `src/tokens.ts`) and imported by lint, so the syntax lint blesses and the syntax the evaluator runs can never diverge.

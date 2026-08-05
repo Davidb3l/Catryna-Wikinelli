@@ -255,7 +255,7 @@
     {
       "id": "b936aeb6-47e2-4526-bd8d-f8d4457927f8",
       "path": "guides/drift-adoption-playbook",
-      "title": "Drift Adoption Playbook — rolling catryna drift into a repo",
+      "title": "Drift Adoption Playbook \u2014 rolling catryna drift into a repo",
       "tags": [
         "drift",
         "playbook",
@@ -282,7 +282,7 @@
     {
       "id": "73a55b74-3ef2-4733-8c6a-85d8115aa4a8",
       "path": "backend/freshness",
-      "title": "Freshness — the read trust surface",
+      "title": "Freshness \u2014 the read trust surface",
       "tags": [
         "phase2",
         "drift",
@@ -357,7 +357,7 @@
     {
       "id": "18949801-5661-497c-a183-26132900fdc6",
       "path": "backend/lint",
-      "title": "catryna lint — structural doc health",
+      "title": "catryna lint \u2014 structural doc health",
       "tags": [
         "lint",
         "backend",
@@ -379,7 +379,34 @@
       "createdAt": 1785627863145,
       "updatedAt": 1785627863145,
       "createdBy": "claude-code"
+    },
+    {
+      "id": "cat-feat-computed-facts",
+      "path": "features/computed-facts",
+      "title": "Computed-fact tokens",
+      "tags": [
+        "feature",
+        "tokens",
+        "mcp",
+        "viewer",
+        "drift"
+      ],
+      "relatedFiles": [
+        "src/tokens.ts",
+        "src/tools/docs.ts",
+        "frontend/docs-api.ts"
+      ],
+      "anchors": [],
+      "evidence": [],
+      "refs": [],
+      "verifiedCommit": "",
+      "verifiedAt": "",
+      "driftSuspectSince": "",
+      "driftSuspectReason": "",
+      "createdAt": 1785928800000,
+      "updatedAt": 1785928800000,
+      "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1785913824753
+  "lastUpdated": 1785951622389
 }

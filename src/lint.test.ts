@@ -17,7 +17,14 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { lintContent, lintDocs, stripCode, STRUCTURAL_RULES, runLint } from "./lint";
+import {
+  lintContent,
+  lintDocs,
+  stripCode,
+  STRUCTURAL_RULES,
+  runLint,
+  findVolatileFacts,
+} from "./lint";
 
 const dirs: string[] = [];
 afterAll(async () => {
@@ -222,6 +229,117 @@ describe("empty-fence — the hollow-doc rule", () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toContain("empty-fence");
     expect(r.stdout).toContain("WARNINGS");
+  });
+});
+
+/**
+ * CAT-1 — volatile facts in prose. Drift polices anchored files; a repo-wide
+ * number has no anchor, so it rots invisibly (Sirius Forester's overview claimed
+ * "6,600 lines" while the real count was 6,869, verified clean throughout). The
+ * lesson from the rest of this suite governs the design: a validator that cries
+ * wolf gets ignored, so the NON-firing cases below matter as much as the firing
+ * ones.
+ */
+describe("volatile-fact — the unpoliceable-claim rule", () => {
+  const doc = (body: string) => `---\na: 1\n---\n\n${body}`;
+  const rulesOf = (raw: string) => lintContent("d", raw).map((i) => i.rule);
+  const kinds = (body: string) => findVolatileFacts(body).map((v) => v.kind);
+
+  test("the exact field failure: a repo-wide line/module count fires", () => {
+    const issues = lintContent("d", doc("Sirius is 6,600 lines across 14 modules.\n"));
+    expect(issues.map((i) => i.rule)).toEqual(["volatile-fact"]);
+    expect(issues[0].message).toContain("6,600 lines");
+    expect(issues[0].message).toContain("14 modules");
+    expect(issues[0].severity).toBe("warning");
+  });
+
+  test("counts and dotted versions fire", () => {
+    expect(kinds("The suite has 121 tests.\n")).toContain("count");
+    expect(kinds("Requires version 1.3.0 of the CLI.\n")).toContain("version");
+    expect(kinds("Bumped to v0.0.7 last week.\n")).toContain("version");
+  });
+
+  test("a date fires only with a currency cue — a historical date stays silent", () => {
+    // Calibrated against the real corpus: bare dates in prose are usually
+    // historical and immutable, so only a "current as of"-style claim rots.
+    expect(kinds("Current as of 2026-08-05 this holds.\n")).toContain("date");
+    expect(kinds("Written from the Virixia dogfood (2026-08-01).\n")).toEqual([]);
+    expect(kinds("Deleted in commit abc123 on 2026-07-05.\n")).toEqual([]);
+  });
+
+  test("a bare percentage does NOT fire — dropped as noise after the field test", () => {
+    // "100% CPU" (idiom), "100% coverage" (algorithm constant), "33% live"
+    // (bug example) all looked identical to a real claim, so % is not policed.
+    expect(kinds("It busy-looped at 100% CPU.\n")).toEqual([]);
+    expect(kinds("Coverage sits at 84% today.\n")).toEqual([]);
+  });
+
+  // ── the false-positive guards — each is an invariant or reference that LOOKS
+  //    like a volatile fact but must never flag ────────────────────────────────
+
+  test("a source-line REFERENCE is not a count ('line 42' vs '42 lines')", () => {
+    expect(kinds("See `run_gate` at line 314 of src/gate.rs.\n")).toEqual([]);
+  });
+
+  test("a number continuing a RANGE is guidance, not a measurement", () => {
+    // "2–5 source files" is advice; only the high end (after the dash) looked
+    // like a count, and it must not fire. A standalone "5 files" still does.
+    expect(kinds("Identify the 2–5 source files each doc describes.\n")).toEqual([]);
+    expect(kinds("Identify the 2-5 files each doc describes.\n")).toEqual([]);
+    expect(kinds("The repo has 500 files.\n")).toContain("count");
+  });
+
+  test("spelled-out structural invariants do not fire", () => {
+    // "the five contract facts", "three stores", "eight phases" — design facts,
+    // written as words, and not measurements. No digits, no match.
+    expect(kinds("The loop is eight phases across three stores.\n")).toEqual([]);
+  });
+
+  test("a schema version integer is an invariant, not a volatile version", () => {
+    // "version 1" is a stable schema fact; only a DOTTED version rots.
+    expect(kinds("The ledger is at schema version 1.\n")).toEqual([]);
+  });
+
+  test("ports, exit codes, and byte sizes are constants, not volatile", () => {
+    expect(kinds("Serves on port 1307; exit 3 gates CI; stays under 4096 bytes.\n"))
+      .toEqual([]);
+  });
+
+  test("a number inside a code fence is data, not a prose claim", () => {
+    const body = "```txt\n6,600 lines, 14 modules, v1.3.0, 2026-08-05\n```\n";
+    expect(findVolatileFacts(body)).toEqual([]);
+  });
+
+  test("a number in an inline code span does not fire", () => {
+    expect(kinds("The constant is `1.3.0` in package.json.\n")).toEqual([]);
+  });
+
+  test("a COMPUTED TOKEN is the correct form and is never flagged", () => {
+    // This is the CAT-1 ↔ CAT-2 contract: the fix must not trip the warning.
+    expect(kinds("Sirius is {{loc: src/}} lines across {{count: src/*.rs}} modules.\n"))
+      .toEqual([]);
+    expect(kinds("Runs {{version: Cargo.toml}} of the CLI.\n")).toEqual([]);
+  });
+
+  test("line numbers are file-relative, counting the frontmatter", () => {
+    // frontmatter (3 lines) + blank + the claim on line 5.
+    const issues = lintContent("d", "---\na: 1\n---\n\nThe repo is 500 files.\n");
+    expect(issues.find((i) => i.rule === "volatile-fact")?.message).toContain("line 5");
+  });
+
+  test("one issue per doc, capped at 5 shown, with a +N more tail", () => {
+    // Six real hits (5 counts + 1 version) so the cap-and-tail path is exercised.
+    const body = doc(
+      "10 lines, 20 modules, 30 files, 40 tests, 50 loc, and v1.2.3 here.\n",
+    );
+    const issues = lintContent("d", body).filter((i) => i.rule === "volatile-fact");
+    expect(issues).toHaveLength(1);
+    expect(issues[0].message).toContain("6 volatile fact(s)");
+    expect(issues[0].message).toContain("+1 more");
+  });
+
+  test("it is a WARNING, never structural — verify still baselines the doc", () => {
+    expect(STRUCTURAL_RULES.has("volatile-fact" as never)).toBe(false);
   });
 });
 

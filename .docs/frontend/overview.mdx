@@ -198,7 +198,7 @@ The project list is fetched directly in `App.tsx` (no hook): `GET /api/projects`
 
 ## The Docs API
 
-Nothing is proxied. The request handling lives in **`frontend/docs-api.ts`** (`createDocsApi({docsRoot, findProjects})`), and `vite.config.ts` only decides the on-disk wiring and registers the middlewares. The split exists so the API can be tested without booting a dev server — it previously had **no automated coverage at all**, including the two security fixes below. `docs-api.test.ts` now carries 28 tests, with the traversal and allowlist cases mutation-checked against reverted-vulnerable versions.
+Nothing is proxied. The request handling lives in **`frontend/docs-api.ts`** (`createDocsApi({docsRoot, findProjects})`), and `vite.config.ts` only decides the on-disk wiring and registers the middlewares. The split exists so the API can be tested without booting a dev server — it previously had **no automated coverage at all**, including the two security fixes below. `docs-api.test.ts` now carries a dedicated suite, with the traversal and allowlist cases mutation-checked against reverted-vulnerable versions.
 
 The endpoints read the `.docs/` folder off disk:
 

@@ -37,6 +37,7 @@ Every rule was earned by a real failure in this repo, not invented.
 | `unclosed-callout` | error | The lossy MDX round-trip's signature: an orphaned closing tag renders as literal text mid-document |
 | `unclosed-fence` | error | A fence that is never closed swallows the rest of the doc into a code block |
 | `empty-fence` | warning | Fence **balance** is not fence **content**. A doc can be structurally perfect and almost entirely hollow — headings and prose wrapped around blank boxes |
+| `volatile-fact` | warning | A repo-wide number/version/date in prose has no anchor, so drift can never flag it when it rots. Nudges toward a computed token (CAT-2) |
 | `missing-anchor` | error | An anchor to a path not on disk documents nothing. Drift calls this `broken` **only once a baseline exists**; lint catches it immediately |
 | `windows-anchor` | error | A backslash path matches nothing off Windows, so the doc silently stops being drift-checked at all |
 | `index-mismatch` | error (path) / warning (title) | `_index.json` and the frontmatter disagreeing means one of them is lying to whoever read it first |
@@ -58,6 +59,16 @@ Three deliberate choices in the `empty-fence` rule itself:
 - **A fence still open at EOF is not reported.** That is `unclosed-fence`'s finding, and naming one defect twice trains people to ignore the report.
 
 Line numbers are file-relative (the frontmatter block is counted back in), so they can be jumped to directly.
+
+## The unpoliceable-claim rule (`volatile-fact`)
+
+Drift polices claims about **anchored files**. A repo-wide measurement written in prose — `6,600 lines`, `14 modules`, `28 tests`, a version, a date — spans the whole tree, so no anchor can fire on it and it rots **invisibly**. This is not hypothetical: Sirius Forester's `architecture/overview` claimed `6,600 lines across 14 modules` while the real count had drifted past it, and the doc verified clean the whole time. Author-time is the only moment the class is catchable, so it lives in lint, not drift.
+
+`findVolatileFacts` scans prose line by line (fenced code and inline code stripped, since a number in code is data, not a claim) for two patterns: a number followed by a plural **count noun** (`lines`, `modules`, `files`, `tests`, `loc`), and a **dotted version** (`v1.3.0`, `version 1.3.0`). A **computed token** (below) is the correct form and is never flagged — the two rules teach the same habit from opposite sides.
+
+<Callout type="warning">
+Two of the originally-proposed triggers were **pulled back after calibrating against the real corpus** — the field test is ground truth, and this codebase's prime directive is that a validator which cries wolf gets ignored. **Percent** (`%`) was dropped: it fired almost entirely on algorithm constants ("rounds up to 100"), an idiom ("100% CPU"), and narrative bug examples ("33% live vs 100% trend"), none separable from the one claim that rots. **Dates** are cue-gated: a bare date in prose is usually historical and immutable (`the dogfood (2026-08-01)`), so only a date carrying a currency cue (`current as of <date>`) fires. Counts and dotted versions — the strong signal, and the exact rot the rule was filed about — survived unchanged.
+</Callout>
 
 ## What it deliberately does NOT check
 
