@@ -406,7 +406,7 @@ export default function App() {
         onClick={() => setIsSidebarOpen(false)}
       />
 
-      <aside className={`fixed lg:relative h-full z-50 bg-white dark:bg-zinc-950 border-r border-zinc-200/80 dark:border-zinc-800 transition-transform duration-300 ease-in-out shadow-2xl lg:shadow-none ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} w-64`}>
+      <aside className={`catryna-sidebar fixed lg:relative h-full z-50 bg-surface-light dark:bg-zinc-900/40 border-r border-zinc-200/80 dark:border-zinc-800 transition-transform duration-300 ease-in-out shadow-2xl lg:shadow-none ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} w-64`}>
         <div className="flex flex-col h-full w-64">
           <div className="p-4 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 shrink-0 h-14">
             <div className="flex items-center gap-2 font-bold tracking-tight text-navy dark:text-zinc-50">
@@ -491,7 +491,7 @@ export default function App() {
             <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-bold text-zinc-400">
               {drift?.gitRepo && (
                 drift.summary.broken + drift.summary.drifted + drift.summary.unverified === 0
-                  ? <span className="text-green-500">● {drift.summary.clean} verified</span>
+                  ? <span className="text-green-700 dark:text-green-400">● {drift.summary.clean} verified</span>
                   : <span className="text-amber-500">
                       ● {drift.summary.broken > 0 && `${drift.summary.broken} broken, `}
                       {drift.summary.drifted > 0 && `${drift.summary.drifted} stale, `}

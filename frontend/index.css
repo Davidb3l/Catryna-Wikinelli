@@ -80,9 +80,15 @@
   --c-zinc-500: 109 104 143; /* --text-faint #6d688f              */
   --c-zinc-400: 168 163 200; /* --text-dim   #a8a3c8              */
   --c-zinc-300: 200 194 232;
-  --c-zinc-200: 43 38 68;    /* border in light-slot use          */
+  --c-zinc-200: 224 219 246; /* INK, not a border — see note below */
   --c-zinc-100: 244 241 255; /* --text       #f4f1ff              */
   --c-zinc-50:  250 248 255;
+  /* The ramp above must stay MONOTONIC as ink: 500 (faintest) → 50 (brightest).
+     `zinc-200` was briefly set to a dark border colour (43 38 68) on the
+     reasoning that 200 is a border shade in LIGHT mode — but this theme is
+     always dark, so `dark:text-zinc-200` is real body ink, and that mapping
+     rendered it at 1.24:1 against the panel. Invisible. Borders have their own
+     slots here (800/700); the light end of the scale is ink only. */
 
   --c-surface:       22 22 42;
   --c-surface-light: 28 28 52;
@@ -129,6 +135,25 @@ body { font-family: var(--font-body); }
    surface use of it directly. Attribute selector out-specifies Tailwind's
    single-class rule, so no !important is needed. */
 [data-theme='atelier'] .bg-white { background-color: rgb(var(--c-zinc-900)); }
+
+/* --- Sidebar as a distinct plane ------------------------------------------
+   It previously sat at the same value as the canvas with a hard 1px rule, so
+   the navigation read as part of the page rather than as a surface beside it.
+   A faint inward wash plus a gradient hairline gives it an edge that belongs to
+   the palette instead of a generic grey line. */
+.catryna-sidebar { position: relative; }
+[data-theme='atelier'] .catryna-sidebar {
+  border-right-color: transparent;
+  background-image: linear-gradient(180deg, rgba(168, 83, 186, 0.05), transparent 42%);
+}
+[data-theme='atelier'] .catryna-sidebar::after {
+  content: "";
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(168, 131, 220, 0.34) 18%, rgba(168, 131, 220, 0.34) 72%, transparent);
+  pointer-events: none;
+}
 
 /* --- Atelier atmosphere ---------------------------------------------------
    The site's two background layers: soft radial glows, then a fine film grain.
@@ -297,6 +322,18 @@ body { font-family: var(--font-body); }
    dots draws the eye to exactly the docs that need attention; verified stays
    calm on purpose.
    ============================================================================= */
+
+/* CLEAN is the majority state — in a healthy corpus nearly every row carries a
+   green dot, and fourteen identical dots is texture, not information. Recessing
+   the calm state lets the two that need attention actually carry weight. The
+   dot stays present (it is still a legible "checked" signal up close) but stops
+   competing for the eye at a glance. */
+.catryna-status-dot.is-calm { opacity: 0.45; transform: scale(0.8); }
+.catryna-sidebar .catryna-status-dot.is-calm { opacity: 0.3; }
+/* …and the states that DO need attention get the opposite treatment. */
+.catryna-status-dot:not(.is-calm) {
+  box-shadow: 0 0 0 3px rgb(var(--c-amber-500) / 0.12);
+}
 
 .catryna-status-dot { position: relative; }
 .catryna-status-dot::after {
