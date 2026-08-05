@@ -198,6 +198,53 @@ async function changedFilesSince(
   return { ok: true, files, stderr: "" };
 }
 
+/**
+ * Paths that are the SUITE'S OWN transient output rather than the user's work:
+ * the `.suite/` event spine, and the doc index's lock / atomic-rename temp file.
+ *
+ * These must never count toward the dirty-tree warning, because `computeDrift`
+ * itself writes `.suite/` (it emits `doc.drifted`). In a consumer repo that has
+ * not git-ignored `.suite/`, the first `catryna drift` run creates it, and every
+ * run after that warns about the dirt it made — permanently, and with
+ * `--dirty-is-error` a permanently red CI gate. A warning that fires on the
+ * tool's own exhaust is a warning people learn to ignore, which would waste the
+ * one thing it exists to say.
+ */
+function isSuiteArtifact(path: string): boolean {
+  return (
+    path === ".suite" ||
+    path.startsWith(".suite/") ||
+    path === ".docs/_index.lock" ||
+    /^\.docs\/_index\.json\.[^/]*\.tmp$/.test(path)
+  );
+}
+
+/**
+ * How many files are modified-but-not-committed in `cwd` (`git status
+ * --porcelain`, so .gitignore is respected and untracked files count), EXCLUDING
+ * the suite's own artifacts (see `isSuiteArtifact`).
+ *
+ * Drift walks git HISTORY from each doc's `verifiedCommit`, so it is structurally
+ * blind to uncommitted work — correct behavior, but silently expensive: in one
+ * real session seven agents changed code across a repo, `catryna drift` reported
+ * 3 drifted docs with all of it uncommitted, and reported 20 once the same work
+ * was committed. Eleven of those had been invisible to three repair agents that
+ * had just finished. Nothing had said the tool could not see them.
+ *
+ * Returns 0 when git can't answer — a failed probe must never invent a warning.
+ */
+export async function countDirtyFiles(cwd: string): Promise<number> {
+  const r = await runGit(cwd, ["status", "--porcelain"]);
+  if (!r.ok) return 0;
+  return r.stdout
+    .split("\n")
+    .filter((l) => l.trim().length > 0)
+    // Porcelain v1 is `XY <path>`: two status columns, a space, then the path
+    // (quoted when it needs escaping; a rename is `old -> new`).
+    .map((l) => l.slice(3).trim().replace(/^"(.*)"$/, "$1"))
+    .filter((p) => p.length > 0 && !isSuiteArtifact(p)).length;
+}
+
 /** True iff `rel` exists in `cwd`'s working tree (used for broken-anchor detection). */
 async function fileExists(cwd: string, rel: string): Promise<boolean> {
   try {
@@ -596,6 +643,15 @@ export interface DriftReport {
    */
   hayven: boolean;
   /**
+   * Files modified but not committed at the time of the run — the count drift
+   * could NOT see (see `countDirtyFiles`). `null` means the probe was skipped:
+   * a `only`-filtered run is a single-doc freshness read on a hot path, not the
+   * report surface this warning is for, and `git status` on a large repo is not
+   * free. `0` therefore always means "probed, and the tree is clean" — never
+   * "didn't look".
+   */
+  dirtyFiles: number | null;
+  /**
    * The resolved commit used as a GLOBAL baseline override for this run (from
    * `--since`), when set. Overrides every doc's own `verifiedCommit` so the
    * report answers "what drifted since <commit>" — the way to get a drift
@@ -670,11 +726,15 @@ export async function computeDrift(
       clean: [],
       broken: [],
       hayven: false,
+      dirtyFiles: null,
       error: `not a git repository: ${cwd}`,
     };
   }
 
   const head = await gitHead(cwd);
+  // Probe the working tree once per run. Skipped for a filtered (single-doc)
+  // read — see the `dirtyFiles` field docs for why `null` and not `0`.
+  const dirtyFiles = opts.only ? null : await countDirtyFiles(cwd);
 
   // --since: a GLOBAL baseline override. Resolve it once; if it doesn't resolve,
   // report the error rather than silently diffing against nothing.
@@ -690,6 +750,7 @@ export async function computeDrift(
         clean: [],
         broken: [],
         hayven: false,
+        dirtyFiles,
         error: `could not resolve --since "${opts.since}" to a commit`,
       };
     }
@@ -960,6 +1021,7 @@ export async function computeDrift(
     clean,
     broken,
     hayven: useHayven,
+    dirtyFiles,
     ...(baselineOverride ? { baseline: baselineOverride } : {}),
   };
 }
@@ -978,6 +1040,14 @@ export interface VerifyResult {
    * Additive; absent/empty means every anchor's file was present.
    */
   brokenAnchors?: string[];
+  /**
+   * Anchor fields the `.mdx` frontmatter declares but `verify` could not decode,
+   * so the index kept its own values instead (see `readFrontmatterAnchorFields`).
+   * A WARNING, like `brokenAnchors` — the baseline is still recorded — but it
+   * must be loud: the point of the frontmatter → index sync is that a
+   * hand-edited anchor takes effect, and this says it didn't.
+   */
+  unsyncedAnchorFields?: string[];
   error?: string;
 }
 
@@ -1016,7 +1086,7 @@ export async function verifyDoc(cwd: string, path: string): Promise<VerifyResult
   }
 
   const verifiedAt = new Date().toISOString();
-  const meta = await recordVerification(path, head, verifiedAt);
+  const { meta, unreadableAnchorFields } = await recordVerification(path, head, verifiedAt);
   if (!meta) {
     return { ok: false, path, error: `no doc at path "${path}"` };
   }
@@ -1034,6 +1104,9 @@ export async function verifyDoc(cwd: string, path: string): Promise<VerifyResult
     verifiedAt: meta.verifiedAt,
     trust: "verified",
     ...(brokenAnchors.length > 0 ? { brokenAnchors } : {}),
+    ...(unreadableAnchorFields.length > 0
+      ? { unsyncedAnchorFields: unreadableAnchorFields }
+      : {}),
   };
 }
 
@@ -1061,6 +1134,8 @@ export function buildDriftJson(report: DriftReport): Record<string, unknown> {
     ...(report.baseline ? { baseline: report.baseline } : {}),
     // Whether Hayvenhurst symbol-precision was used this run (§3 gating).
     hayven: report.hayven,
+    // Uncommitted files drift could not see. 0 = probed and clean.
+    dirtyFiles: report.dirtyFiles,
     summary: {
       broken: report.broken.length,
       drifted: report.drifted.length,
@@ -1104,6 +1179,17 @@ export function renderDriftHuman(report: DriftReport): string {
   lines.push("catryna drift", `  HEAD: ${short(report.head ?? "")}`);
   if (report.baseline) lines.push(`  baseline (--since): ${short(report.baseline)}`);
   lines.push("");
+  // Say out loud what this command cannot see. Printed BEFORE the findings,
+  // because the ordering advice is the whole value: repairing docs against an
+  // uncommitted tree means the counts below are an undercount, and every doc
+  // repaired from them was judged with the tool switched off.
+  if (report.dirtyFiles && report.dirtyFiles > 0) {
+    lines.push(
+      `  note: ${report.dirtyFiles} file(s) modified but not committed — drift only sees committed changes.`,
+      `        Commit code first, then repair docs.`,
+      "",
+    );
+  }
 
   if (
     report.broken.length === 0 &&
@@ -1149,8 +1235,18 @@ export function renderDriftHuman(report: DriftReport): string {
  * Run `catryna drift` and return bytes + exit code, no process side effects.
  * `--json`: one JSON object, always exit 0. Human: exit 3 on drift (CI gate),
  * 1 on operational failure (not a git repo), else 0.
+ *
+ * `dirtyIsError` additionally soft-blocks on an uncommitted working tree — for
+ * CI, where a dirty tree means the drift report is an undercount of unknown
+ * size. It affects the human gate only: `--json` still always exits 0 (§4 rule
+ * 2), and a machine consumer reads `dirtyFiles` from the body instead.
  */
-export async function runDrift(opts: { json: boolean; cwd: string; since?: string }): Promise<CliRun> {
+export async function runDrift(opts: {
+  json: boolean;
+  cwd: string;
+  since?: string;
+  dirtyIsError?: boolean;
+}): Promise<CliRun> {
   const report = await computeDrift(opts.cwd, opts.since ? { since: opts.since } : {});
 
   if (opts.json) {
@@ -1164,15 +1260,14 @@ export async function runDrift(opts: { json: boolean; cwd: string; since?: strin
   }
   // Soft-block (§4 code 3) when drift OR a broken anchor is found so CI fails;
   // unverified is a warning (a repo mid-adoption has many).
-  const code = report.drifted.length > 0 || report.broken.length > 0 ? 3 : 0;
+  const dirtyBlocks = !!opts.dirtyIsError && !!report.dirtyFiles && report.dirtyFiles > 0;
+  const code = report.drifted.length > 0 || report.broken.length > 0 || dirtyBlocks ? 3 : 0;
   return { stdout: renderDriftHuman(report), stderr: "", code };
 }
 
-/** The JSON body for `catryna verify --json`. */
-export function buildVerifyJson(result: VerifyResult): Record<string, unknown> {
+/** One doc's verify outcome, without the envelope — reused by the batch body. */
+function buildVerifyItemJson(result: VerifyResult): Record<string, unknown> {
   return {
-    tool: "catryna",
-    command: "verify",
     ok: result.ok,
     path: result.path,
     ...(result.ok
@@ -1184,8 +1279,21 @@ export function buildVerifyJson(result: VerifyResult): Record<string, unknown> {
           ...(result.brokenAnchors && result.brokenAnchors.length > 0
             ? { brokenAnchors: result.brokenAnchors }
             : {}),
+          // Frontmatter anchors verify declined to sync — see VerifyResult.
+          ...(result.unsyncedAnchorFields && result.unsyncedAnchorFields.length > 0
+            ? { unsyncedAnchorFields: result.unsyncedAnchorFields }
+            : {}),
         }
       : { error: result.error }),
+  };
+}
+
+/** The JSON body for `catryna verify <path> --json` (the single-doc form). */
+export function buildVerifyJson(result: VerifyResult): Record<string, unknown> {
+  return {
+    tool: "catryna",
+    command: "verify",
+    ...buildVerifyItemJson(result),
   };
 }
 
@@ -1199,7 +1307,22 @@ export function renderVerifyHuman(result: VerifyResult): string {
   if (result.brokenAnchors && result.brokenAnchors.length > 0) {
     out += `  ⚠ anchored file(s) missing: ${result.brokenAnchors.join(", ")}\n`;
   }
+  out += renderUnsyncedAnchorWarning(result, "  ");
   return out;
+}
+
+/**
+ * The "your frontmatter edit did not take effect" warning, shared by the single
+ * and batch verify renderers. Names the exact fix, because the failure is
+ * otherwise indistinguishable from success.
+ */
+function renderUnsyncedAnchorWarning(result: VerifyResult, indent: string): string {
+  if (!result.unsyncedAnchorFields || result.unsyncedAnchorFields.length === 0) return "";
+  return (
+    `${indent}⚠ could not read frontmatter ${result.unsyncedAnchorFields.join(", ")} — ` +
+    `the index kept its own value, so this doc's anchors did NOT change.\n` +
+    `${indent}  Write them as a single-line JSON array, e.g. relatedFiles: ["src/a.ts"]\n`
+  );
 }
 
 /**
@@ -1224,4 +1347,159 @@ export async function runVerify(opts: {
 
   if (!result.ok) return { stdout: "", stderr: renderVerifyHuman(result), code: 1 };
   return { stdout: renderVerifyHuman(result), stderr: "", code: 0 };
+}
+
+// ---------------------------------------------------------------------------
+// Batch verify — `catryna verify <path> <path> …` and `--all-drifted`.
+//
+// A repair backlog is worked doc by doc, so re-baselining it used to mean a
+// shell loop over `catryna verify`. That loop is a footgun in two ways: N
+// processes racing on the shared `_index.json` (now serialized by the lock file
+// in storage.ts), and the loop itself — one real pass reported ok=31 for 32
+// paths because the input file had no trailing newline and `read` dropped the
+// last line. One command for the whole set removes both classes of error.
+// ---------------------------------------------------------------------------
+
+/** The outcome of a batch verify: one `VerifyResult` per requested doc. */
+export interface BatchVerifyResult {
+  /** True iff EVERY doc verified. */
+  ok: boolean;
+  results: VerifyResult[];
+  /** Set when the batch could not be assembled at all (e.g. not a git repo). */
+  error?: string;
+}
+
+/**
+ * Verify several docs in one run, SEQUENTIALLY.
+ *
+ * Serial is deliberate: each verify does a read-modify-write of the shared
+ * index, so concurrency here would buy nothing but lock contention with itself.
+ */
+export async function verifyDocs(cwd: string, paths: string[]): Promise<BatchVerifyResult> {
+  const results: VerifyResult[] = [];
+  for (const p of paths) results.push(await verifyDoc(cwd, p));
+  return { ok: results.every((r) => r.ok), results };
+}
+
+/**
+ * The doc paths a `--all-drifted` batch should re-baseline: everything the drift
+ * report calls `drifted` or `broken`.
+ *
+ * `broken` is included because a repaired broken doc needs a baseline exactly
+ * like a repaired drifted one — and `verifyDoc` already surfaces any anchor
+ * that is still missing as a `brokenAnchors` warning rather than silently
+ * blessing it. `unverified` is NOT included: those docs have never been read
+ * against code by anyone, and stamping them wholesale is the "blanket verify"
+ * that produces confidently-wrong docs carrying a fresh baseline.
+ */
+export async function driftedDocPaths(cwd: string): Promise<{ paths: string[]; error?: string }> {
+  const report = await computeDrift(cwd, { emit: false });
+  if (!report.gitRepo || report.error) {
+    return { paths: [], error: report.error ?? "not a git repository" };
+  }
+  const paths = [...report.drifted, ...report.broken].map((d) => d.path);
+  return { paths: [...new Set(paths)].sort() };
+}
+
+/** The JSON body for a batch `catryna verify --json` (one object, §4 rule 1). */
+export function buildBatchVerifyJson(batch: BatchVerifyResult): Record<string, unknown> {
+  return {
+    tool: "catryna",
+    command: "verify",
+    // Distinguishes this body from the single-doc one, which has `path` at the
+    // top level. A consumer keys off `batch` rather than sniffing for a field.
+    batch: true,
+    ok: batch.ok,
+    summary: {
+      total: batch.results.length,
+      verified: batch.results.filter((r) => r.ok).length,
+      failed: batch.results.filter((r) => !r.ok).length,
+    },
+    results: batch.results.map(buildVerifyItemJson),
+    ...(batch.error ? { error: batch.error } : {}),
+  };
+}
+
+/**
+ * The human report for a batch `catryna verify`.
+ *
+ * `allDrifted` only changes the wording of the empty case: "nothing was flagged"
+ * and "you passed me no paths" are different facts, and claiming the first when
+ * the second happened is the kind of small lie that gets believed.
+ */
+export function renderBatchVerifyHuman(batch: BatchVerifyResult, allDrifted = false): string {
+  if (batch.error) return `catryna verify: ${batch.error}\n`;
+  if (batch.results.length === 0) {
+    return allDrifted
+      ? `catryna verify\n\n  no drifted docs — nothing to re-baseline ✓\n`
+      : `catryna verify\n\n  no doc paths given — nothing to do\n`;
+  }
+
+  const lines = ["catryna verify", ""];
+  for (const r of batch.results) {
+    if (!r.ok) {
+      lines.push(`  ✗ ${r.path}`, `      ${r.error}`);
+      continue;
+    }
+    lines.push(`  ✓ ${r.path}   (${short(r.verifiedCommit ?? "")})`);
+    if (r.brokenAnchors && r.brokenAnchors.length > 0) {
+      lines.push(`      ⚠ anchored file(s) missing: ${r.brokenAnchors.join(", ")}`);
+    }
+    const unsynced = renderUnsyncedAnchorWarning(r, "      ");
+    if (unsynced) lines.push(...unsynced.trimEnd().split("\n"));
+  }
+  const okN = batch.results.filter((r) => r.ok).length;
+  lines.push("", `  verified ${okN} of ${batch.results.length}`, "");
+  return lines.join("\n");
+}
+
+/**
+ * Run a batch `catryna verify` and return bytes + exit code.
+ *
+ * Verify is an ACTION, so unlike the drift report the exit code reflects
+ * success: 0 when every doc verified, 1 if any failed — under `--json` too.
+ */
+export async function runVerifyBatch(opts: {
+  json: boolean;
+  cwd: string;
+  paths?: string[];
+  allDrifted?: boolean;
+}): Promise<CliRun> {
+  let paths = opts.paths ?? [];
+  let batch: BatchVerifyResult;
+
+  if (opts.allDrifted) {
+    const found = await driftedDocPaths(opts.cwd);
+    if (found.error) {
+      batch = { ok: false, results: [], error: found.error };
+      return opts.json
+        ? {
+            stdout: JSON.stringify(buildBatchVerifyJson(batch)) + "\n",
+            stderr: `verify: ${found.error}\n`,
+            code: 1,
+          }
+        : { stdout: "", stderr: renderBatchVerifyHuman(batch, true), code: 1 };
+    }
+    paths = found.paths;
+  }
+
+  batch = await verifyDocs(opts.cwd, [...new Set(paths)]);
+  const failed = batch.results.filter((r) => !r.ok).length;
+
+  if (opts.json) {
+    return {
+      stdout: JSON.stringify(buildBatchVerifyJson(batch)) + "\n",
+      stderr: batch.ok ? "" : `verify: ${failed} doc(s) failed\n`,
+      code: batch.ok ? 0 : 1,
+    };
+  }
+  // The report stays on STDOUT even on failure — unlike single-doc verify, where
+  // a failure means there is nothing to report. A batch that verified 30 of 32
+  // has 30 results worth printing, and burying them in stderr would lose them.
+  // The summary line on stderr is what a shell redirect needs to see.
+  return {
+    stdout: renderBatchVerifyHuman(batch, !!opts.allDrifted),
+    stderr: batch.ok ? "" : `verify: ${failed} of ${batch.results.length} doc(s) failed\n`,
+    code: batch.ok ? 0 : 1,
+  };
 }

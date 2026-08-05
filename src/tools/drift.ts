@@ -81,6 +81,13 @@ export interface RepairContextResult {
   repairs: DocRepairContext[];
   /** The resolved `--since` baseline override, when used (echoes the SHA). */
   baseline?: string;
+  /**
+   * Files modified but not committed — the changes this repair context could NOT
+   * see (drift walks committed history only). Carried through from the drift
+   * report because repair is where an agent acts on it: repairing against a
+   * dirty tree means working from an undercount.
+   */
+  dirtyFiles: number | null;
   /** A specific path was requested but is not currently drifted. */
   notDrifted?: string[];
   /** Set only when the run could not proceed (e.g. not a git repository). */
@@ -122,6 +129,7 @@ export async function buildRepairContext(
       head: report.head,
       requested: target || "all",
       repairs: [],
+      dirtyFiles: report.dirtyFiles,
       error: report.error,
     };
   }
@@ -189,6 +197,7 @@ export async function buildRepairContext(
     head: report.head,
     requested: wantAll ? "all" : target,
     repairs,
+    dirtyFiles: report.dirtyFiles,
     ...(report.baseline ? { baseline: report.baseline } : {}),
     ...(notDrifted ? { notDrifted } : {}),
   };
@@ -211,6 +220,8 @@ export function buildRepairJson(r: RepairContextResult): Record<string, unknown>
     gitRepo: r.gitRepo,
     head: r.head,
     ...(r.baseline ? { baseline: r.baseline } : {}),
+    // Uncommitted files this bundle could not see. 0 = probed and clean.
+    dirtyFiles: r.dirtyFiles,
     requested: r.requested,
     summary: {
       repairs: r.repairs.length,
@@ -244,6 +255,15 @@ export function renderRepairHuman(r: RepairContextResult): string {
   const lines: string[] = ["catryna repair", `  HEAD: ${short(r.head ?? "")}`];
   if (r.baseline) lines.push(`  baseline (--since): ${short(r.baseline)}`);
   lines.push("");
+  // Same warning `catryna drift` prints, for the same reason — repairing against
+  // an uncommitted tree means the bundle below is an undercount.
+  if (r.dirtyFiles && r.dirtyFiles > 0) {
+    lines.push(
+      `  note: ${r.dirtyFiles} file(s) modified but not committed — drift only sees committed changes.`,
+      `        Commit code first, then repair docs.`,
+      "",
+    );
+  }
 
   if (r.repairs.length === 0) {
     if (r.notDrifted && r.notDrifted.length > 0) {

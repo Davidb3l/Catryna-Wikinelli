@@ -7,8 +7,8 @@ relatedFiles: ["src/lint.ts", "src/tools/lint.ts", "src/cli.ts"]
 anchors: []
 evidence: []
 refs: []
-verifiedCommit: "f23bf3036c9ca1d040809484b2c891f4272b2552"
-verifiedAt: "2026-08-02T00:36:57.957Z"
+verifiedCommit: "f233411fd939079df2f726a65851b5d1fc5690c6"
+verifiedAt: "2026-08-05T06:28:59.482Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 createdAt: 1785627863145
@@ -35,12 +35,29 @@ Every rule was earned by a real failure in this repo, not invented.
 |---|---|---|
 | `frontmatter` | error | No parseable `---` block — the doc has no path, tags or baseline, so the index and the file disagree from then on |
 | `unclosed-callout` | error | The lossy MDX round-trip's signature: an orphaned closing tag renders as literal text mid-document |
-| `unclosed-fence` | error | An odd number of ``` swallows the rest of the doc into a code block |
+| `unclosed-fence` | error | A fence that is never closed swallows the rest of the doc into a code block |
+| `empty-fence` | warning | Fence **balance** is not fence **content**. A doc can be structurally perfect and almost entirely hollow — headings and prose wrapped around blank boxes |
 | `missing-anchor` | error | An anchor to a path not on disk documents nothing. Drift calls this `broken` **only once a baseline exists**; lint catches it immediately |
 | `windows-anchor` | error | A backslash path matches nothing off Windows, so the doc silently stops being drift-checked at all |
 | `index-mismatch` | error (path) / warning (title) | `_index.json` and the frontmatter disagreeing means one of them is lying to whoever read it first |
 | `orphan-file` | warning | A `.mdx` no index entry names is invisible to search, drift and coverage |
 | `missing-file` | error | An index entry with no file behind it 404s in the viewer |
+
+## The hollow-doc rule
+
+`empty-fence` exists because balance and content are different questions, and only one of them was being asked. A real doc in a consuming corpus had 12 empty fences — including the ` ```mermaid ` block that was supposed to *be* the architecture diagram, and nine ` ```typescript ` blocks under headings like "Step 1: User Clicks Run Migrations". It rendered as headings and prose wrapped around blank boxes, it had been through a full repair pass reported clean throughout, and `catryna lint` called it well-formed. A human going looking is what found it.
+
+`scanFences()` pairs fences the way CommonMark does, and **both** fence rules now read from it. That replaced `unclosed-fence`'s old "count ` ``` ` lines, flag an odd total" heuristic, which was wrong in both directions: a ` ```` ` block wrapping a ` ``` ` example has an even count and is fine, while ` ```ts ` followed by a ` ``` trailing-text ` line has an odd count but the second line does not actually close anything. The parity rule called the first malformed and the second fine — at **error** severity, so its false positives gated CI on legitimate docs.
+
+Pairing rules that matter: a closing fence must use the same marker character, be at least as long as the opener, and carry nothing but whitespace after it; a backtick info string may not contain a backtick (so ` ```` ` wrapping an example opens one fence, not two); and `~~~` fences count, exactly as `stripCode` already assumed.
+
+Three deliberate choices in the `empty-fence` rule itself:
+
+- **Warning, not error.** An empty fence is legitimate in a template or a draft, and a gate that fails on it trains people to bypass the gate. It must still *surface* — silence is what let a hollow doc pass.
+- **One issue per doc, not per fence.** The failure is a hollow document; a dozen blank blocks should read as one dozen-block problem, not flood the report. The message lists the first five lines and counts the rest.
+- **A fence still open at EOF is not reported.** That is `unclosed-fence`'s finding, and naming one defect twice trains people to ignore the report.
+
+Line numbers are file-relative (the frontmatter block is counted back in), so they can be jumped to directly.
 
 ## What it deliberately does NOT check
 

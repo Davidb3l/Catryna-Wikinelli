@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 
 import { runConsumeCli } from "./consume";
 import { runDoctor, type DoctorEnv } from "./doctor";
-import { runDrift, runVerify } from "./drift";
+import { runDrift, runVerify, runVerifyBatch } from "./drift";
 import { runLint } from "./lint";
 import { runRepair } from "./tools/drift";
 
@@ -31,11 +31,20 @@ const USAGE = `catryna — living documentation for agents + humans
 
 Usage:
   catryna doctor [--json]          Suite discovery health check (SUITE_CONTRACTS §3)
-  catryna verify <path> [--json]   Record HEAD as a doc's drift baseline
-  catryna drift [--since <commit|date>] [--json]
+  catryna verify <path>... [--json]
+                                   Record HEAD as the drift baseline of one or more docs.
+                                   Several paths run as one batch — no shell loop, and
+                                   no race on the shared index.
+  catryna verify --all-drifted [--json]
+                                   Re-baseline every doc that drift reports drifted or
+                                   broken. Verify does NOT read prose — only run this
+                                   once you have judged each doc individually.
+  catryna drift [--since <commit|date>] [--dirty-is-error] [--json]
                                    Report docs whose anchored code drifted (CI gate).
                                    --since sets a baseline (commit/tag/date) for docs
                                    with no verifiedCommit — e.g. --since 2026-02-18.
+                                   --dirty-is-error also exits 3 on an uncommitted tree,
+                                   which drift cannot see into.
   catryna repair [<path>] [--since <commit|date>] [--json]
                                    Repair context for drifted docs (hand to the agent).
                                    --since works like drift's, for never-verified corpora.
@@ -119,19 +128,35 @@ export async function main(argv: string[]): Promise<number> {
       return run.code;
     }
     case "verify": {
-      const path = positionals[1];
-      if (!path) {
+      const paths = [...new Set(positionals.slice(1))];
+      const allDrifted = args.includes("--all-drifted");
+      if (allDrifted && paths.length > 0) {
+        // Ambiguous: --all-drifted derives its own list. Refuse rather than
+        // silently ignoring the paths the caller typed.
+        process.stderr.write(
+          `catryna: verify --all-drifted takes no <path> arguments\n\n${USAGE}\n`,
+        );
+        return 2;
+      }
+      if (!allDrifted && paths.length === 0) {
         // Usage error: verify needs a doc path. Keep stdout clean under --json.
         process.stderr.write(`catryna: verify requires a <path>\n\n${USAGE}\n`);
         return 2;
       }
-      const run = await runVerify({ json, cwd: process.cwd(), path });
+      // ONE path stays on the single-doc path so its `--json` body keeps the
+      // exact shape existing consumers parse (`path` at the top level, no
+      // `results` array). Multiple paths, or --all-drifted, use the batch body.
+      const run =
+        !allDrifted && paths.length === 1
+          ? await runVerify({ json, cwd: process.cwd(), path: paths[0] })
+          : await runVerifyBatch({ json, cwd: process.cwd(), paths, allDrifted });
       if (run.stderr) process.stderr.write(run.stderr);
       process.stdout.write(run.stdout);
       return run.code;
     }
     case "drift": {
-      const run = await runDrift({ json, cwd: process.cwd(), since });
+      const dirtyIsError = args.includes("--dirty-is-error");
+      const run = await runDrift({ json, cwd: process.cwd(), since, dirtyIsError });
       if (run.stderr) process.stderr.write(run.stderr);
       process.stdout.write(run.stdout);
       return run.code;

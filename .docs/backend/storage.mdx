@@ -7,8 +7,8 @@ relatedFiles: ["src/storage.ts"]
 createdAt: 1767321315890
 updatedAt: 1767321660905
 createdBy: "claude-code"
-verifiedCommit: "cafd52ed6f86f1a48416eb02fc856009d1c5f19a"
-verifiedAt: "2026-08-01T19:01:53.635Z"
+verifiedCommit: "f233411fd939079df2f726a65851b5d1fc5690c6"
+verifiedAt: "2026-08-05T06:28:59.468Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -112,10 +112,11 @@ Every anchor path goes through `normalizeAnchorPath`: backslashes become `/`, du
 | `updateDoc()` | Modifies MDX file and index, emits `doc.updated` |
 | `deleteDoc()` | Removes MDX file and index entry |
 | `searchDocs()` | Full-text search across content |
-| `recordVerification()` | Records the drift baseline, clears drift-suspect, emits `doc.verified` |
+| `recordVerification()` | Records the drift baseline, reconciles frontmatter anchors into the index, clears drift-suspect, emits `doc.verified` |
 | `readIndexAt(cwd)` | Read-only index read that never creates the store (used by doctor/drift) |
 | `loadIndex()` | Index read for write paths; creates an empty index on a miss |
 | `effectiveAnchors()` | Merges `anchors` with file-level `relatedFiles` for drift |
+| `readFrontmatterAnchorFields()` | Reads `relatedFiles` / `anchors` as authored in a raw `.mdx`. Three distinct outcomes: absent, decodable (possibly a deliberate `[]`), or present-but-unreadable — the last is reported in `unreadable`, never mistaken for empty |
 | `setFrontmatterScalars()` | Surgically rewrites frontmatter keys, body byte-for-byte untouched |
 | `parseMdx()` | Parses an .mdx back into metadata + blocks |
 
@@ -123,6 +124,33 @@ Every anchor path goes through `normalizeAnchorPath`: backslashes become `/`, du
 
 <Callout type="info">
 **Serialized index writes**: `createDoc` / `updateDoc` / `deleteDoc` each do load → mutate → save with awaits in between, so concurrent MCP calls could interleave and drop an entry. `withIndexLock` chains every index mutation so each one sees the latest persisted index. `createDoc` also replaces (rather than duplicates) an existing same-path entry inside the lock.
+</Callout>
+
+<Callout type="info">
+**Cross-process index lock**: the promise chain only covers one process, and `catryna verify` is a whole process — the natural way to work a repair backlog is to fan it out across parallel agents, each shelling out to its own verify. Those all read-modify-write the same `_index.json` and the last writer wins, silently discarding the others' baselines. `withIndexLock` therefore also takes a lock FILE, `.docs/_index.lock`, created with `writeFile(..., {flag:"wx"})` — an atomic create-if-absent on every platform. Both layers are needed: the chain because a lock file cannot be re-entered by the same process's overlapping awaits, the file because the chain cannot see another process at all.
+
+Three properties keep the lock from ever wedging or corrupting the store:
+
+- **Stale-break.** A lock untouched for 15s is assumed abandoned (its holder crashed) and removed.
+- **Ownership-checked release** *(defensive, untested)*. The lock file holds a token unique to each acquisition, and release unlinks only if that token is still there. Without it, a holder whose lock was broken as stale would delete its *successor's* live lock on the way out — and that cascades into no mutual exclusion at all until the queue drains, far worse than the single lost update the stale-break was trading for. Reaching the mismatch branch requires our own lock to be broken while we still hold it, against a millisecond-long critical section and a 15s stale threshold; removing the check leaves the whole suite green. Same standing as the atomic write below: kept for cost-versus-consequence, not claimed as verified.
+- **Bounded wait.** After 30s of contention a waiter gives up and proceeds **unlocked**, rather than looping. Never `continue` past the sleep and the deadline: an earlier version swallowed a failed `unlink` with a bare `continue`, and a lock that could not be removed (a directory at the path, an immutable flag, a Windows `EPERM`) then busy-looped forever at 100% CPU — hanging the CLI *and* the MCP server, since `withIndexLock` wraps every doc mutation.
+
+If the lock file cannot be created at all (read-only `.docs/`), the mutation proceeds unlocked. The lock is an optimization, never a new way for a write to fail or hang.
+</Callout>
+
+<Callout type="info">
+**Atomic index writes — defensive, not a fix for an observed failure.** `saveIndex` writes a pid-suffixed temp file and renames it over `_index.json`. Readers are deliberately unlocked and `loadIndex`'s miss path *saves an empty index*, so a reader catching a truncated file would persist an empty store over the corpus. An attempt to reproduce that (3000 concurrent 640 KB writes against a tight reader loop, on APFS) produced zero torn reads, so no test here asserts it and none is claimed. The rename costs nothing and the failure it forecloses is total; that is the whole argument.
+</Callout>
+
+<Callout type="info">
+**Anchors reconcile frontmatter → index on verify**: `drift` reads anchors from `_index.json`, while the `.mdx` frontmatter carries its own copy. Nothing used to reconcile them, so the obvious repair for a doc that describes a file it doesn't list — add the file to the doc's frontmatter — did nothing at all: drift kept reading the stale list and the doc stayed silently unmonitored. `recordVerification` now adopts the frontmatter's `relatedFiles`/`anchors`, matching the contract lint's `index-mismatch` rule already states (the `.mdx` is the record, the index is a cache). Only keys actually PRESENT **and decodable** are adopted, and the distinction is load-bearing. `parseFmArray`/`parseAnchors` return `[]` for anything they can't read, which is right for a *reader* and catastrophic for a *sync*: a doc whose author wrote the natural YAML block sequence
+
+```yaml
+relatedFiles:
+  - src/a.ts
+```
+
+yields a captured value of `""` → `[]` → the sync would have **deleted** both anchors while the `.mdx` still visibly claimed them, and drift would then call the doc clean forever. `decodeFmListStrict`/`decodeAnchorsStrict` return `null` for "present but not confidently readable", the index keeps its own value, and `verify` reports the field in `unsyncedAnchorFields` — because a silent no-op is the original bug this whole feature exists to fix. An explicit `relatedFiles: []` is still honored as the statement it is, and the legacy single-quoted array form still syncs.
 </Callout>
 
 <Callout type="info">

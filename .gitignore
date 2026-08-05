@@ -18,6 +18,11 @@ build/
 # Suite event spine (local telemetry — SUITE_CONTRACTS §2)
 .suite/
 
+# Transient doc-index files: the cross-process advisory lock and the temp file
+# behind saveIndex's atomic rename (see storage.ts). Never committed.
+.docs/_index.lock
+.docs/_index.json.*.tmp
+
 # Environment
 .env
 .env.local

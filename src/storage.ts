@@ -6,13 +6,18 @@
  * MCP tools are only needed for CREATE/UPDATE/DELETE operations.
  */
 
-import { readFile, writeFile, mkdir, unlink, readdir, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename, unlink, readdir, stat } from "node:fs/promises";
 import { join, dirname, basename } from "node:path";
 import { emitEvent, docUri } from "./events";
 
 // Get the .docs folder path relative to where the server runs
 const DOCS_ROOT = join(process.cwd(), ".docs");
 const INDEX_FILE = join(DOCS_ROOT, "_index.json");
+/**
+ * Cross-PROCESS advisory lock for `_index.json` (see `acquireIndexFileLock`).
+ * Lives next to the index so it travels with the store; git-ignored.
+ */
+const LOCK_FILE = join(DOCS_ROOT, "_index.lock");
 
 /**
  * A VALIDATED anchor from a doc to a precise region of code (PRODUCT_ROADMAP
@@ -195,12 +200,144 @@ export async function loadIndex(): Promise<DocIndex> {
 }
 
 /**
- * Save the index file
+ * Save the index file via write-temp-then-rename. `rename` within a directory is
+ * atomic, so a reader sees either the whole old index or the whole new one.
+ *
+ * DEFENSIVE, not a fix for an observed failure — worth stating plainly. The
+ * hazard it guards is real in principle: readers are deliberately UNLOCKED
+ * (`getDoc`/`listDocs`/`searchDocs` call `loadIndex()` without the index lock),
+ * and `loadIndex`'s miss path CREATES AND SAVES AN EMPTY INDEX — so a reader
+ * that caught a truncated `_index.json` would parse-fail and then persist an
+ * empty store over the whole corpus. But an attempt to reproduce it (3000
+ * concurrent 640 KB `writeFile`s against a tight reader loop, on APFS) produced
+ * zero torn reads, so there is no test here that can fail, and none is claimed.
+ * The rename costs nothing and the failure it forecloses is catastrophic; that
+ * is the whole argument for it.
+ *
+ * The temp name carries the pid AND a per-call counter: the pid alone is unique
+ * across processes but not within one, and `loadIndex`'s miss path calls this
+ * from OUTSIDE the index lock, so an unlocked reader's miss-save can overlap a
+ * locked mutation's save in the same process.
  */
+let saveIndexSeq = 0;
 export async function saveIndex(index: DocIndex): Promise<void> {
   await ensureDocsFolder();
   index.lastUpdated = Date.now();
-  await writeFile(INDEX_FILE, JSON.stringify(index, null, 2));
+  const tmp = `${INDEX_FILE}.${process.pid}.${saveIndexSeq++}.tmp`;
+  await writeFile(tmp, JSON.stringify(index, null, 2));
+  try {
+    await rename(tmp, INDEX_FILE);
+  } catch {
+    // Rename failed (exotic FS / cross-device) — clean up and fall back to the
+    // direct write rather than leaving the store un-updated.
+    try {
+      await unlink(tmp);
+    } catch {
+      /* best effort */
+    }
+    await writeFile(INDEX_FILE, JSON.stringify(index, null, 2));
+  }
+}
+
+/**
+ * How long a lock file may sit untouched before a waiter treats it as abandoned
+ * and breaks it. A holder that crashed (or was SIGKILLed) never unlinks its
+ * lock, and a permanently-wedged store is a worse failure than a rare race.
+ */
+const LOCK_STALE_MS = 15_000;
+/** How long to wait for a contended lock before giving up on it (liveness floor). */
+const LOCK_TIMEOUT_MS = 30_000;
+/** Poll interval while waiting; jittered so N waiters don't retry in lockstep. */
+const LOCK_POLL_MS = 15;
+
+/**
+ * Acquire the cross-PROCESS advisory lock on `_index.json`, returning its
+ * release function.
+ *
+ * The in-process mutex below is not enough. `catryna verify` is a whole process,
+ * and the natural way to work a large repair backlog is to fan it out across
+ * parallel agents — each shelling out to its own `catryna verify <path>`. Every
+ * one of those does load → mutate → save on the SAME shared index, and nothing
+ * in a per-process promise chain can see the others: the last writer wins and
+ * silently discards the baselines the others just recorded. That is exactly the
+ * footgun consumers hit, and the workaround (forbid agents from verifying at
+ * all, verify serially at the end) is a rule every consumer had to rediscover.
+ *
+ * `writeFile(..., {flag:"wx"})` is an atomic create-if-absent on POSIX and
+ * Windows alike, which is all an advisory lock needs. Two escape hatches keep a
+ * lock file from ever wedging the store permanently:
+ *
+ *   - STALE: a lock older than `LOCK_STALE_MS` is assumed abandoned and broken.
+ *   - TIMEOUT: after `LOCK_TIMEOUT_MS` of contention a waiter breaks the lock
+ *     and proceeds. Liveness beats purity here — the operations under the lock
+ *     are milliseconds long, so reaching this means something is already wrong.
+ *
+ * If the lock file cannot be created at all (read-only `.docs/`, exotic FS), the
+ * mutation proceeds unlocked rather than failing: the lock is an optimization
+ * over the previous behavior, never a new way for a write to fail.
+ */
+async function acquireIndexFileLock(): Promise<() => Promise<void>> {
+  await ensureDocsFolder();
+  const noop = async () => {};
+
+  // A token unique to THIS acquisition, written as the lock's contents. Release
+  // checks it before unlinking, so a holder whose lock was broken as stale can
+  // never delete the lock its successor is currently holding. Without that
+  // check one slow holder cascades: it breaks A's lock, A then unlinks B's,
+  // B unlinks C's, and mutual exclusion is gone for the rest of the queue —
+  // far worse than the single lost update the stale-break was trading for.
+  //
+  // DEFENSIVE AND UNTESTED, stated plainly: reaching the mismatch branch needs
+  // our own lock to be broken while we still hold it, and the critical section
+  // here is milliseconds against a 15s stale threshold. Removing the check
+  // leaves every test in the suite green. It stays because the cost is one
+  // read and the failure it forecloses is total loss of mutual exclusion.
+  const token = `${process.pid} ${Date.now()} ${Math.random().toString(36).slice(2)}`;
+  const releaseOwned = async () => {
+    try {
+      if ((await readFile(LOCK_FILE, "utf-8")).trim() !== token) return; // not ours
+      await unlink(LOCK_FILE);
+    } catch {
+      // Gone, or unreadable — either way there is nothing of ours to remove.
+    }
+  };
+
+  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+
+  for (;;) {
+    try {
+      await writeFile(LOCK_FILE, token, { flag: "wx" });
+      return releaseOwned;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code !== "EEXIST") return noop;
+    }
+
+    // Held by someone else. Break it only if it is genuinely STALE — a holder
+    // that crashed never unlinks, and a permanently wedged store is worse than
+    // a rare race. Any failure here (stat or unlink) is swallowed and falls
+    // through to the sleep below: it MUST NOT `continue`, because a `continue`
+    // here skips both the sleep and the deadline check, and an unlink that
+    // keeps failing (a directory at the lock path, an immutable flag, Windows
+    // EPERM on a file another process holds open) then busy-loops forever at
+    // 100% CPU with no escape — hanging the CLI and the whole MCP session.
+    try {
+      const st = await stat(LOCK_FILE);
+      if (Date.now() - st.mtimeMs > LOCK_STALE_MS) await unlink(LOCK_FILE);
+    } catch {
+      // Vanished, or unremovable. Retry politely either way.
+    }
+
+    // Hard liveness guarantee: give up waiting and proceed UNLOCKED rather than
+    // loop. This restores exactly the pre-lock behavior for a pathological case
+    // (>30s of contention on operations that take milliseconds means something
+    // is already badly wrong) and keeps the promise made above — the lock is an
+    // optimization, never a new way for a write to fail or hang.
+    if (Date.now() >= deadline) return noop;
+
+    await new Promise((r) =>
+      setTimeout(r, LOCK_POLL_MS + Math.floor(Math.random() * LOCK_POLL_MS)),
+    );
+  }
 }
 
 /**
@@ -212,8 +349,13 @@ export async function saveIndex(index: DocIndex): Promise<void> {
  * second overwrite drops the first entry (the `.mdx` file survives on disk, but
  * vanishes from the index). This promise-chain mutex forces each mutation to
  * run only after the previous one has fully settled, so every mutation loads
- * the latest persisted index. The store is single-process (SUITE_CONTRACTS's
- * single-machine model), so an in-process lock is sufficient — no file lock.
+ * the latest persisted index.
+ *
+ * The chain only covers THIS process, so it is paired with a lock FILE
+ * (`acquireIndexFileLock`) that covers concurrent `catryna verify` processes —
+ * the parallel-agent repair pattern. Both layers are needed: the chain because
+ * a lock file cannot be re-entered by the same process's overlapping awaits,
+ * the file because the chain cannot see another process at all.
  *
  * A rejected mutation must not wedge the chain: the tail always continues via a
  * settled (resolved) link, while the original result — value or rejection — is
@@ -221,7 +363,15 @@ export async function saveIndex(index: DocIndex): Promise<void> {
  */
 let indexMutationChain: Promise<unknown> = Promise.resolve();
 function withIndexLock<T>(mutate: () => Promise<T>): Promise<T> {
-  const result = indexMutationChain.then(mutate, mutate);
+  const guarded = async (): Promise<T> => {
+    const release = await acquireIndexFileLock();
+    try {
+      return await mutate();
+    } finally {
+      await release();
+    }
+  };
+  const result = indexMutationChain.then(guarded, guarded);
   indexMutationChain = result.then(
     () => undefined,
     () => undefined,
@@ -446,6 +596,137 @@ export function setFrontmatterScalars(content: string, fields: Record<string, st
     else lines[idx] = encoded;
   }
   return open + lines.join("\n") + close + content.slice(fmMatch[0].length);
+}
+
+/**
+ * Decode a frontmatter list value ONLY when the decoding is certain — the
+ * strict counterpart to `parseFmArray`, which returns `[]` for anything it
+ * can't read.
+ *
+ * That difference is the whole point. `parseFmArray`'s lenient `[]` is right for
+ * a READER (an undecodable anchors list means "no anchors I can act on"), and
+ * catastrophically wrong for the frontmatter → index SYNC, where `[]` is
+ * indistinguishable from a deliberate "this doc anchors nothing" and would
+ * DELETE working anchors. Concretely, a doc whose author wrote the natural YAML
+ *
+ *     relatedFiles:
+ *       - src/a.ts
+ *
+ * yields a captured value of `""`, which `parseFmArray` reads as `[]` — so a
+ * plain `catryna verify` would erase both anchors from the index while the .mdx
+ * still visibly claims them, and drift would then report the doc clean forever.
+ * Refusing beats guessing: `null` means "present but not confidently readable",
+ * and the caller leaves the index alone and says so.
+ *
+ * Accepted: a bracketed list that is valid JSON; a bracketed list in the legacy
+ * single-quoted/comma-split form; and `[]` as an explicit empty. Refused:
+ * everything else, including block sequences and bare scalars.
+ */
+function decodeFmListStrict(value: string): string[] | null {
+  const v = value.trim();
+  if (!v.startsWith("[") || !v.endsWith("]")) return null;
+  if (/^\[\s*\]$/.test(v)) return []; // an explicit, deliberate empty list
+  try {
+    const parsed = JSON.parse(v);
+    if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) return parsed;
+  } catch {
+    // Not JSON — fall through to the legacy comma-split form below.
+  }
+  const legacy = parseFmArray(v);
+  return legacy.length > 0 ? legacy : null;
+}
+
+/**
+ * The anchors equivalent of `decodeFmListStrict`. Same contract: `null` means
+ * "present but not confidently readable", never "empty".
+ *
+ * A YAML flow mapping (`anchors: [{file: "x"}]` — unquoted keys, which the
+ * writer never emits but a human naturally types) fails `JSON.parse`, and an
+ * entry that survives parsing but not `normalizeAnchor` is equally suspect. Both
+ * are refused rather than silently collapsing to "this doc anchors nothing".
+ */
+function decodeAnchorsStrict(value: string): DocAnchor[] | null {
+  const v = value.trim();
+  if (!v.startsWith("[") || !v.endsWith("]")) return null;
+  if (/^\[\s*\]$/.test(v)) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(v);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) return null;
+  const normalized = parsed.map(normalizeAnchor).filter((a): a is DocAnchor => a !== null);
+  // Entries went in and nothing came out — the author meant something we can't
+  // read. Refuse rather than delete.
+  return normalized.length > 0 ? normalized : null;
+}
+
+/**
+ * The anchor-bearing frontmatter fields of a raw `.mdx`, as AUTHORED.
+ *
+ * Three distinct outcomes per field, and keeping them distinct is what makes the
+ * sync safe:
+ *   - key ABSENT               → the field is missing from the result entirely
+ *   - key present, decodable   → the decoded list (possibly a deliberate `[]`)
+ *   - key present, UNREADABLE  → the field is missing from the result, and its
+ *                                name appears in `unreadable` so the caller can
+ *                                say out loud that it declined to sync it
+ *
+ * `relatedFiles` paths are returned verbatim, NOT normalized: a `src\foo.ts`
+ * entry must reach the index as authored so `catryna lint`'s `windows-anchor`
+ * rule still reports it. Structured `anchors` are the exception — they go
+ * through `normalizeAnchor` (and so `normalizeAnchorPath`) as the price of being
+ * validated, so a backslash in an `anchors` entry is silently portable-ised and
+ * `windows-anchor` will not see it after a verify.
+ */
+export function readFrontmatterAnchorFields(rawContent: string): {
+  relatedFiles?: string[];
+  anchors?: DocAnchor[];
+  /** Field names present in the frontmatter that could not be decoded. */
+  unreadable: string[];
+} {
+  const content = rawContent.replace(/\r\n/g, "\n");
+  const m = content.match(/^---\n([\s\S]*?)\n---\n/);
+  const out: { relatedFiles?: string[]; anchors?: DocAnchor[]; unreadable: string[] } = {
+    unreadable: [],
+  };
+  if (!m) return out;
+  for (const line of m[1].split("\n")) {
+    const kv = line.match(/^(\w+):\s*(.*)$/);
+    if (!kv) continue;
+    if (kv[1] === "relatedFiles") {
+      const v = decodeFmListStrict(kv[2]);
+      if (v) out.relatedFiles = v;
+      else out.unreadable.push("relatedFiles");
+    } else if (kv[1] === "anchors") {
+      const v = decodeAnchorsStrict(kv[2]);
+      if (v) out.anchors = v;
+      else out.unreadable.push("anchors");
+    }
+  }
+  return out;
+}
+
+/** Same members, same order — for deciding whether a sync actually changed anything. */
+function sameStringList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/** Structural equality for anchor lists (both are already normalized). */
+function sameAnchorList(a: DocAnchor[], b: DocAnchor[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((x, i) => {
+      const y = b[i];
+      return (
+        x.file === y.file &&
+        x.symbol === y.symbol &&
+        (x.lines?.[0] ?? null) === (y.lines?.[0] ?? null) &&
+        (x.lines?.[1] ?? null) === (y.lines?.[1] ?? null)
+      );
+    })
+  );
 }
 
 /**
@@ -949,13 +1230,32 @@ export async function updateDoc(
  * frontmatter write is SURGICAL (setFrontmatterScalars) so it preserves the body
  * verbatim — verifying a rich doc never risks the lossy block round-trip.
  *
- * Returns the updated metadata, or null if no doc has that `path`.
+ * It ALSO reconciles the doc's anchors frontmatter → index, which is what makes
+ * hand-editing `relatedFiles` in a `.mdx` actually take effect. Fields the
+ * frontmatter declares but this cannot confidently decode are LEFT ALONE and
+ * reported in `unreadableAnchorFields` — never treated as empty, and never
+ * silently ignored either (see `readFrontmatterAnchorFields`).
+ *
+ * Returns the updated metadata (null if no doc has that `path`) alongside any
+ * anchor fields it declined to sync.
  */
+export interface RecordVerificationResult {
+  meta: DocMetadata | null;
+  /**
+   * Anchor fields present in the .mdx frontmatter that could not be decoded, so
+   * the index kept its own values. A caller MUST surface this: the whole point
+   * of the sync is that a hand-edited anchor takes effect, and silently not
+   * taking effect is the original bug.
+   */
+  unreadableAnchorFields: string[];
+}
+
 export async function recordVerification(
   path: string,
   commit: string,
   verifiedAt: string,
-): Promise<DocMetadata | null> {
+): Promise<RecordVerificationResult> {
+  const unreadableAnchorFields: string[] = [];
   const meta = await withIndexLock<DocMetadata | null>(async () => {
     const index = await loadIndex();
     const i = index.docs.findIndex((d) => d.path === path);
@@ -964,6 +1264,47 @@ export async function recordVerification(
     const m = { ...index.docs[i] };
     m.verifiedCommit = commit;
     m.verifiedAt = verifiedAt;
+
+    // RECONCILE ANCHORS, frontmatter → index, before recording the baseline.
+    //
+    // `catryna drift` reads anchors from `_index.json`; the `.mdx` frontmatter
+    // carries its own copy. Until now nothing reconciled them, so the obvious
+    // repair for a doc that describes a file it doesn't list — add the file to
+    // the doc's frontmatter — did nothing at all. Drift kept reading the old
+    // list, the doc stayed silently unmonitored, and the person who "fixed" it
+    // had no way to tell. The .mdx is the record and the index is a cache (the
+    // contract `catryna lint`'s index-mismatch rule already states), so verify —
+    // the one command every repaired doc passes through — is where the cache
+    // catches up.
+    //
+    // Only fields actually PRESENT AND DECODABLE in the frontmatter are adopted.
+    // A doc whose frontmatter predates the `anchors` field must not have its
+    // index anchors wiped by an absent key — and a field written in a form this
+    // cannot read (a YAML block sequence, a flow mapping) must not be mistaken
+    // for an empty list and delete working anchors. Both are left alone; the
+    // undecodable ones are reported so verify can say so out loud.
+    //
+    // Read the .mdx ONCE here: the surgical frontmatter write below needs the
+    // same bytes, and re-reading would let the two disagree if the file changed
+    // in between.
+    let raw: string | null = null;
+    try {
+      raw = await readFile(docPathToFilePath(path), "utf-8");
+    } catch {
+      // Missing/unreadable .mdx — keep the index's existing anchors. The
+      // baseline write below still happens; the index carries these fields.
+    }
+    if (raw !== null) {
+      const authored = readFrontmatterAnchorFields(raw);
+      if (authored.relatedFiles && !sameStringList(authored.relatedFiles, m.relatedFiles ?? [])) {
+        m.relatedFiles = authored.relatedFiles;
+      }
+      if (authored.anchors && !sameAnchorList(authored.anchors, m.anchors ?? [])) {
+        m.anchors = authored.anchors;
+      }
+      unreadableAnchorFields.push(...authored.unreadable);
+    }
+
     // Re-baselining reconciles the doc against HEAD, so it is no longer
     // drift-suspect: clear the consumer-set marker. Without this it sticks
     // forever, and `consume` then suppresses every future code.changed on this
@@ -974,19 +1315,20 @@ export async function recordVerification(
     // Surgically rewrite the .mdx frontmatter, body untouched. Best-effort on
     // the file: the index is the source of truth for these fields, so a
     // missing/unreadable .mdx still records the baseline in the index.
-    try {
-      const raw = await readFile(docPathToFilePath(path), "utf-8");
-      await writeFile(
-        docPathToFilePath(path),
-        setFrontmatterScalars(raw, {
-          verifiedCommit: commit,
-          verifiedAt,
-          driftSuspectSince: "",
-          driftSuspectReason: "",
-        }),
-      );
-    } catch {
-      // File gone/unreadable — the index entry below still carries the baseline.
+    if (raw !== null) {
+      try {
+        await writeFile(
+          docPathToFilePath(path),
+          setFrontmatterScalars(raw, {
+            verifiedCommit: commit,
+            verifiedAt,
+            driftSuspectSince: "",
+            driftSuspectReason: "",
+          }),
+        );
+      } catch {
+        // Unwritable — the index entry below still carries the baseline.
+      }
     }
 
     index.docs[i] = m;
@@ -994,7 +1336,7 @@ export async function recordVerification(
     return m;
   });
 
-  if (!meta) return null;
+  if (!meta) return { meta: null, unreadableAnchorFields };
 
   // Durable in our store — announce it (§2, best-effort; trust = "verified").
   await emitEvent("doc.verified", [docUri(path)], {
@@ -1003,7 +1345,7 @@ export async function recordVerification(
     trust: "verified",
   });
 
-  return meta;
+  return { meta, unreadableAnchorFields };
 }
 
 /**

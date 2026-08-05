@@ -136,7 +136,8 @@ cd frontend && bun install && bun run dev
 # CLI (no MCP needed) - run from any repo with a .docs/ folder
 catryna doctor          # health + suite discovery handshake
 catryna drift           # which docs the code has outgrown (exit 3 = gate)
-catryna verify <path>   # re-baseline a doc against HEAD
+catryna verify <path>…  # re-baseline one or more docs against HEAD (batch = one command)
+catryna verify --all-drifted   # re-baseline everything drift currently flags
 catryna repair <path>   # repair bundle: doc content + anchor diffs
 catryna lint            # are the docs well-formed? (exit 3 = gate)
 ```
@@ -390,6 +391,13 @@ The reason Catryna exists: docs that contradict the code are worse than none.
   by default.
 - `catryna drift` exits **3** when anything is drifted or broken, so it is a CI
   gate. A Stop hook nags at the end of a session that left docs drifted.
+- Drift walks git HISTORY, so it cannot see uncommitted work. **Commit code
+  before repairing docs.** `drift`/`repair` print the uncommitted file count;
+  `drift --dirty-is-error` also exits 3 on a dirty tree.
+- `verify` reconciles the `.mdx` frontmatter's `relatedFiles`/`anchors` into
+  `_index.json` (the file is the record, the index is a cache), which is what
+  makes a hand-edited anchor take effect. It is safe to run concurrently:
+  index writes take a cross-process lock (`.docs/_index.lock`).
 
 ### Cross-platform
 

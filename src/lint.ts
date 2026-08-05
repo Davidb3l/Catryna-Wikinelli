@@ -23,6 +23,13 @@
  *                       that render as literal text mid-document.
  * - `unclosed-fence`  — an odd number of ``` swallows the rest of the doc into a
  *                       code block.
+ * - `empty-fence`     — fence BALANCE is not fence CONTENT. A doc can be
+ *                       structurally perfect and almost entirely empty: one real
+ *                       corpus had a doc with 12 blank fences, including the
+ *                       ```mermaid block that was supposed to BE the architecture
+ *                       diagram, and it passed a full repair pass reported clean
+ *                       throughout. It renders as headings wrapped around blank
+ *                       boxes, and only a human going looking ever found it.
  * - `missing-anchor`  — an anchor pointing at a path not on disk documents
  *                       nothing. Drift calls this `broken` ONLY once the doc has
  *                       a baseline; lint catches it immediately.
@@ -74,6 +81,7 @@ export type LintRule =
   | "frontmatter"
   | "unclosed-callout"
   | "unclosed-fence"
+  | "empty-fence"
   | "missing-anchor"
   | "windows-anchor"
   | "index-mismatch"
@@ -102,6 +110,65 @@ export function stripCode(body: string): string {
     .replace(/```[\s\S]*?```/g, "")
     .replace(/~~~[\s\S]*?~~~/g, "")
     .replace(/`[^`\n]*`/g, "");
+}
+
+/** One fenced block with nothing but whitespace inside it. */
+export interface EmptyFence {
+  /** 1-based line of the OPENING fence, relative to the text passed in. */
+  line: number;
+  /** The info string (`mermaid`, `typescript`, …); "" for a bare ```. */
+  info: string;
+}
+
+/**
+ * Fenced blocks whose body is entirely blank.
+ *
+ * Pairs fences the way CommonMark does, which matters more than it sounds:
+ *
+ *   - A closing fence must use the SAME marker character, be AT LEAST AS LONG as
+ *     the opening one, and carry nothing but whitespace after it. A naive
+ *     "any line starting with ```" pairs the outer ```` of a wrapped example
+ *     with the inner ``` and reports a fully-populated diagram as two empty
+ *     blocks — the exact false positive that makes a validator get ignored.
+ *   - A backtick info string may not itself contain a backtick, so ` ```` ` used
+ *     as a wrapper opens one fence rather than being read as an opener plus text.
+ *   - `~~~` fences count too. `stripCode` already honors them, and a hollow
+ *     `~~~mermaid` block is exactly as hollow as a ```mermaid one.
+ *
+ * A fence still OPEN at EOF is deliberately not reported: that is
+ * `unclosed-fence`'s finding, and reporting both would name one defect twice.
+ */
+export function scanFences(body: string): { empty: EmptyFence[]; unclosedAt: number | null } {
+  const lines = body.split("\n");
+  const empty: EmptyFence[] = [];
+  let open: (EmptyFence & { marker: string; width: number }) | null = null;
+  let inner: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\s*(`{3,}|~{3,})(.*)$/);
+    if (open === null) {
+      if (!m) continue;
+      const marker = m[1][0];
+      if (marker === "`" && m[2].includes("`")) continue; // not a valid opener
+      open = { line: i + 1, info: m[2].trim(), marker, width: m[1].length };
+      inner = [];
+      continue;
+    }
+    const closes =
+      m !== null && m[1][0] === open.marker && m[1].length >= open.width && m[2].trim() === "";
+    if (closes) {
+      if (inner.every((l) => l.trim() === "")) empty.push({ line: open.line, info: open.info });
+      open = null;
+      continue;
+    }
+    inner.push(lines[i]);
+  }
+  return { empty, unclosedAt: open ? open.line : null };
+}
+
+/** Just the empty blocks — the shape the `empty-fence` rule reports. */
+export function findEmptyFences(body: string): EmptyFence[] {
+  return scanFences(body).empty;
 }
 
 /** Split frontmatter from body. `null` frontmatter means none was parseable. */
@@ -165,14 +232,50 @@ export function lintContent(path: string, raw: string): LintIssue[] {
     });
   }
 
-  const fences = (body.match(/^\s*```/gm) ?? []).length;
-  if (fences % 2 !== 0) {
+  // Both fence rules come from ONE scanner. `unclosed-fence` used to count
+  // fence-opening lines and flag an odd total, which is wrong in both
+  // directions: a 4-backtick block wrapping a ``` example has an even count and
+  // is fine, but so does `​```ts` followed by a `​``` trailing-text` line that
+  // does not actually close it. The parity heuristic called the first malformed
+  // and the second fine — and it is an ERROR severity, so its false positives
+  // gated CI on legitimate docs.
+  //
+  // Line numbers are file-relative (the frontmatter block is counted back in),
+  // so they can be jumped to directly.
+  const offset = raw.slice(0, raw.length - body.length).split("\n").length - 1;
+  const { empty: emptyFences, unclosedAt } = scanFences(body);
+
+  if (unclosedAt !== null) {
     issues.push({
       path,
       rule: "unclosed-fence",
       severity: "error",
-      message: `odd number of code fences (${fences})`,
+      message: `code fence opened at line ${unclosedAt + offset} is never closed`,
       hint: "An unclosed ``` swallows the remainder of the document into a code block.",
+    });
+  }
+
+  // Empty fences. Reported as ONE issue per doc, not one per fence: the failure
+  // is a hollow document, and a doc with a dozen blank blocks should read as a
+  // dozen-block problem, not flood the report.
+  //
+  // WARNING, not error. An empty fence is legitimate in a template or a doc
+  // being drafted, and a gate that fails on it trains people to bypass the gate.
+  // It must still SURFACE — silence is what let a hollow doc pass as well-formed.
+  if (emptyFences.length > 0) {
+    const shown = emptyFences
+      .slice(0, 5)
+      .map((f) => `line ${f.line + offset}${f.info ? ` (${f.info})` : ""}`);
+    const more = emptyFences.length - shown.length;
+    issues.push({
+      path,
+      rule: "empty-fence",
+      severity: "warning",
+      message:
+        `${emptyFences.length} empty code fence(s): ` +
+        shown.join(", ") +
+        (more > 0 ? `, +${more} more` : ""),
+      hint: "An empty fence renders as a blank box — headings and prose wrapped around nothing. Fill it in or drop the fence; balance alone does not make a doc well-formed.",
     });
   }
 

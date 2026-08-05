@@ -7,8 +7,8 @@ relatedFiles: ["src/drift.ts", "src/cli.ts", "src/tools/drift.ts", "src/consume.
 anchors: []
 evidence: []
 refs: []
-verifiedCommit: "6bcedfbbb336b71142bf0e546d2e5e136793305c"
-verifiedAt: "2026-08-01T23:44:42.372Z"
+verifiedCommit: "f233411fd939079df2f726a65851b5d1fc5690c6"
+verifiedAt: "2026-08-05T06:28:59.494Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 createdAt: 1785609420180
@@ -70,25 +70,25 @@ That returns the doc's current content plus the git diff of each changed anchor 
 1. **One doc per `repair` call.** `repair` with no path bundles every drifted doc — multi-MB.
 2. **Verify every claim you write against source you actually read.** Diffs alone mislead; read the current file.
 3. **Surgical edits.** Fix what's wrong, keep the doc's structure and voice. A doc that's still accurate should be left alone — "no change needed" is a valid, valuable outcome.
-4. **Frontmatter: only `relatedFiles` may change.** Never `id`/`title`/`createdAt`/`verifiedCommit`/etc. The parent syncs the index afterward.
-5. **No `catryna verify`, no git writes, no MCP tools.** See the traps below.
+4. **Frontmatter: only `relatedFiles`/`anchors` may change.** Never `id`/`title`/`createdAt`/`verifiedCommit`/etc. `verify` reconciles the anchors into the index afterward.
+5. **No `catryna verify`, no git writes, no MCP tools.** Verify is now safe to run concurrently, but keeping it with the parent means one place to read the result — see the traps below.
 6. **Finish each doc fully before starting the next**, so an interrupted agent still leaves usable work.
 
 ### Traps that will bite you
 
+- **Commit the code before repairing the docs.** `drift` walks git history from each doc's `verifiedCommit`, so it is structurally blind to uncommitted work. In one real pass, seven agents changed code across the repo, `catryna drift` reported **3** drifted docs with all of it uncommitted, and reported **20** once the same work was committed — 11 of them invisible to three repair agents that had just finished. `drift` and `repair` now print a `note:` line with the uncommitted file count; `catryna drift --dirty-is-error` makes it a CI gate.
 - **MCP cwd trap.** A Catryna MCP server resolves `.docs/` from *its own* working directory. If you drive a repair from a different repo's session, `mcp__catryna__*` writes to the **wrong repo's store**. Agents must edit `.mdx` files directly.
-- **`verify` must be serial, and run by the parent.** Index writes from separate processes aren't covered by the in-process lock; parallel `verify` can lose entries.
-- **Sync the index after hand-edits.** Drift reads `relatedFiles` from `.docs/_index.json`, not from frontmatter. If agents re-anchor docs, copy the new arrays into the index before verifying, or the new anchors are ignored.
+- **Agents must get disjoint doc paths.** The index is protected; the `.mdx` files are not. Two agents editing the same doc clobber each other.
 - **No trailing newline is normal.** Catryna's serializer omits it — it is *not* a truncation signal. Compare against `git show HEAD:<file>` before believing any truncation heuristic.
 - **Agents can die mid-wave** (usage limits). Validate the survivors (frontmatter parses, only `relatedFiles` changed, code fences balanced, ends at a natural boundary), commit them, re-dispatch the rest.
 - **Seed later waves with what earlier waves learned** (renamed subsystems, new enums/roles, gating rules). Agents converge instead of re-deriving, which saves tokens and keeps terminology consistent.
 
 ### Parent integration checklist (per wave)
 
-1. Validate every edited doc: frontmatter parses, only `relatedFiles` differs, code fences balanced, all anchor paths exist.
-2. Spot-check the load-bearing claims yourself — especially from any agent that died before reporting.
-3. Sync `relatedFiles` (and any tag fixes) into `.docs/_index.json`.
-4. `catryna verify` each doc, serially.
+1. `catryna lint` — frontmatter parses, fences balanced and **not hollow** (`empty-fence`), anchor paths resolve. Read the warnings, not just the ✓.
+2. Diff every edited doc: only `relatedFiles`/`anchors` and prose should differ.
+3. Spot-check the load-bearing claims yourself — especially from any agent that died before reporting.
+4. `catryna verify <path> <path> …` — one batch command for the whole wave. It re-baselines each doc **and** reconciles its frontmatter anchors into `.docs/_index.json`, so hand-edited anchors take effect. (`catryna verify --all-drifted` re-baselines everything currently flagged; only reach for it once every doc in the set has been judged — verify does not read prose.)
 5. `catryna drift` (no `--since`) to confirm the wave is clean.
 6. Commit and push.
 
@@ -98,11 +98,14 @@ After repairs, **plain `catryna drift` is the source of truth**. Re-running with
 
 Docs with empty `relatedFiles` can't drift at all — they're invisible to the tool. Identify the 2–5 source files each one actually describes and set them. Prefer **real entry points and modules** over per-service `CLAUDE.md` files: agent-instruction files churn constantly and produce noisy false drift.
 
+The same blindness applies to a doc that describes a file it doesn't *list*: it will never flag, no matter how wrong it gets, and its silence reads exactly like health. When a doc turns out to have been stale while reporting clean, fixing its anchors is the real repair. Edit them in the `.mdx` frontmatter and run `catryna verify` — that is what pushes them into `_index.json`, which is what drift actually reads.
+
 ## Phase 5 — Keep it clean
 
 Once a repo is at 0 drifted, maintenance is nearly free:
 
-- `catryna drift` in CI — exits **3** when anything is drifted or broken.
+- `catryna drift` in CI — exits **3** when anything is drifted or broken. Add `--dirty-is-error` where CI should also refuse an uncommitted tree, since drift cannot see into one.
+- `catryna lint` in CI — exits **3** on errors; its warnings (`empty-fence`, `orphan-file`) are the early signal that a doc is rotting structurally rather than factually.
 - The **Stop hook** nags at the end of any session that left docs drifted.
 - `catryna consume` marks docs drift-suspect in real time from hayven's `code.changed` events.
 - When you change code a doc describes: update the doc, then `catryna verify <path>`.

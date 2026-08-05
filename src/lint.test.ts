@@ -106,6 +106,125 @@ describe("lintContent", () => {
   });
 });
 
+/**
+ * `lint` used to check fence BALANCE, not fence CONTENT — so a doc could be
+ * structurally perfect and almost entirely empty and still be reported
+ * well-formed. One real doc had 12 blank fences, including the ```mermaid block
+ * that was supposed to BE the architecture diagram, and survived a full repair
+ * pass reported clean throughout. A human going looking is what found it.
+ */
+describe("empty-fence — the hollow-doc rule", () => {
+  const fence = (info: string, body: string) => "```" + info + "\n" + body + "```\n";
+  const doc = (body: string) => `---\na: 1\n---\n\n${body}`;
+  const rules = (raw: string) => lintContent("d", raw).map((i) => i.rule);
+
+  test("an empty ```mermaid block is reported", () => {
+    const issues = lintContent("d", doc(`# Architecture\n\n${fence("mermaid", "")}`));
+    expect(issues.map((i) => i.rule)).toEqual(["empty-fence"]);
+    expect(issues[0].message).toContain("1 empty code fence(s)");
+    expect(issues[0].message).toContain("(mermaid)");
+  });
+
+  test("a fence containing only whitespace is still empty", () => {
+    expect(rules(doc(fence("typescript", "   \n\n\t\n")))).toEqual(["empty-fence"]);
+  });
+
+  test("NOT over-firing: a doc whose fences all have content passes", () => {
+    const raw = doc(
+      `# T\n\n${fence("mermaid", "flowchart TD\n  A --> B\n")}\n${fence("typescript", "const a = 1;\n")}`,
+    );
+    expect(lintContent("d", raw)).toEqual([]);
+  });
+
+  test("one issue per DOC, listing the lines — not one issue per fence", () => {
+    const raw = doc(
+      `# T\n\n${fence("mermaid", "")}\n${fence("ts", "")}\n${fence("ts", "const ok = 1;\n")}`,
+    );
+    const issues = lintContent("d", raw);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].message).toContain("2 empty code fence(s)");
+  });
+
+  test("line numbers are FILE-relative, counting the frontmatter", () => {
+    // frontmatter is 3 lines (---, a: 1, ---), then a blank, then the fence.
+    const issues = lintContent("d", `---\na: 1\n---\n\n${fence("mermaid", "")}`);
+    expect(issues[0].message).toContain("line 5");
+  });
+
+  test("warning, never an error — it must surface without gating", () => {
+    const issues = lintContent("d", doc(fence("mermaid", "")));
+    expect(issues[0].severity).toBe("warning");
+    // And it is not structural, so `catryna verify` still records a baseline:
+    // an in-progress doc must remain verifiable.
+    expect(STRUCTURAL_RULES.has("empty-fence" as never)).toBe(false);
+  });
+
+  test("an UNCLOSED trailing fence is unclosed-fence's finding alone", () => {
+    // Naming one defect twice trains people to ignore the report.
+    expect(rules(doc("```mermaid\n"))).toEqual(["unclosed-fence"]);
+  });
+
+  /**
+   * REGRESSION — a 4-backtick wrapper around a populated example.
+   *
+   * A naive "any line starting with ```" pairs the outer ```` with the inner
+   * ```, and reports a fully-populated mermaid diagram as TWO empty blocks.
+   * Fence parity stays even so `unclosed-fence` says nothing, meaning the doc
+   * lint-passed before the rule existed and would be called hollow after — the
+   * precise false positive that gets a validator ignored.
+   */
+  test("a 4-backtick wrapper around a populated fence is not hollow", () => {
+    const raw = doc(
+      "````markdown\n```mermaid\nflowchart TD\n  A-->B\n```\n````\n",
+    );
+    expect(lintContent("d", raw)).toEqual([]);
+  });
+
+  test("...but a 4-backtick wrapper around nothing still is", () => {
+    expect(rules(doc("````markdown\n````\n"))).toEqual(["empty-fence"]);
+  });
+
+  test("~~~ fences are checked too (stripCode already honors them)", () => {
+    expect(rules(doc("~~~mermaid\n~~~\n"))).toEqual(["empty-fence"]);
+    expect(lintContent("d", doc("~~~mermaid\nflowchart TD\n  A-->B\n~~~\n"))).toEqual([]);
+  });
+
+  test("a fence closed by a LONGER run of the same marker still closes", () => {
+    // CommonMark: the closing fence may be longer than the opening one.
+    expect(rules(doc("```ts\nconst a = 1;\n``````\n"))).toEqual([]);
+  });
+
+  test("a ``` line with trailing text is CONTENT, not a close", () => {
+    // Only whitespace may follow a closing fence. The block below therefore has
+    // a body and a real closing fence, and is entirely well-formed. The old
+    // parity count called it unclosed (3 fence-opening lines, odd) — an
+    // error-severity false positive that gated CI on a legitimate doc.
+    expect(lintContent("d", doc("```ts\n``` not a close\n```\n"))).toEqual([]);
+  });
+
+  test("unclosed-fence still fires on a genuinely unclosed fence, and names the line", () => {
+    const issues = lintContent("d", doc("# T\n\n```ts\nconst a = 1;\n"));
+    expect(issues.map((i) => i.rule)).toEqual(["unclosed-fence"]);
+    // frontmatter (3 lines) + blank + "# T" + blank => the fence opens at line 7
+    expect(issues[0].message).toContain("line 7");
+  });
+
+  test("an even number of fence lines is not automatically well-formed", () => {
+    // Two openers, no closer: parity says even, the scanner says unclosed.
+    expect(rules(doc("````md\n```ts\nconst a = 1;\n"))).toEqual(["unclosed-fence"]);
+  });
+
+  test("the gate does not fail on it (warnings never gate)", async () => {
+    const dir = await project([
+      { path: "hollow", body: `---\nid: x\npath: "hollow"\ntitle: "Doc 0"\n---\n\n# T\n\n\`\`\`mermaid\n\`\`\`\n` },
+    ]);
+    const r = await runLint({ json: false, cwd: dir });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("empty-fence");
+    expect(r.stdout).toContain("WARNINGS");
+  });
+});
+
 describe("lintDocs — corpus rules", () => {
   test("clean corpus reports no issues", async () => {
     const dir = await project([{ path: "a", relatedFiles: ["src/a.ts"] }], { "src/a.ts": "" });

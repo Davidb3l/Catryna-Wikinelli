@@ -51,10 +51,15 @@ that contradicts the code is worse than no doc, because an agent will believe it
 | `get_doc_coverage` | Coverage report: documented vs undocumented source files |
 | `get_undocumented_modules` | List source files with no doc referencing them |
 
-Equivalent CLI (any shell, no MCP needed): `catryna drift`, `catryna verify <path>`,
-`catryna repair <path>`, `catryna doctor`, `catryna consume`. All accept `--json`
-(exactly one JSON object on stdout). `catryna drift` exits **3** when anything is
+Equivalent CLI (any shell, no MCP needed): `catryna drift`, `catryna verify <path>...`,
+`catryna repair <path>`, `catryna lint`, `catryna doctor`, `catryna consume`. All accept
+`--json` (exactly one JSON object on stdout). `catryna drift` exits **3** when anything is
 drifted or broken, so it works as a CI gate.
+
+For a whole backlog of drifted docs — repairing in waves, fanning out across
+agents, re-baselining a set — use the **`catryna-maintenance`** skill instead.
+It covers the traps this one doesn't: uncommitted code being invisible to drift,
+anchors that never flag, and blanket-verifying prose nobody read.
 
 ## Anchors — how drift knows what a doc covers
 
