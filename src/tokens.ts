@@ -470,14 +470,26 @@ function codeRanges(text: string): Array<[number, number]> {
   return ranges;
 }
 
+/** One token that was actually rendered, and where its value landed. */
+interface RenderedOccurrence {
+  /** The verbatim token, e.g. `{{count: src/*.ts}}`. */
+  raw: string;
+  /** What it evaluated to, e.g. `28`. */
+  value: string;
+  /** Bounds of `value` in the RENDERED text (not the source). */
+  renderedStart: number;
+  renderedEnd: number;
+}
+
 /**
- * Replace every computed token in `text` with its evaluated value. A failed or
- * unknown token is left VERBATIM (raw, self-describing) — never a stale number.
- * Tokens inside code fences or inline code spans are left alone (see
- * `codeRanges`). Identical tokens are evaluated once.
+ * Render tokens AND report where each value landed — the inverse map
+ * `retokenize` needs to put the queries back.
  */
-export async function renderComputedTokens(text: string, root: string): Promise<string> {
-  if (!text || !text.includes("{{")) return text;
+async function renderWithMap(
+  text: string,
+  root: string,
+): Promise<{ rendered: string; occurrences: RenderedOccurrence[] }> {
+  if (!text || !text.includes("{{")) return { rendered: text, occurrences: [] };
 
   const protectedRanges = codeRanges(text);
   const isProtected = (i: number) =>
@@ -497,7 +509,7 @@ export async function renderComputedTokens(text: string, root: string): Promise<
     jobs.set(key, { kind, arg });
     hits.push({ start: m.index, end: m.index + m[0].length, key, raw: m[0] });
   }
-  if (hits.length === 0) return text;
+  if (hits.length === 0) return { rendered: text, occurrences: [] };
 
   const values = new Map<string, string | null>();
   for (const [key, j] of jobs) {
@@ -505,13 +517,123 @@ export async function renderComputedTokens(text: string, root: string): Promise<
     values.set(key, r.ok && r.value !== undefined ? r.value : null);
   }
 
-  // Splice from the end so earlier indices stay valid.
-  let out = text;
-  for (let i = hits.length - 1; i >= 0; i--) {
-    const h = hits[i];
+  // Build forward so the rendered positions come out directly.
+  let out = "";
+  let cursor = 0;
+  const occurrences: RenderedOccurrence[] = [];
+  for (const h of hits) {
     const v = values.get(h.key);
-    if (v === null || v === undefined) continue; // failed → keep raw
-    out = out.slice(0, h.start) + v + out.slice(h.end);
+    if (v === null || v === undefined) continue; // failed → the raw token stays
+    out += text.slice(cursor, h.start);
+    const renderedStart = out.length;
+    out += v;
+    occurrences.push({ raw: h.raw, value: v, renderedStart, renderedEnd: out.length });
+    cursor = h.end;
+  }
+  out += text.slice(cursor);
+  return { rendered: out, occurrences };
+}
+
+/**
+ * Replace every computed token in `text` with its evaluated value. A failed or
+ * unknown token is left VERBATIM (raw, self-describing) — never a stale number.
+ * Tokens inside code fences or inline code spans are left alone (see
+ * `codeRanges`). Identical tokens are evaluated once.
+ */
+export async function renderComputedTokens(text: string, root: string): Promise<string> {
+  return (await renderWithMap(text, root)).rendered;
+}
+
+/** How much surrounding text must still match for a token to be restored. */
+const RETOKENIZE_CONTEXT = 24;
+
+/**
+ * Put the QUERIES back after a round-trip — the inverse of `renderComputedTokens`.
+ *
+ * `get_doc` hands an agent RENDERED blocks ("Has 28 files"). If the agent edits
+ * the prose and calls `update_doc`, that rendered number is what gets written to
+ * disk, silently converting a live token into the frozen literal it was created
+ * to replace. This restores the token wherever the surrounding text shows the
+ * value was carried over rather than deliberately rewritten.
+ *
+ * DELIBERATELY CONSERVATIVE, because a wrong restore corrupts a user's prose —
+ * strictly worse than the stale number it is preventing:
+ *
+ *   - The exact case is handled exactly. If `newText` is byte-identical to what
+ *     rendering `oldRaw` produced, the block was untouched and the original raw
+ *     is returned verbatim. This is the common path and involves no guessing.
+ *   - Otherwise each token is restored only where its immediately-preceding
+ *     CONTEXT and its value both still appear, scanning forward in document
+ *     order so repeated values can't be matched out of sequence.
+ *   - Anything unmatched is LEFT ALONE. A value the agent genuinely rewrote
+ *     ("28" → "30") won't match, so their edit survives as a literal rather than
+ *     being silently reverted to a token that renders something else.
+ *
+ * Never substitutes a value that was not produced by a token in `oldRaw`, so a
+ * number the agent typed can never be turned into a query.
+ */
+export async function retokenize(
+  newText: string,
+  oldRaw: string,
+  root: string,
+): Promise<string> {
+  if (!newText || !oldRaw.includes("{{")) return newText;
+  const { rendered, occurrences } = await renderWithMap(oldRaw, root);
+  if (occurrences.length === 0) return newText;
+
+  // Untouched relative to what the reader was handed → restore exactly.
+  if (newText === rendered) return oldRaw;
+
+  let out = "";
+  let searchFrom = 0;
+  let prevRenderedEnd = 0;
+  for (const occ of occurrences) {
+    // Context stops at the previous token's value so one token's restore can
+    // never consume another's anchor.
+    const ctxStart = Math.max(prevRenderedEnd, occ.renderedStart - RETOKENIZE_CONTEXT);
+    const ctx = rendered.slice(ctxStart, occ.renderedStart);
+    const needle = ctx + occ.value;
+    const idx = newText.indexOf(needle, searchFrom);
+    prevRenderedEnd = occ.renderedEnd;
+    if (idx === -1) continue; // context changed — leave the agent's text alone
+    out += newText.slice(searchFrom, idx + ctx.length);
+    out += occ.raw;
+    searchFrom = idx + needle.length;
+  }
+  out += newText.slice(searchFrom);
+  return out;
+}
+
+/**
+ * Restore tokens across a block list, pairing blocks BY INDEX with the doc's
+ * previous blocks. Index pairing is the honest limit: an agent that reorders or
+ * inserts blocks simply gets no restore for the shifted ones (their text is
+ * preserved untouched), which is the safe direction to fail.
+ */
+export async function retokenizeBlocks(
+  newBlocks: Array<{ type: string; data?: Record<string, unknown> }>,
+  oldBlocks: Array<{ type: string; data?: Record<string, unknown> }>,
+  root: string,
+): Promise<Array<{ type: string; data?: Record<string, unknown> }>> {
+  const out = [];
+  for (let i = 0; i < newBlocks.length; i++) {
+    const nb = newBlocks[i];
+    const ob = oldBlocks[i];
+    const oldContent = ob?.data?.content;
+    const newContent = nb?.data?.content;
+    if (
+      !CODE_BLOCK_TYPES.has(nb.type) &&
+      typeof oldContent === "string" &&
+      typeof newContent === "string" &&
+      oldContent.includes("{{")
+    ) {
+      out.push({
+        ...nb,
+        data: { ...nb.data, content: await retokenize(newContent, oldContent, root) },
+      });
+    } else {
+      out.push(nb);
+    }
   }
   return out;
 }

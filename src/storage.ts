@@ -9,6 +9,7 @@
 import { readFile, writeFile, mkdir, rename, unlink, readdir, stat } from "node:fs/promises";
 import { join, dirname, basename } from "node:path";
 import { emitEvent, docUri } from "./events";
+import { retokenizeBlocks } from "./tokens";
 
 // Get the .docs folder path relative to where the server runs
 const DOCS_ROOT = join(process.cwd(), ".docs");
@@ -1192,6 +1193,24 @@ export async function updateDoc(
     let blocks: Block[];
     if (updates.blocks) {
       blocks = updates.blocks;
+      // RE-TOKENIZE (CAT-2). `get_doc` hands out RENDERED blocks, so an agent
+      // doing get_doc → edit → update_doc would write the rendered numbers back
+      // to disk, converting a live `{{loc: src/}}` into the frozen literal it
+      // exists to replace. Restore the query wherever the surrounding text shows
+      // the value was carried over rather than deliberately rewritten.
+      //
+      // Best-effort and conservative: any failure, or any span the restorer
+      // isn't sure about, leaves the caller's text exactly as supplied. Writing
+      // the literal is a regression; corrupting prose would be worse.
+      try {
+        const existing = await readFile(docPathToFilePath(path), "utf-8");
+        if (existing.includes("{{")) {
+          const oldBlocks = parseMdx(existing).blocks;
+          blocks = (await retokenizeBlocks(blocks, oldBlocks, process.cwd())) as Block[];
+        }
+      } catch {
+        // No previous file, or an unreadable one — nothing to restore from.
+      }
     } else {
       try {
         const existing = await readFile(docPathToFilePath(path), "utf-8");

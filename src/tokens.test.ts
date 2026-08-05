@@ -14,6 +14,8 @@ import {
   evaluateToken,
   renderComputedTokens,
   renderTokensInBlocks,
+  retokenize,
+  retokenizeBlocks,
   COMPUTED_TOKEN_RE,
 } from "./tokens";
 
@@ -331,6 +333,88 @@ describe("renderTokensInBlocks", () => {
     // Untouched blocks pass through unchanged.
     expect(out[0]).toEqual(blocks[0]);
     expect(out[2]).toEqual(blocks[2]);
+  });
+});
+
+/**
+ * The round-trip: `get_doc` renders, an agent edits, `update_doc` writes back.
+ * Without restoring the query, that path silently converts a live token into the
+ * frozen literal it was created to replace. The non-firing cases matter as much
+ * as the firing ones — a wrong restore corrupts prose, which is worse than the
+ * stale number it prevents.
+ */
+describe("retokenize — putting the query back", () => {
+  test("an UNTOUCHED block round-trips to the original raw, byte for byte", async () => {
+    const root = await project({ "src/a.ts": "x\n", "src/b.ts": "y\n" });
+    const raw = "This repo has {{count: src/*.ts}} files and {{loc: src/}} lines.";
+    const rendered = await renderComputedTokens(raw, root);
+    expect(rendered).toBe("This repo has 2 files and 2 lines.");
+    expect(await retokenize(rendered, raw, root)).toBe(raw);
+  });
+
+  test("an edit ELSEWHERE keeps the edit and restores the token", async () => {
+    const root = await project({ "src/a.ts": "x\n", "src/b.ts": "y\n" });
+    const raw = "This repo has {{count: src/*.ts}} files. Old sentence.";
+    const rendered = await renderComputedTokens(raw, root);
+    const edited = rendered.replace("Old sentence.", "A brand new sentence here.");
+    expect(await retokenize(edited, raw, root)).toBe(
+      "This repo has {{count: src/*.ts}} files. A brand new sentence here.",
+    );
+  });
+
+  test("a value the agent DELIBERATELY rewrote is left as their literal", async () => {
+    const root = await project({ "src/a.ts": "x\n", "src/b.ts": "y\n" });
+    const raw = "This repo has {{count: src/*.ts}} files.";
+    const edited = "This repo has 99 files.";
+    // No silent revert to a token that would render something else.
+    expect(await retokenize(edited, raw, root)).toBe("This repo has 99 files.");
+  });
+
+  test("a number the agent TYPED is never turned into a query", async () => {
+    const root = await project({ "src/a.ts": "x\n", "src/b.ts": "y\n" });
+    const raw = "Repo has {{count: src/*.ts}} files.";
+    const rendered = await renderComputedTokens(raw, root); // "Repo has 2 files."
+    const edited = rendered + " We also support 2 other things.";
+    const out = await retokenize(edited, raw, root);
+    expect(out).toBe("Repo has {{count: src/*.ts}} files. We also support 2 other things.");
+    // Exactly one token restored — the trailing "2" stayed a plain number.
+    expect(out.match(/\{\{/g)).toHaveLength(1);
+  });
+
+  test("repeated identical values restore in document order, not out of sequence", async () => {
+    const root = await project({ "src/a.ts": "x\n", "src/b.ts": "y\n" });
+    const raw = "First {{count: src/*.ts}} here. Second {{count: src/*.ts}} there.";
+    const rendered = await renderComputedTokens(raw, root);
+    expect(rendered).toBe("First 2 here. Second 2 there.");
+    expect(await retokenize(rendered, raw, root)).toBe(raw);
+  });
+
+  test("a failed token was never rendered, so nothing is restored over it", async () => {
+    const root = await project({ "src/a.ts": "x\n" });
+    const raw = "Escapes {{loc: ../../etc}} stays raw.";
+    const rendered = await renderComputedTokens(raw, root);
+    expect(rendered).toBe(raw);
+    expect(await retokenize(rendered, raw, root)).toBe(raw);
+  });
+
+  test("text with no prior tokens is returned untouched", async () => {
+    const root = await project({ "src/a.ts": "x\n" });
+    expect(await retokenize("plain new prose", "plain old prose", root)).toBe("plain new prose");
+  });
+
+  test("retokenizeBlocks pairs by index and skips code blocks", async () => {
+    const root = await project({ "src/a.ts": "x\n", "src/b.ts": "y\n" });
+    const oldBlocks = [
+      { type: "code", data: { content: "literal {{count: src/*.ts}}" } },
+      { type: "text", data: { content: "Has {{count: src/*.ts}} files" } },
+    ];
+    const newBlocks = [
+      { type: "code", data: { content: "literal {{count: src/*.ts}}" } },
+      { type: "text", data: { content: "Has 2 files" } },
+    ];
+    const out = await retokenizeBlocks(newBlocks, oldBlocks, root);
+    expect(out[0].data?.content).toBe("literal {{count: src/*.ts}}"); // untouched
+    expect(out[1].data?.content).toBe("Has {{count: src/*.ts}} files"); // restored
   });
 });
 

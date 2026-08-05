@@ -51,9 +51,18 @@ A *glob* matching nothing is a real answer (`0`); a *plain path* that doesn't ex
 
 Tokens inside **fenced blocks and inline code spans** are never evaluated, and `get_doc` skips `code`/`mermaid` blocks entirely. Without this the feature corrupted its own documentation: the syntax table above rendered as `| 28 | how many files match the glob | …`, destroying the reference a reader came for. `catryna lint` already reads code spans as text, so this also keeps the two halves of the feature agreeing on what a code span means.
 
-<Callout type="info">
-`get_doc` returns **rendered** blocks. If an agent does `get_doc` → edit → `update_doc`, the rendered numbers get written back into the `.mdx`, converting a live token into the frozen literal it was meant to replace. Edit `.docs/*.mdx` directly, or use `propose_doc_repair`, which reads the raw file.
-</Callout>
+## The round-trip: `update_doc` puts the query back
+
+`get_doc` returns **rendered** blocks, so a naive `get_doc` → edit → `update_doc` would write the rendered number to disk, converting a live token into exactly the frozen literal it exists to replace. `update_doc` therefore **re-tokenizes**: it renders the doc's previous content, and wherever the incoming text still carries a rendered value in its original context, the query is restored.
+
+It is deliberately conservative, because a wrong restore corrupts prose — worse than the stale number it prevents:
+
+- **The untouched case is exact.** If a block is byte-identical to what rendering produced, the original raw is restored verbatim. No guessing.
+- **Otherwise each token needs its context AND its value** still present, matched forward in document order so repeated values can't pair out of sequence.
+- **Anything unmatched is left alone.** A value the agent genuinely rewrote (`28` → `30`) won't match, so their edit survives as a literal rather than being silently reverted to a query that renders something else.
+- **A number the agent typed is never converted into a query** — only values a token in the previous version actually produced are candidates.
+
+Blocks pair **by index**, which is the honest limit: reorder or insert blocks and the shifted ones simply get no restore, their text preserved untouched. `propose_doc_repair` reads the raw file, so the documented repair loop never saw this problem at all.
 
 ## Why the vocabulary is tiny (the security posture)
 

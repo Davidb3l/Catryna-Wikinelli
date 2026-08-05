@@ -109,7 +109,7 @@ Every anchor path goes through `normalizeAnchorPath`: backslashes become `/`, du
 | `createDoc()` | Creates new MDX file, updates index, emits `doc.created` |
 | `getDoc()` | Reads and parses MDX file |
 | `listDocs()` | Returns filtered docs from index |
-| `updateDoc()` | Modifies MDX file and index, emits `doc.updated` |
+| `updateDoc()` | Modifies MDX file and index, emits `doc.updated`. Re-tokenizes incoming blocks against the previous version (see below) |
 | `deleteDoc()` | Removes MDX file and index entry |
 | `searchDocs()` | Full-text search across content |
 | `recordVerification()` | Records the drift baseline, reconciles frontmatter anchors into the index, clears drift-suspect, emits `doc.verified` |
@@ -155,6 +155,10 @@ yields a captured value of `""` → `[]` → the sync would have **deleted** bot
 
 <Callout type="info">
 **Surgical frontmatter writes**: `recordVerification` (and the consumer's suspect marking) use `setFrontmatterScalars`, which rewrites only the requested `key: value` lines and leaves every body byte alone — so recording a baseline never risks the lossy block round-trip.
+</Callout>
+
+<Callout type="info">
+**Re-tokenizing on update**: `get_doc` hands out blocks with computed-fact tokens already RENDERED, so a `get_doc` → edit → `update_doc` round-trip would write the rendered number to disk and freeze a live `{{loc: src/}}` into the literal it exists to replace. `updateDoc` therefore runs `retokenizeBlocks` against the doc's previous content, restoring each query where the surrounding text shows the value was carried over rather than deliberately rewritten. Best-effort and conservative in both directions: an untouched block is restored exactly, anything ambiguous is left as the caller supplied it, and a number the caller typed is never turned into a query. See [features/computed-facts](../features/computed-facts).
 </Callout>
 
 ## Block Types
