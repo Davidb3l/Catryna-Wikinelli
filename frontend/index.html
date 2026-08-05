@@ -7,32 +7,50 @@
     <title>Catryna Wikinelli — Developer Docs</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
+      // THEME ARCHITECTURE
+      //
+      // Every palette colour resolves through a CSS variable rather than a
+      // literal, so a named theme can re-skin the whole app by swapping one set
+      // of variables on <html data-theme="…"> — no rewriting of the hundreds of
+      // `dark:bg-zinc-900`-style classes across the UI. The `<alpha-value>`
+      // placeholder keeps Tailwind's slash-opacity modifiers working, so
+      // `bg-zinc-900/50` still yields a translucent themed colour.
+      //
+      // `white` and `black` are DELIBERATELY not remapped: `bg-white` is a
+      // surface while `text-white` is ink on a coloured button, and one variable
+      // cannot be both. Atelier overrides `.bg-white` directly in index.css.
+      const v = (name) => `rgb(var(--c-${name}) / <alpha-value>)`;
+      const scale = (prefix, steps) =>
+        Object.fromEntries(steps.map((s) => [s, v(`${prefix}-${s}`)]));
+
       tailwind.config = {
         darkMode: 'class',
         theme: {
           extend: {
             colors: {
-              // Stripe-inspired light mode palette
-              surface: {
-                DEFAULT: '#F6F9FC',
-                light: '#FAFBFC',
-              },
-              navy: {
-                DEFAULT: '#0A2540',
-                light: '#425466',
-              },
-              accent: {
-                DEFAULT: '#635BFF',
-                hover: '#5851EA',
-              }
-            }
+              // Neutral spine of the UI.
+              zinc: scale('zinc', [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]),
+              // Brand.
+              surface: { DEFAULT: v('surface'), light: v('surface-light') },
+              navy:    { DEFAULT: v('navy'),    light: v('navy-light') },
+              accent:  { DEFAULT: v('accent'),  hover: v('accent-hover') },
+              // Semantic — the trust surface (verified / stale / broken) lives
+              // here, so each theme tunes them to sit correctly on its canvas.
+              green:  scale('green',  [100, 200, 300, 500, 700, 900, 950]),
+              amber:  scale('amber',  [50, 100, 200, 300, 500, 700, 800, 900, 950]),
+              red:    scale('red',    [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]),
+              indigo: scale('indigo', [100, 400, 500, 600, 900, 950]),
+            },
+            fontFamily: {
+              display: ['var(--font-display)'],
+            },
           }
         }
       }
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Hanken+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://esm.sh/tldraw@2.0.0-canary.c41d8e14798e/tldraw.css" rel="stylesheet">
     <link href="https://esm.sh/reactflow@11.10.1/dist/style.css" rel="stylesheet">
     <style>

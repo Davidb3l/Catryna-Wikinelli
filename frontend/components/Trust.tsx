@@ -80,17 +80,28 @@ const DRIFT_BADGE: Record<string, { label: string; title: string; cls: string; d
   },
 };
 
+/**
+ * Which states deserve MOTION. A pulsing dot means "this needs you": stale and
+ * broken qualify, verified deliberately does not. If everything pulses, nothing
+ * does — the same reason the lint rules stay quiet on things that aren't wrong.
+ */
+const NEEDS_ATTENTION = new Set<string>(['drifted', 'broken']);
+
 export const VerifiedBadge: React.FC<{ status: DriftStatus | null; compact?: boolean }> = ({ status, compact }) => {
-  const b = DRIFT_BADGE[status ?? 'unknown'];
+  const key = status ?? 'unknown';
+  const b = DRIFT_BADGE[key];
+  // `is-calm` suppresses the pulse; the CSS also kills it under
+  // prefers-reduced-motion, so this is an editorial choice, not the only guard.
+  const dotCls = `catryna-status-dot ${NEEDS_ATTENTION.has(key) ? '' : 'is-calm'} ${b.dot}`;
   if (compact) {
-    return <span title={b.title} className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${b.dot}`} />;
+    return <span title={b.title} className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${dotCls}`} />;
   }
   return (
     <span
       title={b.title}
       className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wide ${b.cls}`}
     >
-      <span className={`w-1.5 h-1.5 rounded-full ${b.dot}`} />
+      <span className={`w-1.5 h-1.5 rounded-full ${dotCls}`} />
       {b.label}
     </span>
   );

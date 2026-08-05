@@ -131,8 +131,22 @@ export interface NavItem {
   children?: NavItem[];
 }
 
+/**
+ * A named visual identity, distinct from the light/dark MODE.
+ *
+ * `classic` is the original Stripe-inspired look and honours `theme`
+ * (light/dark/system). `atelier` is the catrynawiki.com identity and is dark by
+ * design — it ignores `theme`, because a light variant of a deliberately
+ * nocturnal palette loses what makes it work.
+ */
+export type ThemeStyle = 'classic' | 'atelier';
+
 export interface UserPreferences {
   theme: 'light' | 'dark' | 'system';
+  /** Optional for backward compatibility: a stored pref from before this
+   *  existed loads as `classic`, so nobody's viewer changes appearance on
+   *  upgrade. */
+  themeStyle?: ThemeStyle;
   whiteboardStyle: 'clean' | 'sketchy';
   fontSize: 'small' | 'medium' | 'large';
   editorLineNumbers: boolean;

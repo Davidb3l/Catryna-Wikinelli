@@ -1,4 +1,363 @@
 /* =============================================================================
+   THEME SYSTEM
+   -----------------------------------------------------------------------------
+   Two named themes, both keeping the light/dark story straight:
+
+     CLASSIC  the original Stripe-inspired look. Light + dark + system, exactly
+              as before — this file changes nothing about how it renders.
+     ATELIER  the catrynawiki.com identity: a nocturnal indigo-black canvas, the
+              Turbo Flow gradient (pink -> purple -> blue) as signature, warm
+              Bun-cream accents, Fraunces for display type. Dark ONLY, because
+              the site is dark by design and a light version of a deliberately
+              nocturnal palette loses the thing that makes it good.
+
+   Every value is an "R G B" triple, not a hex, because Tailwind composes them as
+   `rgb(var(--c-x) / <alpha-value>)` so slash-opacity keeps working.
+   ============================================================================= */
+
+:root {
+  /* --- CLASSIC (Tailwind's neutral scale + the Stripe brand colours) --------- */
+  --c-zinc-50:  250 250 250;
+  --c-zinc-100: 244 244 245;
+  --c-zinc-200: 228 228 231;
+  --c-zinc-300: 212 212 216;
+  --c-zinc-400: 161 161 170;
+  --c-zinc-500: 113 113 122;
+  --c-zinc-600: 82 82 91;
+  --c-zinc-700: 63 63 70;
+  --c-zinc-800: 39 39 42;
+  --c-zinc-900: 24 24 27;
+  --c-zinc-950: 9 9 11;
+
+  --c-surface:       246 249 252;
+  --c-surface-light: 250 251 252;
+  --c-navy:          10 37 64;
+  --c-navy-light:    66 84 102;
+  --c-accent:        99 91 255;
+  --c-accent-hover:  88 81 234;
+
+  --c-green-100: 220 252 231;  --c-green-200: 187 247 208;
+  --c-green-300: 134 239 172;  --c-green-500: 34 197 94;
+  --c-green-700: 21 128 61;    --c-green-900: 20 83 45;
+  --c-green-950: 5 46 22;
+
+  --c-amber-50:  255 251 235;  --c-amber-100: 254 243 199;
+  --c-amber-200: 253 230 138;  --c-amber-300: 252 211 77;
+  --c-amber-500: 245 158 11;   --c-amber-700: 180 83 9;
+  --c-amber-800: 146 64 14;    --c-amber-900: 120 53 15;
+  --c-amber-950: 69 26 3;
+
+  --c-red-50:  254 242 242;  --c-red-100: 254 226 226;
+  --c-red-200: 254 202 202;  --c-red-300: 252 165 165;
+  --c-red-400: 248 113 113;  --c-red-500: 239 68 68;
+  --c-red-600: 220 38 38;    --c-red-700: 185 28 28;
+  --c-red-800: 153 27 27;    --c-red-900: 127 29 29;
+  --c-red-950: 69 10 10;
+
+  --c-indigo-100: 224 231 255;  --c-indigo-400: 129 140 248;
+  --c-indigo-500: 99 102 241;   --c-indigo-600: 79 70 229;
+  --c-indigo-900: 49 46 129;    --c-indigo-950: 30 27 75;
+
+  /* Typography + signature. Classic keeps a single sans for everything. */
+  --font-display: 'Inter', system-ui, sans-serif;
+  --font-body:    'Inter', system-ui, sans-serif;
+  --grad: linear-gradient(112deg, #635BFF 4%, #635BFF 96%);
+  --reading-measure: 74ch;
+}
+
+/* --- ATELIER --------------------------------------------------------------
+   Mapped from the site's tokens. The app is always in `.dark` under Atelier, so
+   the `dark:` shades are what actually paint: zinc-950 is the canvas, zinc-900
+   the panels, zinc-800 the raised/hover state, zinc-100..400 the ink ramp.
+   Borders are the site's translucent lilac flattened onto the panel colour so
+   they stay solid RGB (Tailwind needs a triple, not an rgba). */
+[data-theme='atelier'] {
+  --c-zinc-950: 13 13 22;    /* --bg        #0d0d16  page canvas   */
+  --c-zinc-900: 22 22 42;    /* --surface   #16162a  panels, cards */
+  --c-zinc-800: 28 28 52;    /* --surface-2 #1c1c34  raised, hover */
+  --c-zinc-700: 58 47 92;    /* lit border                        */
+  --c-zinc-600: 74 66 110;
+  --c-zinc-500: 109 104 143; /* --text-faint #6d688f              */
+  --c-zinc-400: 168 163 200; /* --text-dim   #a8a3c8              */
+  --c-zinc-300: 200 194 232;
+  --c-zinc-200: 43 38 68;    /* border in light-slot use          */
+  --c-zinc-100: 244 241 255; /* --text       #f4f1ff              */
+  --c-zinc-50:  250 248 255;
+
+  --c-surface:       22 22 42;
+  --c-surface-light: 28 28 52;
+  --c-navy:          244 241 255;  /* ink flips: always-dark theme */
+  --c-navy-light:    168 163 200;
+  --c-accent:        168 83 186;   /* --purple #a853ba             */
+  --c-accent-hover:  186 104 202;
+
+  /* Trust surface, tuned for the indigo-black canvas: luminous ink on a deep,
+     desaturated ground so a badge reads at a glance without glowing. */
+  --c-green-300: 122 240 190;  --c-green-950: 6 40 32;
+  --c-green-900: 12 66 52;     --c-green-500: 52 211 153;
+  --c-green-200: 150 245 205;  --c-green-100: 20 80 62;
+  --c-green-700: 122 240 190;
+
+  --c-amber-300: 255 180 84;   --c-amber-950: 50 28 6;   /* --amber #ffb454 */
+  --c-amber-900: 82 48 12;     --c-amber-500: 255 180 84;
+  --c-amber-200: 255 205 138;  --c-amber-100: 66 40 12;
+  --c-amber-50:  50 28 6;      --c-amber-700: 255 180 84;
+  --c-amber-800: 100 60 16;
+
+  --c-red-300: 255 138 168;    --c-red-950: 58 12 28;    /* --pink #e92a67  */
+  --c-red-900: 92 20 46;       --c-red-500: 233 42 103;
+  --c-red-400: 244 96 140;     --c-red-200: 255 176 198;
+  --c-red-100: 76 18 38;       --c-red-50:  58 12 28;
+  --c-red-600: 233 42 103;     --c-red-700: 255 138 168;
+  --c-red-800: 118 26 58;
+
+  --c-indigo-400: 122 170 250;  --c-indigo-500: 42 138 246;  /* --blue */
+  --c-indigo-600: 42 138 246;   --c-indigo-950: 12 30 62;
+  --c-indigo-900: 20 48 92;     --c-indigo-100: 20 48 92;
+
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body:    'Hanken Grotesk', 'Inter', system-ui, sans-serif;
+  --grad: linear-gradient(112deg, #e92a67 4%, #a853ba 48%, #2a8af6 96%);
+  --grad-soft: linear-gradient(112deg, rgba(233,42,103,0.16), rgba(168,83,186,0.16) 50%, rgba(42,138,246,0.16));
+  --cream: #fbf0df;
+}
+
+/* Body font follows the theme. */
+body { font-family: var(--font-body); }
+
+/* `white` is not a themed variable (see index.html), so Atelier retargets the
+   surface use of it directly. Attribute selector out-specifies Tailwind's
+   single-class rule, so no !important is needed. */
+[data-theme='atelier'] .bg-white { background-color: rgb(var(--c-zinc-900)); }
+
+/* --- Atelier atmosphere ---------------------------------------------------
+   The site's two background layers: soft radial glows, then a fine film grain.
+   Both are fixed, pointer-events:none, and sit behind the app chrome. */
+[data-theme='atelier'] body::before {
+  content: "";
+  position: fixed;
+  inset: -20% -20% auto -20%;
+  height: 90vh;
+  background:
+    radial-gradient(60% 55% at 22% 12%, rgba(233,42,103,0.13), transparent 62%),
+    radial-gradient(55% 50% at 82% 8%,  rgba(42,138,246,0.12), transparent 60%),
+    radial-gradient(70% 60% at 55% 40%, rgba(168,83,186,0.10), transparent 68%);
+  filter: blur(8px);
+  pointer-events: none;
+  z-index: 0;
+}
+[data-theme='atelier'] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+[data-theme='atelier'] #root { position: relative; z-index: 1; }
+
+/* Display type: headings in the app chrome and the doc body pick up Fraunces. */
+[data-theme='atelier'] h1,
+[data-theme='atelier'] h2,
+[data-theme='atelier'] h3 {
+  font-family: var(--font-display);
+  font-weight: 560;
+  letter-spacing: -0.02em;
+}
+
+/* The gradient signature, reserved for primary actions and the wordmark so it
+   stays a signature rather than decoration. */
+[data-theme='atelier'] .bg-accent {
+  background-image: var(--grad);
+  background-size: 160% 160%;
+  animation: catryna-grad-drift 9s ease-in-out infinite;
+  box-shadow: 0 8px 26px -14px rgba(233, 42, 103, 0.65),
+              0 2px 10px -6px rgba(42, 138, 246, 0.5);
+}
+@keyframes catryna-grad-drift {
+  0%, 100% { background-position: 0% 50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+.catryna-gradient-text {
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Selection + focus ring follow the theme's signature colours. */
+[data-theme='atelier'] ::selection { background: #e92a67; color: #fff; }
+[data-theme='atelier'] :focus-visible {
+  outline: 2px solid #a853ba;
+  outline-offset: 2px;
+}
+
+/* =============================================================================
+   READING EXPERIENCE
+   -----------------------------------------------------------------------------
+   Applies to BOTH themes — this is legibility, not decoration. Scoped to
+   `.catryna-doc` (the doc column) so app chrome is unaffected.
+   ============================================================================= */
+
+/* A comfortable measure. Long lines are the single biggest readability tax in a
+   docs viewer, and the column was previously as wide as the viewport allowed. */
+.catryna-doc p,
+.catryna-doc li,
+.catryna-doc blockquote {
+  max-width: var(--reading-measure);
+}
+
+/* Vertical rhythm: headings need far more space ABOVE than below, so a section
+   visually binds to the text it introduces rather than floating between two. */
+.catryna-doc [class*='text-2xl'],
+.catryna-doc [class*='text-xl'] {
+  margin-top: 2.25rem;
+  margin-bottom: 0.65rem;
+  scroll-margin-top: 5rem;
+}
+.catryna-doc > *:first-child { margin-top: 0; }
+
+.catryna-doc p { line-height: 1.72; }
+
+/* Inline code: distinguishable without shouting. */
+.catryna-doc code:not(pre code) {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.875em;
+  padding: 0.12em 0.38em;
+  border-radius: 5px;
+  background: rgb(var(--c-zinc-100) / 0.85);
+  border: 1px solid rgb(var(--c-zinc-200) / 0.7);
+}
+.dark .catryna-doc code:not(pre code) {
+  background: rgb(var(--c-zinc-800) / 0.7);
+  border-color: rgb(var(--c-zinc-700) / 0.6);
+}
+
+/* Tables: readable rows beat a grid of boxes. */
+.catryna-doc table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+.catryna-doc th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgb(var(--c-zinc-500));
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid rgb(var(--c-zinc-200));
+}
+.dark .catryna-doc th { border-bottom-color: rgb(var(--c-zinc-800)); }
+.catryna-doc td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid rgb(var(--c-zinc-100));
+  vertical-align: top;
+}
+.dark .catryna-doc td { border-bottom-color: rgb(var(--c-zinc-800) / 0.6); }
+.catryna-doc tbody tr { transition: background-color 0.15s; }
+.catryna-doc tbody tr:hover { background: rgb(var(--c-zinc-100) / 0.5); }
+.dark .catryna-doc tbody tr:hover { background: rgb(var(--c-zinc-800) / 0.35); }
+
+/* Links earn an underline on hover rather than living underlined. */
+.catryna-doc a {
+  color: rgb(var(--c-accent));
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  transition: text-decoration-color 0.18s;
+  text-decoration-color: transparent;
+  text-decoration-line: underline;
+}
+.catryna-doc a:hover { text-decoration-color: currentColor; }
+
+/* Atelier: display type for doc headings, and a gradient hairline under the
+   title so the signature appears once per page instead of everywhere. */
+[data-theme='atelier'] .catryna-doc h1,
+[data-theme='atelier'] .catryna-doc [class*='text-2xl'],
+[data-theme='atelier'] .catryna-doc [class*='text-xl'] {
+  font-family: var(--font-display);
+  font-weight: 560;
+  letter-spacing: -0.018em;
+}
+[data-theme='atelier'] .catryna-doc h1 { position: relative; padding-bottom: 0.5rem; }
+[data-theme='atelier'] .catryna-doc h1::after {
+  content: "";
+  position: absolute;
+  left: 0; bottom: 0;
+  width: 5.5rem; height: 2px;
+  border-radius: 2px;
+  background: var(--grad);
+}
+
+/* =============================================================================
+   TRUST SURFACE
+   -----------------------------------------------------------------------------
+   Drift state is the whole point of Catryna, so a badge has to read at a glance
+   and never be mistaken for decoration. A live pulse on the STALE and BROKEN
+   dots draws the eye to exactly the docs that need attention; verified stays
+   calm on purpose.
+   ============================================================================= */
+
+.catryna-status-dot { position: relative; }
+.catryna-status-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: inherit;
+  animation: catryna-pulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes catryna-pulse {
+  0%   { transform: scale(1);   opacity: 0.55; }
+  70%  { transform: scale(2.6); opacity: 0; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+/* A calm state must not pulse — motion should mean "look here". */
+.catryna-status-dot.is-calm::after { animation: none; content: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .catryna-status-dot::after { animation: none; content: none; }
+}
+
+/* =============================================================================
+   SEARCH PALETTE
+   ============================================================================= */
+
+/* Result rows: a clear active/hover lane with a leading accent marker, so
+   keyboard travel is obvious rather than implied by a faint background. */
+.catryna-result {
+  position: relative;
+  transition: background-color 0.14s, transform 0.14s;
+}
+.catryna-result::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 50%;
+  width: 2px; height: 0;
+  border-radius: 2px;
+  background: var(--grad);
+  transform: translateY(-50%);
+  transition: height 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.catryna-result:hover::before,
+.catryna-result[data-active='true']::before { height: 62%; }
+
+/* The palette itself: a soft lift off the backdrop. */
+.catryna-palette {
+  box-shadow: 0 24px 70px -24px rgba(0, 0, 0, 0.45),
+              0 2px 8px -2px rgba(0, 0, 0, 0.2);
+}
+[data-theme='atelier'] .catryna-palette {
+  box-shadow: 0 24px 80px -28px rgba(233, 42, 103, 0.28),
+              0 8px 40px -20px rgba(42, 138, 246, 0.22),
+              0 0 0 1px rgba(168, 131, 220, 0.14);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .catryna-result, .catryna-result::before { transition: none; }
+}
+
+/* =============================================================================
    Mobile Responsiveness & Touch Support
    ============================================================================= */
 

@@ -149,7 +149,7 @@ const CommandPalette: React.FC<{ isOpen: boolean; onClose: () => void; onSelect:
 
   return (
     <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[10vh] sm:pt-[15vh] bg-black/40 backdrop-blur-sm px-3 sm:px-4" onClick={onClose}>
-      <div className="w-full max-w-xl bg-white dark:bg-zinc-900 rounded-lg sm:rounded-xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300" onClick={e => e.stopPropagation()}>
+      <div className="catryna-palette w-full max-w-xl bg-white dark:bg-zinc-900 rounded-lg sm:rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 border-b border-zinc-100 dark:border-zinc-800">
           {loading ? <Loader2 size={18} className="text-zinc-400 animate-spin shrink-0" /> : <Search size={18} className="text-zinc-400 shrink-0" />}
           <input autoFocus value={query} onChange={e => setQuery(e.target.value)} className="flex-1 bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 text-sm min-w-0" placeholder="Search docs..." />
@@ -162,7 +162,7 @@ const CommandPalette: React.FC<{ isOpen: boolean; onClose: () => void; onSelect:
               {query.length >= 2 ? 'No results found' : 'No docs yet. Create some with Claude Code!'}
             </div>
           ) : displayDocs.map(doc => (
-            <div key={doc.id || doc.path} onClick={() => { onSelect(doc.path); onClose(); setQuery(''); }} className="flex items-center justify-between px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer text-xs sm:text-sm group">
+            <div key={doc.id || doc.path} onClick={() => { onSelect(doc.path); onClose(); setQuery(''); }} className="catryna-result flex items-center justify-between px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer text-xs sm:text-sm group">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0"><FileText size={14} className="text-zinc-400 shrink-0 sm:w-4 sm:h-4" /><span className="truncate">{doc.title}</span></div>
               <span className="text-[9px] sm:text-[10px] text-zinc-400 uppercase opacity-0 group-hover:opacity-100 shrink-0 ml-2">{doc.path.split('/')[0]}</span>
             </div>
@@ -210,8 +210,36 @@ const VersionHistorySidebar: React.FC<{
 
 // --- Main App ---
 
+/** Where user preferences persist. Versioned so a future shape change can be
+ *  migrated rather than silently misread. */
+const PREFS_KEY = 'catryna.prefs.v1';
+
 export default function App() {
-  const [prefs, setPrefs] = useState<UserPreferences>({ theme: 'dark', whiteboardStyle: 'clean', fontSize: 'medium', editorLineNumbers: true });
+  // Preferences PERSIST. They were previously in-memory only, so every reload
+  // reset the viewer — which makes a theme picker close to useless. Unknown or
+  // corrupt stored values fall back to the defaults rather than throwing, and a
+  // pref saved before `themeStyle` existed simply loads without it (undefined
+  // reads as 'classic'), so nobody's viewer changes appearance on upgrade.
+  const [prefs, setPrefs] = useState<UserPreferences>(() => {
+    const defaults: UserPreferences = {
+      theme: 'dark', themeStyle: 'classic',
+      whiteboardStyle: 'clean', fontSize: 'medium', editorLineNumbers: true,
+    };
+    try {
+      const raw = localStorage.getItem(PREFS_KEY);
+      return raw ? { ...defaults, ...JSON.parse(raw) } : defaults;
+    } catch {
+      return defaults;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    } catch {
+      // Private mode or a full quota — the app must still work, just forgetfully.
+    }
+  }, [prefs]);
   const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024);
   const [isEditing, setIsEditing] = useState(false);
@@ -250,13 +278,21 @@ export default function App() {
 
   useEffect(() => {
     const root = window.document.documentElement;
-    const isDark = prefs.theme === 'dark' || (prefs.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    if (isDark) root.classList.add('dark');
-    else root.classList.remove('dark');
+    const style = prefs.themeStyle ?? 'classic';
+    // Atelier is dark BY DESIGN (see ThemeStyle in types.ts), so it pins the
+    // dark class rather than consulting the light/dark preference. Classic
+    // behaves exactly as it always has.
+    const isDark =
+      style === 'atelier' ||
+      prefs.theme === 'dark' ||
+      (prefs.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
-    // Reinitialize mermaid with new theme
+    root.classList.toggle('dark', isDark);
+    root.setAttribute('data-theme', style);
+
+    // Reinitialize mermaid so diagrams follow the theme too.
     initMermaid(isDark);
-  }, [prefs.theme]);
+  }, [prefs.theme, prefs.themeStyle]);
 
   const addToast = (message: string, type: Toast['type'] = 'success') => {
     const id = Math.random().toString(36).substring(7);
@@ -490,7 +526,12 @@ export default function App() {
             </div>
           ) : (
           <div className="flex justify-between max-w-6xl mx-auto px-4 sm:px-6 lg:px-12 py-6 sm:py-8 lg:py-12 gap-6 lg:gap-12">
-            <div className="flex-1 max-w-3xl min-w-0">
+            {/* `catryna-doc` is the styling hook for the READING EXPERIENCE
+                (measure, typographic rhythm, code blocks, tables) in index.css.
+                Doc headings render as <div>s rather than <h1>/<h2>, so a
+                container class is the only way to reach them without touching
+                every block renderer. */}
+            <div className="catryna-doc flex-1 max-w-3xl min-w-0">
               <nav className="flex items-center gap-1 sm:gap-1.5 text-[9px] sm:text-[10px] font-bold text-navy-light dark:text-zinc-400 uppercase tracking-widest mb-4 sm:mb-8 overflow-x-auto pb-1">
                 {currentDoc.path.map((p, i) => <React.Fragment key={p}><button className="hover:text-accent whitespace-nowrap">{p}</button><ChevronRight size={10} className="shrink-0" /></React.Fragment>)}
                 <span className="text-navy dark:text-zinc-100 whitespace-nowrap">{currentDoc.title}</span>
@@ -906,6 +947,37 @@ const ToastContainer: React.FC<{ toasts: Toast[]; onRemove: (id: string) => void
   </div>
 );
 
+/**
+ * The selectable identities. `canvas` and `signature` are the literal colours
+ * each theme paints with, so the swatch in Preferences is the real thing rather
+ * than an approximation that can drift from the stylesheet.
+ */
+const THEME_STYLES: Array<{
+  id: NonNullable<UserPreferences['themeStyle']>;
+  label: string;
+  note: string;
+  blurb: string;
+  canvas: string;
+  signature: string;
+}> = [
+  {
+    id: 'classic',
+    label: 'Classic',
+    note: 'Light, dark or system',
+    blurb: 'The original look: clean Stripe-inspired surfaces, follows your light/dark preference.',
+    canvas: '#F6F9FC',
+    signature: '#635BFF',
+  },
+  {
+    id: 'atelier',
+    label: 'Atelier',
+    note: 'Nocturnal, always dark',
+    blurb: 'The catrynawiki.com identity: indigo-black canvas, Turbo Flow gradient, Fraunces display type.',
+    canvas: '#0d0d16',
+    signature: 'linear-gradient(112deg,#e92a67,#a853ba 50%,#2a8af6)',
+  },
+];
+
 const SettingsModal: React.FC<{ isOpen: boolean; onClose: () => void; prefs: UserPreferences; setPrefs: (p: UserPreferences) => void }> = ({ isOpen, onClose, prefs, setPrefs }) => {
   if (!isOpen) return null;
   return (
@@ -913,7 +985,48 @@ const SettingsModal: React.FC<{ isOpen: boolean; onClose: () => void; prefs: Use
       <div className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-xl sm:rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 p-5 sm:p-8" onClick={e => e.stopPropagation()}>
         <h2 className="text-lg sm:text-xl font-bold mb-6 sm:mb-8 flex items-center gap-2 text-zinc-900 dark:text-zinc-50"><Settings size={20} /> Preferences</h2>
         <div className="space-y-6 sm:space-y-8">
-           <section><label className="text-[10px] font-bold uppercase text-zinc-400 mb-3 block">Theme</label><div className="grid grid-cols-3 gap-2">{(['light', 'dark', 'system'] as const).map(t => <button key={t} onClick={() => setPrefs({...prefs, theme: t})} className={`p-3 sm:p-4 rounded-lg sm:rounded-xl border flex flex-col items-center gap-1.5 sm:gap-2 ${prefs.theme === t ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950 text-indigo-600' : 'border-zinc-200 dark:border-zinc-800 text-zinc-400'}`}>{t === 'light' ? <Sun size={18} /> : t === 'dark' ? <Moon size={18} /> : <Monitor size={18} />}<span className="text-[9px] sm:text-[10px] font-bold uppercase">{t}</span></button>)}</div></section>
+           {/* THEME STYLE — the named identity, chosen before the light/dark
+               mode because it decides whether that mode even applies. */}
+           <section>
+             <label className="text-[10px] font-bold uppercase text-zinc-400 mb-3 block">Theme</label>
+             <div className="grid grid-cols-2 gap-2">
+               {THEME_STYLES.map(s => {
+                 const active = (prefs.themeStyle ?? 'classic') === s.id;
+                 return (
+                   <button
+                     key={s.id}
+                     onClick={() => setPrefs({ ...prefs, themeStyle: s.id })}
+                     aria-pressed={active}
+                     title={s.blurb}
+                     className={`p-3 rounded-xl border text-left transition-all ${active ? 'border-indigo-500 ring-1 ring-indigo-500/40' : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'}`}
+                   >
+                     {/* Live swatch: the theme's actual canvas + signature. */}
+                     <span className="flex items-center gap-1.5 mb-2">
+                       <span className="w-6 h-6 rounded-md border border-black/10 dark:border-white/10" style={{ background: s.canvas }} />
+                       <span className="w-6 h-6 rounded-md" style={{ background: s.signature }} />
+                     </span>
+                     <span className={`block text-[11px] font-bold ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-700 dark:text-zinc-300'}`}>{s.label}</span>
+                     <span className="block text-[9px] text-zinc-400 leading-tight mt-0.5">{s.note}</span>
+                   </button>
+                 );
+               })}
+             </div>
+           </section>
+
+           {/* Light/dark mode. Atelier is dark by design, so the control is
+               disabled rather than hidden — hiding it makes the setting look
+               lost, while a disabled control with a reason explains itself. */}
+           <section>
+             <label className="text-[10px] font-bold uppercase text-zinc-400 mb-3 block">
+               Mode
+               {(prefs.themeStyle ?? 'classic') === 'atelier' && (
+                 <span className="ml-2 normal-case font-medium text-zinc-500">Atelier is always dark</span>
+               )}
+             </label>
+             <div className={`grid grid-cols-3 gap-2 ${(prefs.themeStyle ?? 'classic') === 'atelier' ? 'opacity-40 pointer-events-none' : ''}`}>
+               {(['light', 'dark', 'system'] as const).map(t => <button key={t} disabled={(prefs.themeStyle ?? 'classic') === 'atelier'} onClick={() => setPrefs({...prefs, theme: t})} className={`p-3 sm:p-4 rounded-lg sm:rounded-xl border flex flex-col items-center gap-1.5 sm:gap-2 ${prefs.theme === t ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950 text-indigo-600' : 'border-zinc-200 dark:border-zinc-800 text-zinc-400'}`}>{t === 'light' ? <Sun size={18} /> : t === 'dark' ? <Moon size={18} /> : <Monitor size={18} />}<span className="text-[9px] sm:text-[10px] font-bold uppercase">{t}</span></button>)}
+             </div>
+           </section>
            <section><label className="text-[10px] font-bold uppercase text-zinc-400 mb-3 block">Canvas Style</label><div className="flex gap-2">{(['clean', 'sketchy'] as const).map(s => <button key={s} onClick={() => setPrefs({...prefs, whiteboardStyle: s})} className={`flex-1 p-2.5 sm:p-3 rounded-lg sm:rounded-xl border text-[10px] font-bold uppercase ${prefs.whiteboardStyle === s ? 'border-indigo-500 text-indigo-600' : 'border-zinc-200 dark:border-zinc-800'}`}>{s}</button>)}</div></section>
         </div>
         <div className="mt-8 sm:mt-10 flex justify-end"><Button onClick={onClose}>Done</Button></div>
