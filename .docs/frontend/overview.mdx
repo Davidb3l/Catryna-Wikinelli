@@ -120,6 +120,20 @@ Renders different block types with appropriate styling:
 This split is a **safeguard**, not tidiness. A component that fetches its own data can always be edited to skip the fetch and keep the number — which is exactly how an 84% health score, 42 pages and 12 missing items sat on this screen with no API behind them. A component that only *receives* data structurally cannot display something it was not given.
 </Callout>
 
+#### Visual weighting is deliberate — do not "fix" it
+
+The status dot is **not** styled uniformly across states, and that asymmetry is the design:
+
+| State | Treatment | Why |
+|---|---|---|
+| `clean` | recessed — dimmer and slightly smaller, dimmer still in the sidebar | In a healthy corpus nearly every row is clean. Fourteen identical dots is texture, not information. |
+| `drifted` / `broken` | full opacity, soft halo, and a slow pulse | These are the rows that need a human. Motion should mean "look here". |
+
+If every state pulsed, or every dot carried equal weight, the badge would stop
+communicating — the same "if everything is marked, nothing is" failure the
+`volatile-fact` lint rule was calibrated around. The pulse is additionally
+disabled under `prefers-reduced-motion`.
+
 `components/trust.test.tsx` renders these under happy-dom and asserts the property that would have caught the original bug: **with no data, no numbers.** A failed fetch must produce zero digits; a null drift status must produce no badge; an empty trend must explain itself rather than draw axis numbers. With real data, every digit on screen must trace to a prop. Mutation-checked by reintroducing the literal `84%` — the suite fails.
 
 The DOM registration lives in `happydom.ts`, imported by the test rather than wired as a `bunfig.toml` preload: a preload only applies when `bun test` runs from that directory, and `bun run check` runs from the repo root. A gate that passes from only one directory is not a gate.
