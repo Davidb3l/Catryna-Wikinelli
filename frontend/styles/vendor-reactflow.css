@@ -1,0 +1,13 @@
+/* reactflow's own stylesheet, in a LOW-PRIORITY cascade layer.
+ *
+ * It is imported by the lazy FlowDiagram chunk, so it lands in the document
+ * AFTER index.css. Unlayered rules of equal specificity are decided by order,
+ * so plain-importing it let reactflow's defaults beat this project's Turbo
+ * overrides — `.react-flow__node-default { color: #222 }` won over the themed
+ * light text and three nodes rendered as empty dark rectangles.
+ *
+ * Anything unlayered beats anything layered, whatever the order. Putting the
+ * vendor sheet in `layer(vendor)` therefore makes index.css win by
+ * construction rather than by luck of load order.
+ */
+@import "reactflow/dist/style.css" layer(vendor);

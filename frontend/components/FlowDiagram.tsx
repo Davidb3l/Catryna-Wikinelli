@@ -1,5 +1,8 @@
 import React, { useCallback, useState } from 'react';
 import ReactFlow, { Background, Controls, MiniMap, Position } from 'reactflow';
+// Bundled from node_modules and lazy WITH this chunk — not a render-blocking
+// <link> to esm.sh on every page view. See the note in WhiteboardCanvas.tsx.
+import '../styles/vendor-reactflow.css';
 import { TurboNode } from './TurboNode';
 import { TurboEdge } from './TurboEdge';
 import { TurboEdgeGradient } from './TurboEdgeGradient';

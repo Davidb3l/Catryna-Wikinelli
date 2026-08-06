@@ -1,0 +1,3 @@
+/* tldraw's stylesheet, in the same low-priority layer as reactflow's.
+ * See vendor-reactflow.css for why the layer is not optional. */
+@import "tldraw/tldraw.css" layer(vendor);
