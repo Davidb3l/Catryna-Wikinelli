@@ -3,7 +3,7 @@ id: 8ba895db-7586-4187-92fb-7da033094537
 title: "Frontend Application"
 path: "frontend/overview"
 tags: ["frontend", "react", "vite"]
-relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts", "frontend/hooks/useSystemTheme.ts"]
+relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts", "frontend/hooks/useSystemTheme.ts", "frontend/index.css"]
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
@@ -39,7 +39,7 @@ importing any of them.
 
 TypeScript types come from `@types/react` / `@types/react-dom`. They were missing entirely until Phase 2 review, which meant every React API was untyped — the real cause of the long-standing "11 pre-existing type errors". Adding them cost zero new errors and turned both error clusters out to be genuine typing bugs the absence had hidden (`NodeProps` parameterized by the node type instead of the data type; `querySelector` returning `Element` where `HTMLElement` was needed). The frontend typechecks clean at **0 errors**, and `bun run typecheck` makes that enforceable.
 
-Dependencies are limited to what the viewer actually uses. `@tiptap/*` and `diff` were declared but dead (`@tiptap/*` never imported, `diff` imported by `App.tsx` and never called) and have been removed from `package.json` and the `index.html` importmap.
+Dependencies are limited to what the viewer actually uses. `@tiptap/*` and `diff` were declared but dead (`@tiptap/*` never imported, `diff` imported by `App.tsx` and never called) and have been removed from `package.json`. The `index.html` importmap they were also listed in is gone entirely — see *Bundle & code splitting*.
 
 ## Bundle & code splitting
 
@@ -66,13 +66,35 @@ Measured on the built bundle: a doc with **no** diagram loads 2 JS chunks; a
 mermaid doc and a React Flow doc each pull their own; tldraw arrives only when
 the whiteboard modal opens.
 
-<Callout type="info">
-That is the **JS** cost. The CSS half is still eager: `index.html` render-blocks
-on `tldraw.css` and `reactflow/dist/style.css` from `esm.sh` on every page view,
-for both themes, whether or not a diagram is on screen. Splitting the JS did not
-touch it. (The tldraw stylesheet is additionally pinned to a canary version that
-does not match `package.json`, and currently 500s — so the whiteboard canvas
-renders unstyled.)
+**The CSS is split the same way.** `reactflow/dist/style.css` and
+`tldraw/tldraw.css` are imported by their boundary modules, so Vite emits them
+as chunk CSS loaded with the chunk. A cold page view fetches exactly one
+stylesheet — `index.css`.
+
+<Callout type="warning">
+Both used to be render-blocking `<link>`s in `index.html` pointing at **esm.sh**:
+a third-party CDN round-trip before first paint, on every page view, for canvases
+almost nobody opens. The tldraw one was pinned to `2.0.0-canary.c41d8e14798e`
+while `package.json` installed 2.4.x, and that URL had begun returning **HTTP
+500** — so the whiteboard rendered unstyled and the blocking request bought
+nothing at all. Importing from `node_modules` removes the CDN, the version skew
+(it now tracks `package.json` by construction) and the blocking cost together.
+
+The `<script type="importmap">` that mapped `react`, `reactflow` and `tldraw` to
+esm.sh went at the same time. Vite resolves bare specifiers at build, so it had
+been inert — but it was inert *and* pinned to the same stale canary, which is
+exactly the shape of thing someone later trusts.
+</Callout>
+
+<Callout type="warning">
+**Vendor CSS must be imported through the `layer(vendor)` wrappers in
+`frontend/styles/`, never directly.** Chunk CSS lands in the document *after*
+`index.css`, and unlayered rules of equal specificity are decided by order — so
+a plain `import 'reactflow/dist/style.css'` let reactflow's defaults beat this
+project's Turbo overrides. `.react-flow__node-default { color: #222 }` won over
+the themed light text and three nodes rendered as **empty dark rectangles**.
+Anything unlayered beats anything layered regardless of order, so the layer makes
+`index.css` win by construction instead of by luck.
 </Callout>
 
 Two consequences worth knowing before editing `App.tsx`:

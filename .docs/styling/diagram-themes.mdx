@@ -3,7 +3,7 @@ id: 49ba4ce6-9348-476a-9e54-58b48fdbab2c
 title: "Diagram Themes & Styling"
 path: "styling/diagram-themes"
 tags: ["styling", "react-flow", "mermaid", "turbo-flow", "theming"]
-relatedFiles: ["frontend/index.css", "frontend/App.tsx", "frontend/components/TurboNode.tsx", "frontend/components/TurboEdge.tsx", "frontend/components/TurboEdgeGradient.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/index.html"]
+relatedFiles: ["frontend/index.css", "frontend/App.tsx", "frontend/components/TurboNode.tsx", "frontend/components/TurboEdge.tsx", "frontend/components/TurboEdgeGradient.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/index.html", "frontend/styles/vendor-reactflow.css"]
 createdAt: 1767494114128
 updatedAt: 1767494114128
 createdBy: "claude-code"
@@ -53,6 +53,7 @@ Turbo components import `reactflow` too, but nothing reaches them except through
 | `components/FlowDiagram.tsx` | `nodeTypes` / `edgeTypes`, node & edge normalization, both canvases |
 | `components/TurboEdgeGradient.tsx` | the gradient `<defs>` |
 | `index.css` | everything CSS-side (see below) |
+| `styles/vendor-reactflow.css` | reactflow's own sheet, wrapped in `layer(vendor)` |
 
 Keep it that way: both are lazy boundaries, and a static import of `mermaid` or
 `reactflow` from `App.tsx` puts the whole library back in the entry chunk. See
@@ -174,6 +175,14 @@ Contains the CSS half of the Turbo Flow styling:
   *inert*, not invisible. An 8px dot that reads as "drag from here" and cannot
   do anything is the affordance the flag was meant to remove, so it is hidden.
   Genuinely connectable handles keep the dot.
+
+reactflow's own stylesheet is imported by `FlowDiagram` through
+`styles/vendor-reactflow.css`, which wraps it in `@layer vendor`. That is not
+cosmetic: chunk CSS loads *after* `index.css`, and unlayered rules of equal
+specificity are decided by order, so importing it directly let reactflow's
+`.react-flow__node-default { color: #222 }` beat the themed light text — three
+nodes rendered as empty dark rectangles. Unlayered always beats layered, so the
+overrides below win by construction.
 
 It also carries the app-wide **theme system** (the palette variable sets for
 `classic` / `atelier`, the reading, trust and search polish). Those are separate
