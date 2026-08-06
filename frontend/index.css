@@ -1,3 +1,24 @@
+/* CASCADE ORDER, DECLARED EXPLICITLY — this line is load-bearing.
+ *
+ * The vendor stylesheets (reactflow, tldraw) are imported by lazy chunks via
+ * `styles/vendor-*.css`, which wrap them in `@layer vendor`. A layer's position
+ * is fixed by its FIRST declaration anywhere in the document, so without this
+ * statement `vendor` was first seen in a chunk sheet injected after everything
+ * else — landing ABOVE Tailwind's `utilities`. Unlayered rules still won, so the
+ * hand-written half of this file was fine, but every Tailwind utility the app
+ * put on a reactflow or tldraw element silently lost to the vendor sheet. The
+ * only reason nothing broke was that all such classes happened to be
+ * `!`-prefixed (see FlowDiagram.tsx). One un-prefixed class would have.
+ *
+ * `vendor` sits ABOVE `base` on purpose: Tailwind's preflight lives there and
+ * resets `button { font: inherit; background-color: transparent; border-radius: 0 }`,
+ * which would strip tldraw's entire chrome if base outranked it. And BELOW
+ * `components`/`utilities`, so the app's own classes win.
+ *
+ * Must precede `@import` — only `@layer` statements and `@charset` may.
+ */
+@layer properties, theme, base, vendor, components, utilities;
+
 @import "tailwindcss";
 
 /* Sources are declared EXPLICITLY rather than left to v4's automatic detection.
@@ -505,6 +526,17 @@ body { font-family: var(--font-body); }
   .min-h-auto {
     min-height: auto;
   }
+
+  /* tldraw sizes its own controls to fit a dense toolbar. This app-wide 44px
+     floor is for OUR chrome; since tldraw's sheet moved into `layer(vendor)`
+     the rule above began outranking it and inflated 32px buttons to 44px,
+     breaking the toolbar layout at phone width. Hand its sizing back. */
+  .tl-container button,
+  .tl-container a,
+  .tl-container [role="button"] {
+    min-height: 0;
+    min-width: 0;
+  }
 }
 
 /* Smooth scrolling for the whole app */
@@ -521,6 +553,15 @@ body {
 /* Better tap highlighting on mobile */
 * {
   -webkit-tap-highlight-color: rgba(99, 91, 255, 0.1);
+}
+
+/* …but NOT inside the tldraw canvas. tldraw sets `transparent` deliberately,
+   and since its sheet moved into `layer(vendor)` the unlayered `*` above
+   outranks it whatever the specificity — putting an indigo flash on every tap
+   in a drawing surface. Restore its intent explicitly. */
+.tl-container,
+.tl-container * {
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Safe area insets for notched devices */

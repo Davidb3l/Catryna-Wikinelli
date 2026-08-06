@@ -154,6 +154,20 @@ describe('heavy libraries stay behind the lazy boundary', () => {
       }
     });
 
+    test(`no eager stylesheet @imports ${lib}'s CSS`, () => {
+      // The JS check above skips non-.ts/.tsx files, so `index.css` was scanned
+      // by nothing. Adding `@import "reactflow/dist/style.css"` to it puts the
+      // vendor CSS straight back into the render-blocking entry stylesheet,
+      // changes no module in the eager graph, and leaves every other assertion
+      // green — the CSS twin of the bare-import hole.
+      for (const file of EAGER) {
+        if (!file.endsWith('.css')) continue;
+        const offending = new RegExp(String.raw`@import\s+["']${escapeRe(lib)}(?:/[^"']*)?["']`);
+        expect(`${file} @imports ${lib}: ${offending.test(read(join(here, file)))}`)
+          .toBe(`${file} @imports ${lib}: false`);
+      }
+    });
+
     test(`${OWNER[lib]} still owns ${lib}`, () => {
       // So a rename cannot leave the lazy module importing nothing while the
       // test above passes for the wrong reason.
