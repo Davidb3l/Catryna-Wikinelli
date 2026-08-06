@@ -146,15 +146,17 @@
         "frontend/components/Trust.tsx",
         "frontend/components/MermaidDiagram.tsx",
         "frontend/components/FlowDiagram.tsx",
-        "frontend/components/WhiteboardCanvas.tsx"
+        "frontend/components/WhiteboardCanvas.tsx",
+        "frontend/components/LazyCanvas.tsx",
+        "frontend/code-splitting.test.ts"
       ],
       "createdAt": 1767321379263,
       "updatedAt": 1767321691220,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "edfe2c289f7da3c16c5ed7894d4828ff8fece7b8",
-      "verifiedAt": "2026-08-06T01:46:49.315Z",
+      "verifiedCommit": "1d9bfdd3cadfbb7f15dabc0121e4db42d96113bb",
+      "verifiedAt": "2026-08-06T03:01:47.599Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -245,15 +247,16 @@
         "frontend/components/TurboEdge.tsx",
         "frontend/components/TurboEdgeGradient.tsx",
         "frontend/components/MermaidDiagram.tsx",
-        "frontend/components/FlowDiagram.tsx"
+        "frontend/components/FlowDiagram.tsx",
+        "frontend/index.html"
       ],
       "createdAt": 1767494114128,
       "updatedAt": 1767494114128,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "edfe2c289f7da3c16c5ed7894d4828ff8fece7b8",
-      "verifiedAt": "2026-08-06T01:46:33.234Z",
+      "verifiedCommit": "1d9bfdd3cadfbb7f15dabc0121e4db42d96113bb",
+      "verifiedAt": "2026-08-06T03:01:47.614Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -414,5 +417,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1785980809316
+  "lastUpdated": 1785985307614
 }
