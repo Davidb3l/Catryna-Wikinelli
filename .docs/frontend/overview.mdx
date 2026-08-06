@@ -3,12 +3,12 @@ id: 8ba895db-7586-4187-92fb-7da033094537
 title: "Frontend Application"
 path: "frontend/overview"
 tags: ["frontend", "react", "vite"]
-relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx"]
+relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx"]
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
-verifiedCommit: "52afc122406c155be628e2758ef136b78467bb14"
-verifiedAt: "2026-08-05T22:36:33.463Z"
+verifiedCommit: "edfe2c289f7da3c16c5ed7894d4828ff8fece7b8"
+verifiedAt: "2026-08-06T01:46:49.315Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -25,7 +25,7 @@ The frontend is a React application built with Vite, providing a visual interfac
 
 - **React Flow** (`reactflow` 11) - Architecture diagrams
 
-- **Mermaid** - Text-based diagrams, themed from `initMermaid()` in `App.tsx`
+- **Mermaid** - Text-based diagrams, themed from `initMermaid()` in `components/MermaidDiagram.tsx`
 
 - **tldraw** - Whiteboard/canvas support
 
@@ -33,9 +33,60 @@ The frontend is a React application built with Vite, providing a visual interfac
 
 - **Lucide React** - Icon library
 
+React Flow, Mermaid and tldraw are all **lazily loaded**; none of them is
+reachable from the entry chunk. See *Bundle & code splitting* below before
+importing any of them.
+
 TypeScript types come from `@types/react` / `@types/react-dom`. They were missing entirely until Phase 2 review, which meant every React API was untyped — the real cause of the long-standing "11 pre-existing type errors". Adding them cost zero new errors and turned both error clusters out to be genuine typing bugs the absence had hidden (`NodeProps` parameterized by the node type instead of the data type; `querySelector` returning `Element` where `HTMLElement` was needed). The frontend typechecks clean at **0 errors**, and `bun run typecheck` makes that enforceable.
 
 Dependencies are limited to what the viewer actually uses. `@tiptap/*` and `diff` were declared but dead (`@tiptap/*` never imported, `diff` imported by `App.tsx` and never called) and have been removed from `package.json` and the `index.html` importmap.
+
+## Bundle & code splitting
+
+The three heavy libraries — `mermaid`, `reactflow`, `tldraw` — are **lazy**, and
+that is load-bearing rather than an optimization detail. They were imported at
+`App.tsx` module scope, so every page view paid for all three: a **1394 KiB**
+entry chunk, of which mermaid was the bulk (it pulls in cytoscape, katex, and a
+separate chunk per diagram type). Most docs open none of them.
+
+Each library now sits behind exactly **one** module that nothing else imports
+statically, reached through `React.lazy` + `<Suspense>`:
+
+| Boundary module | Library | Fetched when |
+|---|---|---|
+| `components/MermaidDiagram.tsx` | `mermaid` (+ cytoscape, katex, per-type chunks) | a block has `metadata.diagramData.mermaid` |
+| `components/FlowDiagram.tsx` | `reactflow` (+ the Turbo node/edge components) | the non-mermaid diagram branch, or the architecture editor |
+| `components/WhiteboardCanvas.tsx` | `tldraw` | the whiteboard editor is opened (`activeEditor === 'wb'`) |
+
+Measured on the built bundle: a doc with **no** diagram loads 2 chunks; a
+mermaid doc and a React Flow doc each pull their own; tldraw arrives only when
+the whiteboard modal opens.
+
+Two consequences worth knowing before editing `App.tsx`:
+
+- **`initMermaid()` lives inside the boundary.** It used to run at `App.tsx`
+  module scope *and* from the theme effect, which is precisely what pinned
+  mermaid into the entry chunk. It now runs from an effect inside
+  `MermaidDiagram` keyed on `isDark`, so a theme switch still re-themes and
+  re-renders every diagram on screen — without `App.tsx` holding a reference to
+  mermaid.
+- **Node/edge normalization moved to `FlowDiagram`.** It needs reactflow's
+  `Position` enum, and that is a *value* import: pulling it into `App.tsx` alone
+  would drag all of reactflow back into the entry chunk. `App.tsx` passes raw
+  `diagramData` down and imports only the `DiagramData` **type**.
+
+The full-screen editors split chrome from canvas: the modal header renders
+eagerly so it opens instantly, and only the canvas inside it suspends.
+
+<Callout type="warning">
+Nothing fails if this regresses. Add a static `import … from 'mermaid'` (or
+`'reactflow'`, or `'tldraw'`) anywhere `App.tsx` can reach and the app still
+works, the types still check, the other tests still pass — the bundle just
+quietly gets big again. `code-splitting.test.ts` exists for exactly that: it
+asserts no eager module value-imports the three libraries, that each lazy
+component is reached via `import()`, and that each is wrapped in a Suspense
+boundary. It is mutation-checked against both failure modes.
+</Callout>
 
 The viewer has **no LLM dependency and no API key**. It previously shipped a `frontend/services/geminiService.ts` that called the Google Gemini API straight from the browser, with `vite.config.ts` inlining `GEMINI_API_KEY` into the bundle via `define` — for two methods nothing ever invoked. Both the service and the `define` block are gone; summarization and structure suggestion belong to Claude Code over MCP, which has the repo context this never did.
 
@@ -116,7 +167,7 @@ Renders different block types with appropriate styling:
 
 - **table** - Markdown or `<Table data={...} />` tables, from `metadata.headers` / `metadata.rows`
 
-- **diagram** - Mermaid (rendered via `MermaidRenderer` with an expand/zoom modal) when `metadata.diagramData.mermaid` is set, otherwise an interactive React Flow canvas
+- **diagram** - Mermaid (rendered via the lazy `MermaidDiagram`, with an expand/zoom modal) when `metadata.diagramData.mermaid` is set, otherwise an interactive React Flow canvas (the lazy `FlowDiagram`). The expand modal clones the already-rendered container's `innerHTML`, so it costs no second load and has nothing to show until the lazy chunk has landed.
 
 - **whiteboard** - A placeholder card that launches the full-screen tldraw editor. Stored `whiteboardData` is neither loaded into nor saved from the canvas.
 
@@ -226,6 +277,11 @@ Full-screen modal editors for visual content:
 - **DiagramEditor** - React Flow canvas with controls and minimap
 
 - **WhiteboardEditor** - tldraw canvas with clean/sketchy styles
+
+Both keep their **chrome eager and their canvas lazy**, so the modal opens
+immediately and the canvas fills in behind a spinner rather than the click
+appearing to do nothing while a megabyte downloads. The editable canvas
+(`FlowEditorCanvas`) also owns its own node/edge state.
 
 ## Data Fetching
 

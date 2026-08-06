@@ -143,15 +143,18 @@
         "frontend/vite.config.ts",
         "frontend/index.html",
         "frontend/package.json",
-        "frontend/components/Trust.tsx"
+        "frontend/components/Trust.tsx",
+        "frontend/components/MermaidDiagram.tsx",
+        "frontend/components/FlowDiagram.tsx",
+        "frontend/components/WhiteboardCanvas.tsx"
       ],
       "createdAt": 1767321379263,
       "updatedAt": 1767321691220,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "52afc122406c155be628e2758ef136b78467bb14",
-      "verifiedAt": "2026-08-05T22:36:33.463Z",
+      "verifiedCommit": "edfe2c289f7da3c16c5ed7894d4828ff8fece7b8",
+      "verifiedAt": "2026-08-06T01:46:49.315Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -240,15 +243,17 @@
         "frontend/App.tsx",
         "frontend/components/TurboNode.tsx",
         "frontend/components/TurboEdge.tsx",
-        "frontend/components/TurboEdgeGradient.tsx"
+        "frontend/components/TurboEdgeGradient.tsx",
+        "frontend/components/MermaidDiagram.tsx",
+        "frontend/components/FlowDiagram.tsx"
       ],
       "createdAt": 1767494114128,
       "updatedAt": 1767494114128,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "52afc122406c155be628e2758ef136b78467bb14",
-      "verifiedAt": "2026-08-05T22:36:33.476Z",
+      "verifiedCommit": "edfe2c289f7da3c16c5ed7894d4828ff8fece7b8",
+      "verifiedAt": "2026-08-06T01:46:33.234Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -409,5 +414,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1785969393476
+  "lastUpdated": 1785980809316
 }

@@ -3,12 +3,12 @@ id: 49ba4ce6-9348-476a-9e54-58b48fdbab2c
 title: "Diagram Themes & Styling"
 path: "styling/diagram-themes"
 tags: ["styling", "react-flow", "mermaid", "turbo-flow", "theming"]
-relatedFiles: ["frontend/index.css", "frontend/App.tsx", "frontend/components/TurboNode.tsx", "frontend/components/TurboEdge.tsx", "frontend/components/TurboEdgeGradient.tsx"]
+relatedFiles: ["frontend/index.css", "frontend/App.tsx", "frontend/components/TurboNode.tsx", "frontend/components/TurboEdge.tsx", "frontend/components/TurboEdgeGradient.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx"]
 createdAt: 1767494114128
 updatedAt: 1767494114128
 createdBy: "claude-code"
-verifiedCommit: "52afc122406c155be628e2758ef136b78467bb14"
-verifiedAt: "2026-08-05T22:36:33.476Z"
+verifiedCommit: "edfe2c289f7da3c16c5ed7894d4828ff8fece7b8"
+verifiedAt: "2026-08-06T01:46:33.234Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -40,6 +40,22 @@ Catryna uses a **Turbo Flow** inspired theme for all diagrams, providing consist
 
 Light mode is selected by the absence of the `dark` class on `<html>`: every override is written as `:root:not(.dark) …`.
 
+## Where the theming code lives
+
+Both halves moved out of `App.tsx` when the viewer's bundle was code-split, and
+they are now the *only* modules that import their library:
+
+| File | Owns |
+|---|---|
+| `components/MermaidDiagram.tsx` | `initMermaid()`, the `themeVariables` maps, and the SVG post-processing |
+| `components/FlowDiagram.tsx` | `nodeTypes` / `edgeTypes`, node & edge normalization, both canvases |
+| `components/TurboEdgeGradient.tsx` | the gradient `<defs>` |
+| `index.css` | everything CSS-side (see below) |
+
+Keep it that way: both are lazy boundaries, and a static import of `mermaid` or
+`reactflow` from `App.tsx` puts the whole library back in the entry chunk. See
+the `frontend/overview` doc.
+
 ## React Flow Diagrams
 
 React Flow diagrams use custom components for the Turbo style:
@@ -55,7 +71,7 @@ React Flow diagrams use custom components for the Turbo style:
 - **Glow effect**: Nodes have colored box shadows
 - **Gradient edges**: Pink → Purple → Blue gradient on connection lines
 - **Smoothstep routing**: Clean right-angle paths with `borderRadius: 8` and `offset: 0` for tight connections
-- **Handle positions**: `App.tsx` defaults every node to `sourcePosition: Bottom` / `targetPosition: Top`. This only affects `default` nodes — `TurboNode` hardcodes its handles to Left (target) / Right (source), so those props are ignored for `turbo` nodes.
+- **Handle positions**: `normalizeNodes()` in `components/FlowDiagram.tsx` defaults every node to `sourcePosition: Bottom` / `targetPosition: Top`. This only affects `default` nodes — `TurboNode` hardcodes its handles to Left (target) / Right (source), so those props are ignored for `turbo` nodes.
 
 <Callout type="warning">
 Edge colour does **not** currently follow the theme. `.react-flow__edge .react-flow__edge-path` always strokes `url(#turbo-edge-gradient)`, the dark pink→purple→blue gradient, and out-specifies the `:root:not(.dark)` `#635BFF` fallback. `TurboEdgeGradient` also defines `#turbo-edge-gradient-light`, but nothing references it — so light-mode diagrams draw dark-mode edges.
@@ -77,7 +93,21 @@ const nodes = [
 
 ## Mermaid Diagrams
 
-Mermaid charts automatically inherit the Turbo theme via CSS and theme variables. The variables come from `initMermaid(isDark)` in `App.tsx` (`theme: 'base'` plus a full dark/light `themeVariables` map); it re-runs whenever the theme preference changes and again before each render. `MermaidRenderer` then post-processes the SVG — injecting the `#mermaid-gradient` def and rewriting edge-label backgrounds, which inline Mermaid styles would otherwise get wrong.
+Mermaid charts automatically inherit the Turbo theme via CSS and theme variables. The variables come from `initMermaid(isDark)` in `components/MermaidDiagram.tsx` (`theme: 'base'` plus a full dark/light `themeVariables` map); it runs from an effect keyed on `isDark`, immediately before each render, so a theme switch re-themes and re-renders every diagram on screen. The same component then post-processes the SVG — injecting the `#mermaid-gradient` def and rewriting edge-label backgrounds, which inline Mermaid styles would otherwise get wrong.
+
+`isDark` is **resolved by `App.tsx` and passed down**, not derived from the mode
+preference inside the renderer. That distinction is the whole point: Atelier
+pins dark regardless of the stored `light`/`dark`/`system` mode, so a renderer
+that only read `prefs.theme` would theme diagrams against the wrong canvas.
+
+<Callout type="warning">
+It did exactly that. With Atelier selected and a stored mode of `light`, mermaid
+was initialized light and the post-processor wrote `background:#ffffff;
+color:#0A2540` into the edge labels — light chips on the `#0d0d16` canvas. The
+node fills *looked* right only because the `.dark` CSS overrides in `index.css`
+repainted them, which is also why the bug survived: CSS masked the half of the
+theming it happens to cover, and the inline half stayed wrong.
+</Callout>
 
 ### Supported Diagram Types
 - Flowcharts
@@ -115,7 +145,7 @@ concerns that share a file: the diagram styling above keys off the `.dark`
 class, while the named themes key off `[data-theme]`, so the two do not
 interact. See the `frontend/overview` doc.
 
-The rest lives in TSX: Mermaid's `themeVariables` and the SVG post-processing in `App.tsx`, and the gradient `<defs>` in `components/TurboEdgeGradient.tsx`.
+The rest lives in TSX: Mermaid's `themeVariables` and the SVG post-processing in `components/MermaidDiagram.tsx`, and the gradient `<defs>` in `components/TurboEdgeGradient.tsx`.
 
 ### Key CSS Classes
 ```css
