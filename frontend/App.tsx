@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Search, Settings, HelpCircle, ChevronRight, ChevronDown, FileText,
   Menu, X, Plus, Clock, Terminal, Activity, Github, Edit3, Save,
@@ -8,19 +8,44 @@ import {
   Filter, Calendar, Tag, AlertCircle, GripVertical, Trash2, Maximize2,
   Table as TableIcon, BarChart3, PieChart, Info, Loader2, FolderOpen, ChevronUp
 } from 'lucide-react';
-import ReactFlow, { Background, Controls, MiniMap, Position, MarkerType } from 'reactflow';
-import { Tldraw } from 'tldraw';
-import mermaid from 'mermaid';
-import { TurboNode } from './components/TurboNode';
-import { TurboEdge } from './components/TurboEdge';
-import { TurboEdgeGradient } from './components/TurboEdgeGradient';
-
-// Custom node and edge types for Turbo Flow style
-const nodeTypes = { turbo: TurboNode };
-const edgeTypes = { turbo: TurboEdge };
 import { NavItem, Document, Block, UserPreferences, HistoryEntry, DriftStatus, DocDrift, CoverageTrendResponse } from './types';
 import { useDocsList, useDoc, useDocsSearch, useDrift, useCoverage, useCoverageTrend, EMPTY_DOC } from './hooks/useDocs';
 import { CoverageView, DocTrust, VerifiedBadge } from './components/Trust';
+import type { DiagramData } from './components/FlowDiagram';
+
+/**
+ * THE THREE HEAVY LIBRARIES ARE LAZY, AND MUST STAY THAT WAY.
+ *
+ * `mermaid` (plus the cytoscape/katex/per-diagram-type chunks behind it),
+ * `reactflow` and `tldraw` together were ~900 KiB of the entry chunk, loaded on
+ * every page view even though most docs open none of them. Each now lives
+ * behind exactly one module that nothing else imports statically:
+ *
+ *   MermaidDiagram    -> only when a doc block carries metadata.diagramData.mermaid
+ *   FlowDiagram       -> only for the non-mermaid diagram branch
+ *   FlowEditorCanvas  -> only when the architecture editor is opened
+ *   WhiteboardCanvas  -> only when the whiteboard editor is opened (activeEditor === 'wb')
+ *
+ * Adding a static `import … from 'mermaid' | 'reactflow' | 'tldraw'` anywhere
+ * reachable from this file — including a type-only-looking value import such as
+ * reactflow's `Position` enum — silently undoes all of it. Import types with
+ * `import type`, and put anything that needs the runtime inside the boundary
+ * module.
+ */
+const MermaidDiagram = React.lazy(() => import('./components/MermaidDiagram'));
+const FlowDiagram = React.lazy(() => import('./components/FlowDiagram'));
+const FlowEditorCanvas = React.lazy(() =>
+  import('./components/FlowDiagram').then(m => ({ default: m.FlowEditorCanvas })));
+const WhiteboardCanvas = React.lazy(() => import('./components/WhiteboardCanvas'));
+
+/** Suspense fallback for a lazy canvas. Same spinner vocabulary as Trust.tsx. */
+const CanvasLoading: React.FC<{ label: string }> = ({ label }) => (
+  <div className="h-full w-full flex items-center justify-center py-10">
+    <div className="flex items-center gap-2 text-sm text-zinc-500">
+      <Loader2 size={16} className="animate-spin" /> {label}
+    </div>
+  </div>
+);
 
 /** Thin wiring: hooks in, pure view out. All rendering lives in components/Trust.tsx. */
 const CoverageReport: React.FC<{ onClose: () => void }> = ({ onClose }) => {
@@ -33,73 +58,6 @@ const CoverageReport: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   );
 };
 
-
-// Initialize mermaid with Turbo Flow inspired theme
-const initMermaid = (isDark: boolean) => {
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: 'base',
-    securityLevel: 'loose',
-    flowchart: {
-      useMaxWidth: true,
-      htmlLabels: true,
-      curve: 'basis',
-      padding: 20,
-      nodeSpacing: 50,
-      rankSpacing: 60,
-    },
-    themeVariables: isDark ? {
-      // Dark mode - Turbo Flow inspired
-      fontSize: '13px',
-      fontFamily: '"JetBrains Mono", monospace',
-      primaryColor: '#1a1a2e',
-      primaryTextColor: '#f3f4f6',
-      primaryBorderColor: '#a853ba',
-      lineColor: '#a853ba',
-      secondaryColor: '#16213e',
-      tertiaryColor: '#111111',
-      background: '#111111',
-      mainBkg: '#1a1a2e',
-      secondBkg: '#16213e',
-      clusterBkg: '#16213e',
-      clusterBorder: '#a853ba',
-      titleColor: '#f3f4f6',
-      edgeLabelBackground: '#111111',
-      nodeTextColor: '#f3f4f6',
-      actorBorder: '#a853ba',
-      actorBkg: '#1a1a2e',
-      actorTextColor: '#f3f4f6',
-      signalColor: '#a853ba',
-      signalTextColor: '#f3f4f6',
-    } : {
-      // Light mode - Stripe inspired with accent colors
-      fontSize: '13px',
-      fontFamily: '"JetBrains Mono", monospace',
-      primaryColor: '#F6F9FC',
-      primaryTextColor: '#0A2540',
-      primaryBorderColor: '#635BFF',
-      lineColor: '#635BFF',
-      secondaryColor: '#FFFFFF',
-      tertiaryColor: '#F6F9FC',
-      background: '#FFFFFF',
-      mainBkg: '#F6F9FC',
-      secondBkg: '#FFFFFF',
-      clusterBkg: '#F6F9FC',
-      clusterBorder: '#635BFF',
-      titleColor: '#0A2540',
-      edgeLabelBackground: '#FFFFFF',
-      nodeTextColor: '#0A2540',
-      actorBorder: '#635BFF',
-      actorBkg: '#F6F9FC',
-      actorTextColor: '#0A2540',
-      signalColor: '#635BFF',
-      signalTextColor: '#0A2540',
-    },
-  });
-};
-
-// Default initialization
-initMermaid(true);
 
 // --- Types & Interfaces ---
 interface Toast {
@@ -276,23 +234,28 @@ export default function App() {
   const { doc: fetchedDoc, loading: docLoading, error: docError } = useDoc(selectedDocPath);
   const currentDoc = fetchedDoc || EMPTY_DOC;
 
+  // Atelier is dark BY DESIGN (see ThemeStyle in types.ts), so it pins the dark
+  // class rather than consulting the light/dark preference. Classic behaves
+  // exactly as it always has.
+  //
+  // This is derived rather than computed inside the effect because diagrams need
+  // it too: it is threaded down to MermaidDiagram, which re-themes and re-renders
+  // when it changes. Mermaid used to be re-initialized from the effect below,
+  // which is what forced its ~1 MiB of chunks into every page view.
+  const themeStyle = prefs.themeStyle ?? 'classic';
+  const isDark = useMemo(
+    () =>
+      themeStyle === 'atelier' ||
+      prefs.theme === 'dark' ||
+      (prefs.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches),
+    [prefs.theme, themeStyle],
+  );
+
   useEffect(() => {
     const root = window.document.documentElement;
-    const style = prefs.themeStyle ?? 'classic';
-    // Atelier is dark BY DESIGN (see ThemeStyle in types.ts), so it pins the
-    // dark class rather than consulting the light/dark preference. Classic
-    // behaves exactly as it always has.
-    const isDark =
-      style === 'atelier' ||
-      prefs.theme === 'dark' ||
-      (prefs.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-
     root.classList.toggle('dark', isDark);
-    root.setAttribute('data-theme', style);
-
-    // Reinitialize mermaid so diagrams follow the theme too.
-    initMermaid(isDark);
-  }, [prefs.theme, prefs.themeStyle]);
+    root.setAttribute('data-theme', themeStyle);
+  }, [isDark, themeStyle]);
 
   const addToast = (message: string, type: Toast['type'] = 'success') => {
     const id = Math.random().toString(36).substring(7);
@@ -559,7 +522,7 @@ export default function App() {
                 {currentDoc.blocks
                   .filter(block => !(block.type === 'heading-1' && block.content === currentDoc.title))
                   .map(block => (
-                  <BlockRenderer key={block.id} block={block} isEditing={isEditing} showLineNumbers={prefs.editorLineNumbers} whiteboardStyle={prefs.whiteboardStyle} theme={prefs.theme} onOpenEditor={(type, data) => { setActiveEditor(type); if (data) setEditorDiagramData(data); }} onDelete={id => {}} onCopy={() => addToast('Copied')} />
+                  <BlockRenderer key={block.id} block={block} isEditing={isEditing} showLineNumbers={prefs.editorLineNumbers} whiteboardStyle={prefs.whiteboardStyle} isDark={isDark} onOpenEditor={(type, data) => { setActiveEditor(type); if (data) setEditorDiagramData(data); }} onDelete={id => {}} onCopy={() => addToast('Copied')} />
                 ))}
               </div>
             </div>
@@ -591,90 +554,9 @@ export default function App() {
   );
 }
 
-// Mermaid diagram renderer component
-const MermaidRenderer: React.FC<{ chart: string; theme?: string }> = ({ chart, theme }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [svg, setSvg] = useState<string>('');
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const renderChart = async () => {
-      if (!chart || !containerRef.current) return;
-      try {
-        // Compute isDark from theme prop
-        const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-
-        // Re-initialize mermaid with correct theme before rendering
-        initMermaid(isDark);
-
-        const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-        let { svg: renderedSvg } = await mermaid.render(id, chart);
-
-        // Inject gradient definition for turbo-style edges
-        const gradientDef = `
-          <defs>
-            <linearGradient id="mermaid-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stop-color="#e92a67" />
-              <stop offset="50%" stop-color="#a853ba" />
-              <stop offset="100%" stop-color="#2a8af6" />
-            </linearGradient>
-          </defs>
-        `;
-
-        // Insert gradient after opening svg tag
-        renderedSvg = renderedSvg.replace(/<svg([^>]*)>/, `<svg$1>${gradientDef}`);
-
-        // Post-process SVG to fix edge label backgrounds for the current theme
-        // Target edgeLabel rect elements and set correct fill
-        const labelBgColor = isDark ? '#1a1a2e' : '#ffffff';
-        const labelTextColor = isDark ? '#f3f4f6' : '#0A2540';
-
-        // Fix edgeLabel rect backgrounds (Mermaid sets inline styles)
-        renderedSvg = renderedSvg.replace(
-          /<g[^>]*class="[^"]*edgeLabel[^"]*"[^>]*>[\s\S]*?<rect[^>]*>/g,
-          (match) => match.replace(/fill="[^"]*"/, `fill="${labelBgColor}"`)
-        );
-
-        // Also handle foreignObject backgrounds in edge labels
-        renderedSvg = renderedSvg.replace(
-          /(<g[^>]*class="[^"]*edgeLabel[^"]*"[^>]*>[\s\S]*?<foreignObject[^>]*>[\s\S]*?<div[^>]*style=")([^"]*)(")/g,
-          (match, before, style, after) => {
-            const newStyle = style.replace(/background[^;]*;?/g, '') + `background:${labelBgColor};color:${labelTextColor};`;
-            return before + newStyle + after;
-          }
-        );
-
-        setSvg(renderedSvg);
-        setError(null);
-      } catch (e) {
-        setError(String(e));
-        console.error('Mermaid render error:', e);
-      }
-    };
-    renderChart();
-  }, [chart, theme]);
-
-  if (error) {
-    return (
-      <div className="p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-lg text-red-600 dark:text-red-400 text-sm">
-        <div className="font-bold mb-2">Diagram Error</div>
-        <pre className="text-xs overflow-auto">{error}</pre>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      ref={containerRef}
-      className="mermaid-container w-full [&_svg]:w-full [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:min-h-[200px] sm:[&_svg]:min-h-[300px]"
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
-  );
-};
-
 const BlockRenderer: React.FC<{
-  block: Block; isEditing: boolean; showLineNumbers: boolean; whiteboardStyle: 'clean' | 'sketchy'; theme: string; onOpenEditor: (t: any, data?: any) => void; onDelete: (id: string) => void; onCopy: () => void
-}> = ({ block, isEditing, showLineNumbers, whiteboardStyle, theme, onOpenEditor, onDelete, onCopy }) => {
+  block: Block; isEditing: boolean; showLineNumbers: boolean; whiteboardStyle: 'clean' | 'sketchy'; isDark: boolean; onOpenEditor: (t: any, data?: any) => void; onDelete: (id: string) => void; onCopy: () => void
+}> = ({ block, isEditing, showLineNumbers, whiteboardStyle, isDark, onOpenEditor, onDelete, onCopy }) => {
   const wrapper = (children: React.ReactNode) => (
     <div className="group relative">
       {isEditing && (
@@ -779,27 +661,23 @@ const BlockRenderer: React.FC<{
               document.body.appendChild(modal);
             }} className="text-xs h-7 opacity-0 group-hover/item:opacity-100"><Maximize2 size={12} /> <span className="hidden sm:inline">Expand</span></Button>
           </div>
+          {/* The Expand handler above clones this container's innerHTML into the
+              zoom modal, so the modal inherits whatever the lazy renderer has
+              already produced — no second mermaid load, and nothing to expand
+              until the chunk has landed. */}
           <div className="p-4 sm:p-8 bg-white dark:bg-zinc-900 overflow-x-auto" data-mermaid-id={block.id}>
-            <MermaidRenderer chart={diagramData.mermaid} theme={theme} />
+            <React.Suspense fallback={<CanvasLoading label="Loading diagram…" />}>
+              <MermaidDiagram chart={diagramData.mermaid} isDark={isDark} />
+            </React.Suspense>
           </div>
         </div>
       );
     }
 
-    // Render React Flow diagram
+    // Render React Flow diagram. Node/edge normalization moved into
+    // components/FlowDiagram.tsx — it needs reactflow's `Position` enum, and
+    // importing that here would pull all of reactflow back into the entry chunk.
     if (hasData && diagramData.nodes) {
-      // Process nodes - preserve original positions for proper routing
-      const processedNodes = diagramData.nodes.map((node) => ({
-        ...node,
-        type: node.type || 'default',
-        sourcePosition: node.sourcePosition || Position.Bottom,
-        targetPosition: node.targetPosition || Position.Top,
-      }));
-      // Process edges to use turbo edge type with gradient (no arrows - cleaner look)
-      const processedEdges = (diagramData.edges || []).map((edge) => ({
-        ...edge,
-        type: edge.type || 'turbo',
-      }));
       return wrapper(
         <div className="my-4 sm:my-8 rounded-xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-hidden group/item">
           <div className="px-3 sm:px-4 py-2 bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 flex justify-between items-center">
@@ -807,22 +685,9 @@ const BlockRenderer: React.FC<{
             <Button variant="ghost" onClick={() => onOpenEditor('diag', diagramData)} className="text-xs h-7 opacity-0 group-hover/item:opacity-100"><Maximize2 size={12} /> <span className="hidden sm:inline">Expand</span></Button>
           </div>
           <div className="h-[280px] sm:h-[350px] md:h-[400px] bg-zinc-50 dark:bg-zinc-950 touch-pan-y">
-            <TurboEdgeGradient />
-            <ReactFlow
-              nodes={processedNodes}
-              edges={processedEdges}
-              nodeTypes={nodeTypes}
-              edgeTypes={edgeTypes}
-              fitView
-              proOptions={{ hideAttribution: true }}
-              defaultEdgeOptions={{ type: 'turbo' }}
-              panOnScroll={false}
-              zoomOnScroll={false}
-              preventScrolling={false}
-            >
-              <Background color="#71717a" gap={16} size={1} />
-              <Controls showInteractive={false} className="!left-2 !bottom-2 sm:!left-4 sm:!bottom-4" />
-            </ReactFlow>
+            <React.Suspense fallback={<CanvasLoading label="Loading diagram…" />}>
+              <FlowDiagram diagramData={diagramData} />
+            </React.Suspense>
           </div>
         </div>
       );
@@ -1035,36 +900,9 @@ const SettingsModal: React.FC<{ isOpen: boolean; onClose: () => void; prefs: Use
   );
 };
 
-const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: { nodes?: any[]; edges?: any[] } }> = ({ onClose, diagramData }) => {
-  // Process initial nodes - preserve original positions for proper routing
-  const initialNodes = (diagramData?.nodes || [{ id: '1', data: { label: 'New Node' }, position: { x: 250, y: 100 } }]).map((node) => ({
-    ...node,
-    type: node.type || 'default',
-    sourcePosition: node.sourcePosition || Position.Bottom,
-    targetPosition: node.targetPosition || Position.Top,
-  }));
-  // Process initial edges with turbo edge type (no arrows for cleaner look)
-  const initialEdges = (diagramData?.edges || []).map((edge) => ({
-    ...edge,
-    type: edge.type || 'turbo',
-  }));
-
-  const [nodes, setNodes] = useState(initialNodes);
-  const [edges, setEdges] = useState(initialEdges);
-
-  const onNodesChange = useCallback((changes: any) => {
-    setNodes((nds: any) => {
-      const updated = [...nds];
-      changes.forEach((change: any) => {
-        if (change.type === 'position' && change.position) {
-          const idx = updated.findIndex((n: any) => n.id === change.id);
-          if (idx !== -1) updated[idx] = { ...updated[idx], position: change.position };
-        }
-      });
-      return updated;
-    });
-  }, []);
-
+/** Editor CHROME stays eager so the modal opens instantly; only the reactflow
+ *  canvas inside it is lazy. Node/edge state lives in FlowEditorCanvas. */
+const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: DiagramData }> = ({ onClose, diagramData }) => {
   return (
     <div className="fixed inset-0 z-[100] bg-white dark:bg-zinc-950 flex flex-col animate-in fade-in duration-300">
       <header className="h-12 sm:h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 shrink-0 z-10 bg-white dark:bg-zinc-950">
@@ -1072,26 +910,9 @@ const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: { nodes?: any
         <Button variant="accent" onClick={onClose} className="px-2 sm:px-3"><Save size={16} /> <span className="hidden sm:inline">Save Diagram</span><span className="sm:hidden">Save</span></Button>
       </header>
       <div className="flex-1 touch-pan-y">
-        <TurboEdgeGradient />
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          onNodesChange={onNodesChange}
-          fitView
-          nodesDraggable={true}
-          nodesConnectable={true}
-          elementsSelectable={true}
-          defaultEdgeOptions={{ type: 'turbo' }}
-          panOnScroll={false}
-          zoomOnScroll={false}
-          preventScrolling={false}
-        >
-          <Background />
-          <Controls className="!left-2 !bottom-2 sm:!left-4 sm:!bottom-4" />
-          <MiniMap className="!hidden sm:!block" />
-        </ReactFlow>
+        <React.Suspense fallback={<CanvasLoading label="Loading diagram editor…" />}>
+          <FlowEditorCanvas diagramData={diagramData} />
+        </React.Suspense>
       </div>
     </div>
   );
@@ -1103,6 +924,12 @@ const WhiteboardEditor: React.FC<{ onClose: () => void; style: 'clean' | 'sketch
       <div className="flex items-center gap-2 sm:gap-4"><Button variant="ghost" onClick={onClose} className="p-1"><X size={20} /></Button><span className="font-bold flex items-center gap-2 text-sm sm:text-base"><Box size={18} className="text-amber-500" /> Whiteboard</span></div>
       <Button variant="accent" onClick={onClose} className="px-2 sm:px-3"><Save size={16} /> Save</Button>
     </header>
-    <div className="flex-1 tldraw__editor"><Tldraw /></div>
+    {/* Same shape as DiagramEditor: chrome eager, canvas lazy. tldraw is the
+        single largest dependency here and nothing but this modal needs it. */}
+    <div className="flex-1 tldraw__editor">
+      <React.Suspense fallback={<CanvasLoading label="Loading whiteboard…" />}>
+        <WhiteboardCanvas />
+      </React.Suspense>
+    </div>
   </div>
 );
