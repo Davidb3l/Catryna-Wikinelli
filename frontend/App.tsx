@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Search, Settings, HelpCircle, ChevronRight, ChevronDown, FileText,
   Menu, X, Plus, Clock, Terminal, Activity, Github, Edit3, Save,
@@ -11,6 +11,7 @@ import {
 import { NavItem, Document, Block, UserPreferences, HistoryEntry, DriftStatus, DocDrift, CoverageTrendResponse } from './types';
 import { useDocsList, useDoc, useDocsSearch, useDrift, useCoverage, useCoverageTrend, EMPTY_DOC } from './hooks/useDocs';
 import { CoverageView, DocTrust, VerifiedBadge } from './components/Trust';
+import { LazyCanvas } from './components/LazyCanvas';
 import type { DiagramData } from './components/FlowDiagram';
 
 /**
@@ -37,15 +38,6 @@ const FlowDiagram = React.lazy(() => import('./components/FlowDiagram'));
 const FlowEditorCanvas = React.lazy(() =>
   import('./components/FlowDiagram').then(m => ({ default: m.FlowEditorCanvas })));
 const WhiteboardCanvas = React.lazy(() => import('./components/WhiteboardCanvas'));
-
-/** Suspense fallback for a lazy canvas. Same spinner vocabulary as Trust.tsx. */
-const CanvasLoading: React.FC<{ label: string }> = ({ label }) => (
-  <div className="h-full w-full flex items-center justify-center py-10">
-    <div className="flex items-center gap-2 text-sm text-zinc-500">
-      <Loader2 size={16} className="animate-spin" /> {label}
-    </div>
-  </div>
-);
 
 /** Thin wiring: hooks in, pure view out. All rendering lives in components/Trust.tsx. */
 const CoverageReport: React.FC<{ onClose: () => void }> = ({ onClose }) => {
@@ -557,6 +549,13 @@ export default function App() {
 const BlockRenderer: React.FC<{
   block: Block; isEditing: boolean; showLineNumbers: boolean; whiteboardStyle: 'clean' | 'sketchy'; isDark: boolean; onOpenEditor: (t: any, data?: any) => void; onDelete: (id: string) => void; onCopy: () => void
 }> = ({ block, isEditing, showLineNumbers, whiteboardStyle, isDark, onOpenEditor, onDelete, onCopy }) => {
+  // Gates the mermaid Expand button. The zoom modal is a ONE-SHOT DOM clone of
+  // the rendered container, so expanding before the lazy chunk has produced an
+  // SVG copies the loading spinner into a modal that never resolves — the only
+  // way out being Close. Stays false until MermaidDiagram reports a render.
+  const [mermaidReady, setMermaidReady] = useState(false);
+  const markMermaidReady = useCallback(() => setMermaidReady(true), []);
+
   const wrapper = (children: React.ReactNode) => (
     <div className="group relative">
       {isEditing && (
@@ -635,7 +634,9 @@ const BlockRenderer: React.FC<{
         <div className="my-4 sm:my-8 rounded-xl sm:rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden group/item shadow-[0_2px_8px_rgba(0,0,0,0.04)] dark:shadow-none">
           <div className="px-3 sm:px-4 py-2 bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 flex justify-between items-center">
             <span className="text-[10px] font-black uppercase flex items-center gap-2 text-zinc-500"><Layout size={12} className="text-indigo-500" /> Mermaid Diagram</span>
-            <Button variant="ghost" onClick={() => {
+            {/* "not rendered yet" rather than "still loading": this is also the
+                state after a mermaid PARSE error, where nothing is ever coming. */}
+            <Button variant="ghost" disabled={!mermaidReady} title={mermaidReady ? 'Expand diagram' : 'Diagram not rendered yet'} onClick={() => {
               let zoom = 1;
               const modal = document.createElement('div');
               modal.className = 'fixed inset-0 z-[200] bg-zinc-950/95 flex flex-col';
@@ -666,9 +667,9 @@ const BlockRenderer: React.FC<{
               already produced — no second mermaid load, and nothing to expand
               until the chunk has landed. */}
           <div className="p-4 sm:p-8 bg-white dark:bg-zinc-900 overflow-x-auto" data-mermaid-id={block.id}>
-            <React.Suspense fallback={<CanvasLoading label="Loading diagram…" />}>
-              <MermaidDiagram chart={diagramData.mermaid} isDark={isDark} />
-            </React.Suspense>
+            <LazyCanvas what="diagram">
+              <MermaidDiagram chart={diagramData.mermaid} isDark={isDark} onRendered={markMermaidReady} />
+            </LazyCanvas>
           </div>
         </div>
       );
@@ -685,9 +686,9 @@ const BlockRenderer: React.FC<{
             <Button variant="ghost" onClick={() => onOpenEditor('diag', diagramData)} className="text-xs h-7 opacity-0 group-hover/item:opacity-100"><Maximize2 size={12} /> <span className="hidden sm:inline">Expand</span></Button>
           </div>
           <div className="h-[280px] sm:h-[350px] md:h-[400px] bg-zinc-50 dark:bg-zinc-950 touch-pan-y">
-            <React.Suspense fallback={<CanvasLoading label="Loading diagram…" />}>
+            <LazyCanvas what="diagram">
               <FlowDiagram diagramData={diagramData} />
-            </React.Suspense>
+            </LazyCanvas>
           </div>
         </div>
       );
@@ -910,9 +911,9 @@ const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: DiagramData }
         <Button variant="accent" onClick={onClose} className="px-2 sm:px-3"><Save size={16} /> <span className="hidden sm:inline">Save Diagram</span><span className="sm:hidden">Save</span></Button>
       </header>
       <div className="flex-1 touch-pan-y">
-        <React.Suspense fallback={<CanvasLoading label="Loading diagram editor…" />}>
+        <LazyCanvas what="diagram editor">
           <FlowEditorCanvas diagramData={diagramData} />
-        </React.Suspense>
+        </LazyCanvas>
       </div>
     </div>
   );
@@ -927,9 +928,9 @@ const WhiteboardEditor: React.FC<{ onClose: () => void; style: 'clean' | 'sketch
     {/* Same shape as DiagramEditor: chrome eager, canvas lazy. tldraw is the
         single largest dependency here and nothing but this modal needs it. */}
     <div className="flex-1 tldraw__editor">
-      <React.Suspense fallback={<CanvasLoading label="Loading whiteboard…" />}>
+      <LazyCanvas what="whiteboard">
         <WhiteboardCanvas />
-      </React.Suspense>
+      </LazyCanvas>
     </div>
   </div>
 );

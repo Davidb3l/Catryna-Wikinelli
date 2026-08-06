@@ -25,10 +25,17 @@
         try {
           var p = JSON.parse(localStorage.getItem('catryna.prefs.v1') || '{}');
           var style = p.themeStyle === 'atelier' ? 'atelier' : 'classic';
+          // A MISSING `theme` MUST READ AS DARK, because that is App.tsx's
+          // default (see the `defaults` object beside PREFS_KEY). This branch
+          // previously treated it as `system`, so a first-time visitor on a
+          // light-mode OS painted light here and then flipped to dark on mount
+          // — the exact flash this script exists to prevent, on every new
+          // install. Keep the two in lockstep; they disagreed for months.
           var dark =
             style === 'atelier' ||
             p.theme === 'dark' ||
-            ((p.theme === 'system' || !p.theme) &&
+            !p.theme ||
+            (p.theme === 'system' &&
               window.matchMedia('(prefers-color-scheme: dark)').matches);
           var r = document.documentElement;
           r.classList.toggle('dark', dark);

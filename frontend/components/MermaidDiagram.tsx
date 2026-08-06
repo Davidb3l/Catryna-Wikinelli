@@ -84,10 +84,21 @@ const initMermaid = (isDark: boolean) => {
 };
 
 // Mermaid diagram renderer component
-const MermaidDiagram: React.FC<{ chart: string; isDark: boolean }> = ({ chart, isDark }) => {
+const MermaidDiagram: React.FC<{
+  chart: string;
+  isDark: boolean;
+  /** Fired once an SVG is on screen. The caller uses it to enable Expand — the
+   *  zoom modal is a one-shot DOM clone, so expanding before this would copy the
+   *  loading spinner into a modal that never resolves. */
+  onRendered?: () => void;
+}> = ({ chart, isDark, onRendered }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+
+  // Held in a ref so the callback's identity cannot re-trigger the render effect.
+  const onRenderedRef = useRef(onRendered);
+  onRenderedRef.current = onRendered;
 
   useEffect(() => {
     const renderChart = async () => {
@@ -138,6 +149,7 @@ const MermaidDiagram: React.FC<{ chart: string; isDark: boolean }> = ({ chart, i
 
         setSvg(renderedSvg);
         setError(null);
+        onRenderedRef.current?.();
       } catch (e) {
         setError(String(e));
         console.error('Mermaid render error:', e);
