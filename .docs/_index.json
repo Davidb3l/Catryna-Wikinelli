@@ -149,15 +149,16 @@
         "frontend/components/WhiteboardCanvas.tsx",
         "frontend/components/LazyCanvas.tsx",
         "frontend/code-splitting.test.ts",
-        "frontend/hooks/useSystemTheme.ts"
+        "frontend/hooks/useSystemTheme.ts",
+        "frontend/index.css"
       ],
       "createdAt": 1767321379263,
       "updatedAt": 1767321691220,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "c5184e94f4004ceb871f1538dc998dfeb0992f24",
-      "verifiedAt": "2026-08-06T04:19:30.078Z",
+      "verifiedCommit": "9c83de09b1b43d4e49008811469f52998699c374",
+      "verifiedAt": "2026-08-06T05:28:29.375Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -249,15 +250,16 @@
         "frontend/components/TurboEdgeGradient.tsx",
         "frontend/components/MermaidDiagram.tsx",
         "frontend/components/FlowDiagram.tsx",
-        "frontend/index.html"
+        "frontend/index.html",
+        "frontend/styles/vendor-reactflow.css"
       ],
       "createdAt": 1767494114128,
       "updatedAt": 1767494114128,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "c5184e94f4004ceb871f1538dc998dfeb0992f24",
-      "verifiedAt": "2026-08-06T04:19:30.094Z",
+      "verifiedCommit": "9c83de09b1b43d4e49008811469f52998699c374",
+      "verifiedAt": "2026-08-06T05:28:29.390Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -418,5 +420,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1785989970094
+  "lastUpdated": 1785994109390
 }
