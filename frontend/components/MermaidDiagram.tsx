@@ -87,17 +87,19 @@ const initMermaid = (isDark: boolean) => {
 const MermaidDiagram: React.FC<{
   chart: string;
   isDark: boolean;
-  /** Fired once an SVG is on screen. The caller uses it to enable Expand — the
-   *  zoom modal is a one-shot DOM clone, so expanding before this would copy the
-   *  loading spinner into a modal that never resolves. */
-  onRendered?: () => void;
-}> = ({ chart, isDark, onRendered }) => {
+  /** Reports whether an SVG is currently on screen. The caller gates Expand on
+   *  it: the zoom modal is a one-shot DOM clone, so expanding while this is
+   *  false copies the spinner (or the error card) into a modal that never
+   *  resolves. Fires `false` on failure too — a diagram that rendered once and
+   *  then failed must not stay expandable. */
+  onRenderStateChange?: (ready: boolean) => void;
+}> = ({ chart, isDark, onRenderStateChange }) => {
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
   // Held in a ref so the callback's identity cannot re-trigger the render effect.
-  const onRenderedRef = useRef(onRendered);
-  onRenderedRef.current = onRendered;
+  const onStateChangeRef = useRef(onRenderStateChange);
+  onStateChangeRef.current = onRenderStateChange;
 
   useEffect(() => {
     // `cancelled` is what makes a theme toggle safe. mermaid.initialize() is
@@ -164,9 +166,10 @@ const MermaidDiagram: React.FC<{
         if (cancelled) return;
         setSvg(renderedSvg);
         setError(null);
-        onRenderedRef.current?.();
+        onStateChangeRef.current?.(true);
       } catch (e) {
         if (cancelled) return;
+        onStateChangeRef.current?.(false);
         setError(String(e));
         console.error('Mermaid render error:', e);
       }

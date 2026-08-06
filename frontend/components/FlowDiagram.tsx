@@ -111,7 +111,13 @@ export const FlowEditorCanvas: React.FC<{ diagramData?: DiagramData }> = ({ diag
         preventScrolling={false}
       >
         <Background />
-        <Controls className="!left-2 !bottom-2 sm:!left-4 sm:!bottom-4" />
+        {/* showInteractive={false} hides the lock toggle, which would otherwise
+            UNDO nodesConnectable={false}. Its handler writes all three
+            interaction flags straight into the store, and reactflow only
+            re-syncs a prop into the store when the prop's VALUE changes — ours
+            is a constant, so one lock/unlock round-trip leaves connections
+            permanently back on with nothing to restore them. */}
+        <Controls showInteractive={false} className="!left-2 !bottom-2 sm:!left-4 sm:!bottom-4" />
         <MiniMap className="!hidden sm:!block" />
       </ReactFlow>
     </>

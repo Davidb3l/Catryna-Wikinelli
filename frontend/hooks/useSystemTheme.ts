@@ -20,8 +20,11 @@ const QUERY = '(prefers-color-scheme: dark)';
  * Degrades to `false` where `matchMedia` is missing (older happy-dom, SSR).
  */
 export const useSystemPrefersDark = (): boolean => {
+  // `?.` after the CALL too, so this agrees with the effect's `if (!query)`
+  // guard below. Without it, a `matchMedia` that exists but returns undefined
+  // throws during render — which the effect handles and the initializer did not.
   const [prefersDark, setPrefersDark] = useState(
-    () => globalThis.matchMedia?.(QUERY).matches ?? false,
+    () => globalThis.matchMedia?.(QUERY)?.matches ?? false,
   );
 
   useEffect(() => {

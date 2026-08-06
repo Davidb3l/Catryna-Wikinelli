@@ -729,6 +729,15 @@ body {
   background: #635BFF;
 }
 
+/* Both canvases set `nodesConnectable={false}` — there is no `onConnect` and
+   nowhere to persist an edge. reactflow makes a non-connectable handle inert
+   (`pointer-events: none`) but still PAINTS it, leaving an 8px dot that reads
+   as "drag from here" and does nothing. Hide it, so the affordance matches the
+   behaviour. Handles that are genuinely connectable keep the dot. */
+.react-flow__handle:not(.connectable) {
+  opacity: 0;
+}
+
 .react-flow__node:focus {
   outline: none;
 }

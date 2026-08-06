@@ -353,7 +353,7 @@ export default function App() {
   return (
     <div className={`flex h-screen w-full overflow-hidden bg-white dark:bg-zinc-950 transition-colors`}>
       {activeEditor === 'diag' && <DiagramEditor onClose={() => { setActiveEditor(null); setEditorDiagramData(null); }} diagramData={editorDiagramData || undefined} />}
-      {activeEditor === 'wb' && <WhiteboardEditor onClose={() => setActiveEditor(null)} style={prefs.whiteboardStyle} />}
+      {activeEditor === 'wb' && <WhiteboardEditor onClose={() => setActiveEditor(null)} />}
       {activeEditor === 'coverage' && <CoverageReport onClose={() => setActiveEditor(null)} />}
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} prefs={prefs} setPrefs={setPrefs} />
       <CommandPalette isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} onSelect={handleDocSelect} docs={docs} />
@@ -559,7 +559,7 @@ const BlockRenderer: React.FC<{
   // SVG copies the loading spinner into a modal that never resolves — the only
   // way out being Close. Stays false until MermaidDiagram reports a render.
   const [mermaidReady, setMermaidReady] = useState(false);
-  const markMermaidReady = useCallback(() => setMermaidReady(true), []);
+  const markMermaidReady = useCallback((ready: boolean) => setMermaidReady(ready), []);
 
   const wrapper = (children: React.ReactNode) => (
     <div className="group relative">
@@ -673,7 +673,7 @@ const BlockRenderer: React.FC<{
               until the chunk has landed. */}
           <div className="p-4 sm:p-8 bg-white dark:bg-zinc-900 overflow-x-auto" data-mermaid-id={block.id}>
             <LazyCanvas what="diagram">
-              <MermaidDiagram chart={diagramData.mermaid} isDark={isDark} onRendered={markMermaidReady} />
+              <MermaidDiagram chart={diagramData.mermaid} isDark={isDark} onRenderStateChange={markMermaidReady} />
             </LazyCanvas>
           </div>
         </div>
@@ -938,7 +938,7 @@ const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: DiagramData }
   return (
     <div className="fixed inset-0 z-[100] bg-white dark:bg-zinc-950 flex flex-col animate-in fade-in duration-300">
       <header className="h-12 sm:h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 shrink-0 z-10 bg-white dark:bg-zinc-950">
-        <div className="flex items-center gap-2 sm:gap-4"><Button variant="ghost" onClick={onClose} className="p-1"><X size={20} /></Button><span className="font-bold flex items-center gap-2 text-sm sm:text-base"><Layout size={18} className="text-indigo-500" /> <span className="hidden sm:inline">Architecture</span> Editor</span></div>
+        <div className="flex items-center gap-2 sm:gap-4"><span className="font-bold flex items-center gap-2 text-sm sm:text-base"><Layout size={18} className="text-indigo-500" /> <span className="hidden sm:inline">Architecture</span> Editor</span></div>
         <Button variant="outline" onClick={onClose} className="px-2 sm:px-3"><X size={16} /> Close</Button>
       </header>
       <ScratchpadNotice what="diagram" />
@@ -951,10 +951,13 @@ const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: DiagramData }
   );
 };
 
-const WhiteboardEditor: React.FC<{ onClose: () => void; style: 'clean' | 'sketchy' }> = ({ onClose, style }) => (
+/** `whiteboardStyle` is deliberately NOT threaded in: tldraw ignored it, so the
+ *  prop was dead. The pref still drives the placeholder card's border in
+ *  BlockRenderer, which is the only place it has ever had an effect. */
+const WhiteboardEditor: React.FC<{ onClose: () => void }> = ({ onClose }) => (
   <div className="fixed inset-0 z-[100] bg-white dark:bg-zinc-950 flex flex-col animate-in slide-in-from-bottom duration-300">
     <header className="h-12 sm:h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 shrink-0 z-10 bg-white dark:bg-zinc-950">
-      <div className="flex items-center gap-2 sm:gap-4"><Button variant="ghost" onClick={onClose} className="p-1"><X size={20} /></Button><span className="font-bold flex items-center gap-2 text-sm sm:text-base"><Box size={18} className="text-amber-500" /> Whiteboard</span></div>
+      <div className="flex items-center gap-2 sm:gap-4"><span className="font-bold flex items-center gap-2 text-sm sm:text-base"><Box size={18} className="text-amber-500" /> Whiteboard</span></div>
       <Button variant="outline" onClick={onClose} className="px-2 sm:px-3"><X size={16} /> Close</Button>
     </header>
     <ScratchpadNotice what="whiteboard" />
