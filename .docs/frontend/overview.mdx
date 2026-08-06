@@ -3,7 +3,7 @@ id: 8ba895db-7586-4187-92fb-7da033094537
 title: "Frontend Application"
 path: "frontend/overview"
 tags: ["frontend", "react", "vite"]
-relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx"]
+relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts"]
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
@@ -49,8 +49,12 @@ that is load-bearing rather than an optimization detail. They were imported at
 entry chunk, of which mermaid was the bulk (it pulls in cytoscape, katex, and a
 separate chunk per diagram type). Most docs open none of them.
 
-Each library now sits behind exactly **one** module that nothing else imports
-statically, reached through `React.lazy` + `<Suspense>`:
+Each library now sits behind **one boundary module**, reached through
+`React.lazy` + `<LazyCanvas>`. The precise invariant is that no module in the
+**eager import graph** — everything reachable from `index.tsx` by a non-`import
+type`, non-`import()` edge — pulls in a heavy library. (`components/TurboNode.tsx`
+and `TurboEdge.tsx` do import `reactflow`; they are fine because only
+`FlowDiagram` reaches them, so they land in its lazy chunk.)
 
 | Boundary module | Library | Fetched when |
 |---|---|---|
@@ -58,9 +62,18 @@ statically, reached through `React.lazy` + `<Suspense>`:
 | `components/FlowDiagram.tsx` | `reactflow` (+ the Turbo node/edge components) | the non-mermaid diagram branch, or the architecture editor |
 | `components/WhiteboardCanvas.tsx` | `tldraw` | the whiteboard editor is opened (`activeEditor === 'wb'`) |
 
-Measured on the built bundle: a doc with **no** diagram loads 2 chunks; a
+Measured on the built bundle: a doc with **no** diagram loads 2 JS chunks; a
 mermaid doc and a React Flow doc each pull their own; tldraw arrives only when
 the whiteboard modal opens.
+
+<Callout type="info">
+That is the **JS** cost. The CSS half is still eager: `index.html` render-blocks
+on `tldraw.css` and `reactflow/dist/style.css` from `esm.sh` on every page view,
+for both themes, whether or not a diagram is on screen. Splitting the JS did not
+touch it. (The tldraw stylesheet is additionally pinned to a canary version that
+does not match `package.json`, and currently 500s — so the whiteboard canvas
+renders unstyled.)
+</Callout>
 
 Two consequences worth knowing before editing `App.tsx`:
 
@@ -78,14 +91,37 @@ Two consequences worth knowing before editing `App.tsx`:
 The full-screen editors split chrome from canvas: the modal header renders
 eagerly so it opens instantly, and only the canvas inside it suspends.
 
+### Every lazy canvas needs an error boundary, not just a fallback
+
+`React.lazy` re-throws a failed `import()` **during render**. With only the
+app-wide boundary in `index.tsx` above it, one un-fetchable chunk replaced the
+entire viewer — sidebar, nav and the prose being read — with the full-screen
+crash card. And it could not be dismissed: React caches the rejected promise on
+the lazy component for the life of the page, so the crash card's *Try again*
+re-threw the same error immediately.
+
+`components/LazyCanvas.tsx` pairs the Suspense fallback with a local boundary so
+the blast radius is one block. It offers **Reload the page**, which actually
+recovers, rather than a retry that provably cannot.
+
+Triggers are ordinary: a dev server restart, a deploy rotating content hashes
+with a tab still open, a flaky connection mid-chunk.
+
 <Callout type="warning">
-Nothing fails if this regresses. Add a static `import … from 'mermaid'` (or
-`'reactflow'`, or `'tldraw'`) anywhere `App.tsx` can reach and the app still
-works, the types still check, the other tests still pass — the bundle just
-quietly gets big again. `code-splitting.test.ts` exists for exactly that: it
-asserts no eager module value-imports the three libraries, that each lazy
-component is reached via `import()`, and that each is wrapped in a Suspense
-boundary. It is mutation-checked against both failure modes.
+Nothing fails if the splitting regresses. Add a static import of a heavy library
+anywhere the entry can reach and the app still works, the types still check, the
+other tests still pass — the bundle just quietly gets big again.
+`code-splitting.test.ts` is the only thing standing there. It walks the eager
+import graph from `index.tsx` rather than checking a hardcoded file list, and
+understands the import forms that actually defeat splitting.
+
+Its first version did neither, and review proved two ways straight past it by
+building the mutated bundles: a bare `import 'tldraw';` (no `from`, so the regex
+never matched) put the entry back to **1188 KiB**, and an `export { Position }
+from 'reactflow'` in the unchecked `types.ts` put it back to **374 KiB** — both
+while the test reported green. Treat that as the standing warning about
+source-text gates: they are worth having, and they are only as good as the
+grammar and the file set they cover.
 </Callout>
 
 The viewer has **no LLM dependency and no API key**. It previously shipped a `frontend/services/geminiService.ts` that called the Google Gemini API straight from the browser, with `vite.config.ts` inlining `GEMINI_API_KEY` into the bundle via `define` — for two methods nothing ever invoked. Both the service and the `define` block are gone; summarization and structure suggestion belong to Claude Code over MCP, which has the repo context this never did.
@@ -144,7 +180,16 @@ Class-based dark mode comes from `@custom-variant dark (&:where(.dark, .dark *))
 </Callout>
 
 <Callout type="warning">
-**The theme is applied by a blocking inline script in `index.html`, before first paint** — and that is not only about avoiding a flash of Classic-light. When `.dark` was added to `<html>` *after* paint, `<body>` was observed **not** to re-style for the descendant `dark:` selector: it matched `.dark\:bg-zinc-950:where(.dark, .dark *)` yet kept its `bg-white` background, while an identical `<div>` created afterwards resolved correctly. Setting the class before body is first styled removes the invalidation step entirely. Keep that script in lockstep with the theme effect in `App.tsx` and with `PREFS_KEY`.
+**The theme is applied by a blocking inline script in `index.html`, before first paint** — and that is not only about avoiding a flash of Classic-light.
+
+**"Lockstep" is a real requirement, and the two drifted.** The script treated a
+**missing** `theme` key as `system`, while `App.tsx`'s defaults object says
+`theme: 'dark'`. So every first-time visitor on a light-mode OS painted light
+and then flipped to dark on mount — the exact flash the script exists to
+prevent, on every new install, not just on a hand-edited prefs blob. The script
+now reads a missing `theme` as dark. If you change the defaults in `App.tsx`,
+change the script in the same commit.
+ When `.dark` was added to `<html>` *after* paint, `<body>` was observed **not** to re-style for the descendant `dark:` selector: it matched `.dark\:bg-zinc-950:where(.dark, .dark *)` yet kept its `bg-white` background, while an identical `<div>` created afterwards resolved correctly. Setting the class before body is first styled removes the invalidation step entirely. Keep that script in lockstep with the theme effect in `App.tsx` and with `PREFS_KEY`.
 </Callout>
 
 `white` and `black` are deliberately **not** themed tokens: `bg-white` is a surface while `text-white` is ink on a coloured button, and one token cannot be both. No `.bg-white` override is needed either — all 25 uses are paired with a `dark:` variant and Atelier always runs dark, so the dark variant wins on its own. (An override did exist briefly; under the CDN, runtime-injected utilities landed *after* `index.css`, but with `@import "tailwindcss"` they now come *first*, so the override began beating `dark:bg-zinc-950` and lightened the canvas.)

@@ -3,7 +3,7 @@ id: 49ba4ce6-9348-476a-9e54-58b48fdbab2c
 title: "Diagram Themes & Styling"
 path: "styling/diagram-themes"
 tags: ["styling", "react-flow", "mermaid", "turbo-flow", "theming"]
-relatedFiles: ["frontend/index.css", "frontend/App.tsx", "frontend/components/TurboNode.tsx", "frontend/components/TurboEdge.tsx", "frontend/components/TurboEdgeGradient.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx"]
+relatedFiles: ["frontend/index.css", "frontend/App.tsx", "frontend/components/TurboNode.tsx", "frontend/components/TurboEdge.tsx", "frontend/components/TurboEdgeGradient.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/index.html"]
 createdAt: 1767494114128
 updatedAt: 1767494114128
 createdBy: "claude-code"
@@ -42,8 +42,10 @@ Light mode is selected by the absence of the `dark` class on `<html>`: every ove
 
 ## Where the theming code lives
 
-Both halves moved out of `App.tsx` when the viewer's bundle was code-split, and
-they are now the *only* modules that import their library:
+Both halves moved out of `App.tsx` when the viewer's bundle was code-split.
+Each is the only **eagerly reachable** module that imports its library — the
+Turbo components import `reactflow` too, but nothing reaches them except through
+`FlowDiagram`, so they ride in its lazy chunk:
 
 | File | Owns |
 |---|---|
@@ -101,12 +103,23 @@ pins dark regardless of the stored `light`/`dark`/`system` mode, so a renderer
 that only read `prefs.theme` would theme diagrams against the wrong canvas.
 
 <Callout type="warning">
-It did exactly that. With Atelier selected and a stored mode of `light`, mermaid
-was initialized light and the post-processor wrote `background:#ffffff;
-color:#0A2540` into the edge labels — light chips on the `#0d0d16` canvas. The
-node fills *looked* right only because the `.dark` CSS overrides in `index.css`
-repainted them, which is also why the bug survived: CSS masked the half of the
-theming it happens to cover, and the inline half stayed wrong.
+It did exactly that. Atelier disables the mode buttons but never resets the
+stored value, so `{themeStyle:'atelier', theme:'light'}` is an ordinary state to
+be in — and mermaid was then initialized with the **light** `themeVariables` on
+the `#0d0d16` canvas.
+
+What made it survive so long is *which* half of the damage CSS covered. The
+`.dark .mermaid-container …` rules in `index.css` are `!important`, so they
+outrank even inline `style` attributes — flowchart node fills, edge strokes and
+edge labels were all repainted correctly no matter what mermaid was initialized
+with. The rules are written for flowchart-shaped selectors (`.node`,
+`.edgeLabel`, `.edgePath`), so anything they do not name kept the light values.
+
+The clearest survivor is a **sequence diagram**: its actor labels are `<tspan>`
+elements carrying mermaid's `actorTextColor`, and no `.dark` rule targets them.
+In Atelier they rendered `#0A2540` on the `#1a1a2e` actor box — dark-on-dark,
+effectively invisible. Verified before and after the fix on the same diagram:
+`rgb(10,37,64)` → `rgb(243,244,246)`.
 </Callout>
 
 ### Supported Diagram Types
