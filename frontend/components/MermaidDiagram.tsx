@@ -92,7 +92,6 @@ const MermaidDiagram: React.FC<{
    *  loading spinner into a modal that never resolves. */
   onRendered?: () => void;
 }> = ({ chart, isDark, onRendered }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
@@ -101,8 +100,23 @@ const MermaidDiagram: React.FC<{
   onRenderedRef.current = onRendered;
 
   useEffect(() => {
+    // `cancelled` is what makes a theme toggle safe. mermaid.initialize() is
+    // global singleton state, so a rapid toggle can leave an earlier
+    // `mermaid.render` in flight that resolves AFTER the newer one and wins the
+    // setSvg race — pinning the diagram to the previous theme, with this
+    // closure's stale labelBgColor baked into the post-processing. Discarding
+    // superseded results also stops us setting state after unmount.
+    let cancelled = false;
+
     const renderChart = async () => {
-      if (!chart || !containerRef.current) return;
+      // NOTE: deliberately no `containerRef.current` guard. There used to be
+      // one, and because the error branch below returns a card WITHOUT the
+      // ref'd container, the ref stayed null once a diagram had failed — so
+      // every later chart or theme change short-circuited and the block was
+      // stuck on the error card for the life of the page. The ref was never
+      // needed: mermaid.render() returns a string, it does not draw into a
+      // node, and the output goes out through dangerouslySetInnerHTML.
+      if (!chart) return;
       try {
         // Re-initialize mermaid with correct theme before rendering. `isDark` is
         // a dep of this effect, so a theme switch re-themes AND re-renders every
@@ -147,15 +161,18 @@ const MermaidDiagram: React.FC<{
           }
         );
 
+        if (cancelled) return;
         setSvg(renderedSvg);
         setError(null);
         onRenderedRef.current?.();
       } catch (e) {
+        if (cancelled) return;
         setError(String(e));
         console.error('Mermaid render error:', e);
       }
     };
     renderChart();
+    return () => { cancelled = true; };
   }, [chart, isDark]);
 
   if (error) {
@@ -169,7 +186,6 @@ const MermaidDiagram: React.FC<{
 
   return (
     <div
-      ref={containerRef}
       className="mermaid-container w-full [&_svg]:w-full [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:min-h-[200px] sm:[&_svg]:min-h-[300px]"
       dangerouslySetInnerHTML={{ __html: svg }}
     />

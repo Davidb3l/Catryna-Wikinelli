@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Search, Settings, HelpCircle, ChevronRight, ChevronDown, FileText,
-  Menu, X, Plus, Clock, Terminal, Activity, Github, Edit3, Save,
+  Menu, X, Plus, Clock, Terminal, Activity, Github, Edit3,
   MousePointer2, History, RotateCcw, Check, Monitor, Moon, Sun,
   Type as TypeIcon, Layout, Box, Share2, Layers, Folder, Copy, ExternalLink,
   Filter, Calendar, Tag, AlertCircle, GripVertical, Trash2, Maximize2,
@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { NavItem, Document, Block, UserPreferences, HistoryEntry, DriftStatus, DocDrift, CoverageTrendResponse } from './types';
 import { useDocsList, useDoc, useDocsSearch, useDrift, useCoverage, useCoverageTrend, EMPTY_DOC } from './hooks/useDocs';
+import { useSystemPrefersDark } from './hooks/useSystemTheme';
 import { CoverageView, DocTrust, VerifiedBadge } from './components/Trust';
 import { LazyCanvas } from './components/LazyCanvas';
 import type { DiagramData } from './components/FlowDiagram';
@@ -235,12 +236,16 @@ export default function App() {
   // when it changes. Mermaid used to be re-initialized from the effect below,
   // which is what forced its ~1 MiB of chunks into every page view.
   const themeStyle = prefs.themeStyle ?? 'classic';
+
+  // `system` now actually TRACKS the system — see hooks/useSystemTheme.ts.
+  const systemPrefersDark = useSystemPrefersDark();
+
   const isDark = useMemo(
     () =>
       themeStyle === 'atelier' ||
       prefs.theme === 'dark' ||
-      (prefs.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches),
-    [prefs.theme, themeStyle],
+      (prefs.theme === 'system' && systemPrefersDark),
+    [prefs.theme, themeStyle, systemPrefersDark],
   );
 
   useEffect(() => {
@@ -901,6 +906,32 @@ const SettingsModal: React.FC<{ isOpen: boolean; onClose: () => void; prefs: Use
   );
 };
 
+/**
+ * Both editors are SCRATCHPADS and now say so.
+ *
+ * They shipped a prominent accent "Save Diagram" / "Save" button whose entire
+ * handler was `onClose` — so the button most likely to be pressed after moving
+ * nodes around was the one that discarded the work. That is the same defect as
+ * the removed Preview-mode Save (which at least had the decency to toast a lie
+ * only after 800ms): the docs API is GET-only, there is no write path, and
+ * `updateDoc` still re-serializes through the lossy parser, so building one
+ * here would corrupt docs rather than save them.
+ *
+ * Until that changes, the honest shape is a labelled Close and a banner naming
+ * the real way to edit. See the "Preview Mode" section of `frontend/overview`.
+ */
+const ScratchpadNotice: React.FC<{ what: string }> = ({ what }) => (
+  <div className="px-3 sm:px-6 py-2 border-b border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-[11px] sm:text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2 shrink-0">
+    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+    <div>
+      <span className="font-bold">Scratchpad — nothing here is saved.</span>{' '}
+      The docs API is read-only. To change this {what} for real, edit the
+      <code className="font-mono mx-1">.mdx</code> file directly, or ask Claude Code to update it
+      with the <code className="font-mono">update_doc</code> MCP tool.
+    </div>
+  </div>
+);
+
 /** Editor CHROME stays eager so the modal opens instantly; only the reactflow
  *  canvas inside it is lazy. Node/edge state lives in FlowEditorCanvas. */
 const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: DiagramData }> = ({ onClose, diagramData }) => {
@@ -908,8 +939,9 @@ const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: DiagramData }
     <div className="fixed inset-0 z-[100] bg-white dark:bg-zinc-950 flex flex-col animate-in fade-in duration-300">
       <header className="h-12 sm:h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 shrink-0 z-10 bg-white dark:bg-zinc-950">
         <div className="flex items-center gap-2 sm:gap-4"><Button variant="ghost" onClick={onClose} className="p-1"><X size={20} /></Button><span className="font-bold flex items-center gap-2 text-sm sm:text-base"><Layout size={18} className="text-indigo-500" /> <span className="hidden sm:inline">Architecture</span> Editor</span></div>
-        <Button variant="accent" onClick={onClose} className="px-2 sm:px-3"><Save size={16} /> <span className="hidden sm:inline">Save Diagram</span><span className="sm:hidden">Save</span></Button>
+        <Button variant="outline" onClick={onClose} className="px-2 sm:px-3"><X size={16} /> Close</Button>
       </header>
+      <ScratchpadNotice what="diagram" />
       <div className="flex-1 touch-pan-y">
         <LazyCanvas what="diagram editor">
           <FlowEditorCanvas diagramData={diagramData} />
@@ -923,8 +955,9 @@ const WhiteboardEditor: React.FC<{ onClose: () => void; style: 'clean' | 'sketch
   <div className="fixed inset-0 z-[100] bg-white dark:bg-zinc-950 flex flex-col animate-in slide-in-from-bottom duration-300">
     <header className="h-12 sm:h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 shrink-0 z-10 bg-white dark:bg-zinc-950">
       <div className="flex items-center gap-2 sm:gap-4"><Button variant="ghost" onClick={onClose} className="p-1"><X size={20} /></Button><span className="font-bold flex items-center gap-2 text-sm sm:text-base"><Box size={18} className="text-amber-500" /> Whiteboard</span></div>
-      <Button variant="accent" onClick={onClose} className="px-2 sm:px-3"><Save size={16} /> Save</Button>
+      <Button variant="outline" onClick={onClose} className="px-2 sm:px-3"><X size={16} /> Close</Button>
     </header>
+    <ScratchpadNotice what="whiteboard" />
     {/* Same shape as DiagramEditor: chrome eager, canvas lazy. tldraw is the
         single largest dependency here and nothing but this modal needs it. */}
     <div className="flex-1 tldraw__editor">

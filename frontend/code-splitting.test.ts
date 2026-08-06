@@ -138,6 +138,7 @@ describe('heavy libraries stay behind the lazy boundary', () => {
       'components/LazyCanvas.tsx',
       'components/Trust.tsx',
       'hooks/useDocs.ts',
+      'hooks/useSystemTheme.ts',
       'index.css',
       'index.tsx',
       'types.ts',

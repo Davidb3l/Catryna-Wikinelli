@@ -50,6 +50,12 @@ const FlowDiagram: React.FC<{ diagramData: DiagramData }> = ({ diagramData }) =>
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
       fitView
+      // This canvas is a READ-ONLY view inside a doc, but reactflow defaults
+      // `nodesConnectable` to true — so every node offered connection handles
+      // that drew a line and then dropped it, there being no `onConnect` and
+      // nowhere to persist an edge. Nodes stay draggable: nudging one to read
+      // an overlapped label is useful and harmless.
+      nodesConnectable={false}
       proOptions={{ hideAttribution: true }}
       defaultEdgeOptions={{ type: 'turbo' }}
       panOnScroll={false}
@@ -93,7 +99,11 @@ export const FlowEditorCanvas: React.FC<{ diagramData?: DiagramData }> = ({ diag
         onNodesChange={onNodesChange}
         fitView
         nodesDraggable={true}
-        nodesConnectable={true}
+        // No `onConnect` handler exists, so dragging from a handle produced a
+        // connection line that vanished on release and never became an edge.
+        // An affordance that cannot succeed is worse than none — turn it off
+        // until there is somewhere for a new edge to be saved to.
+        nodesConnectable={false}
         elementsSelectable={true}
         defaultEdgeOptions={{ type: 'turbo' }}
         panOnScroll={false}
