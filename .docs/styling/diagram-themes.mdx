@@ -3,7 +3,7 @@ id: 49ba4ce6-9348-476a-9e54-58b48fdbab2c
 title: "Diagram Themes & Styling"
 path: "styling/diagram-themes"
 tags: ["styling", "react-flow", "mermaid", "turbo-flow", "theming"]
-relatedFiles: ["frontend/index.css", "frontend/App.tsx", "frontend/components/TurboNode.tsx", "frontend/components/TurboEdge.tsx", "frontend/components/TurboEdgeGradient.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/index.html", "frontend/styles/vendor-reactflow.css"]
+relatedFiles: ["frontend/index.css", "frontend/App.tsx", "frontend/components/TurboNode.tsx", "frontend/components/TurboEdge.tsx", "frontend/components/TurboEdgeGradient.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/index.html", "frontend/styles/vendor-reactflow.css", "frontend/styles/vendor-tldraw.css"]
 createdAt: 1767494114128
 updatedAt: 1767494114128
 createdBy: "claude-code"
@@ -181,8 +181,19 @@ reactflow's own stylesheet is imported by `FlowDiagram` through
 cosmetic: chunk CSS loads *after* `index.css`, and unlayered rules of equal
 specificity are decided by order, so importing it directly let reactflow's
 `.react-flow__node-default { color: #222 }` beat the themed light text — three
-nodes rendered as empty dark rectangles. Unlayered always beats layered, so the
-overrides below win by construction.
+nodes rendered as empty dark rectangles.
+
+Unlayered rules — which is everything hand-written below — beat any layer. But
+the layer's *position* still matters for the Tailwind-generated half of the same
+file, so `index.css` declares the order explicitly on line 1
+(`@layer properties, theme, base, vendor, components, utilities`). Without it,
+`vendor` is first declared in the lazily-injected chunk and sorts above
+`utilities`. See the `frontend/overview` doc.
+
+Note the cost of layering: unlayered app CSS now outranks the vendor sheets
+whatever the specificity, so global selectors in `index.css` can reach into the
+canvases. Two already did — see the tldraw exceptions beside the touch-target
+and tap-highlight rules.
 
 It also carries the app-wide **theme system** (the palette variable sets for
 `classic` / `atelier`, the reading, trust and search polish). Those are separate

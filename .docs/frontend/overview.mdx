@@ -3,7 +3,7 @@ id: 8ba895db-7586-4187-92fb-7da033094537
 title: "Frontend Application"
 path: "frontend/overview"
 tags: ["frontend", "react", "vite"]
-relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts", "frontend/hooks/useSystemTheme.ts", "frontend/index.css"]
+relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts", "frontend/hooks/useSystemTheme.ts", "frontend/index.css", "frontend/styles/vendor-reactflow.css", "frontend/styles/vendor-tldraw.css"]
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
@@ -68,8 +68,9 @@ the whiteboard modal opens.
 
 **The CSS is split the same way.** `reactflow/dist/style.css` and
 `tldraw/tldraw.css` are imported by their boundary modules, so Vite emits them
-as chunk CSS loaded with the chunk. A cold page view fetches exactly one
-stylesheet — `index.css`.
+as chunk CSS loaded with the chunk. A cold page view fetches one *local*
+stylesheet, `index.css` — plus the Google Fonts sheet, which is still remote and
+still render-blocking (see below).
 
 <Callout type="warning">
 Both used to be render-blocking `<link>`s in `index.html` pointing at **esm.sh**:
@@ -93,8 +94,36 @@ exactly the shape of thing someone later trusts.
 a plain `import 'reactflow/dist/style.css'` let reactflow's defaults beat this
 project's Turbo overrides. `.react-flow__node-default { color: #222 }` won over
 the themed light text and three nodes rendered as **empty dark rectangles**.
-Anything unlayered beats anything layered regardless of order, so the layer makes
-`index.css` win by construction instead of by luck.
+
+The layer alone is **not** sufficient, and it is worth being exact about why. A
+layer's position is fixed by its **first declaration anywhere in the document**.
+`vendor` was first declared in a chunk sheet injected after everything else, so
+it landed *above* Tailwind's `utilities`: unlayered rules still won — the
+hand-written half of `index.css` was fine — but every Tailwind utility the app
+put on a reactflow or tldraw element quietly lost. Nothing broke only because
+all of them happened to be `!`-prefixed.
+
+`index.css` therefore opens with an explicit order:
+
+```css
+@layer properties, theme, base, vendor, components, utilities;
+```
+
+`vendor` above `base` (Tailwind's preflight lives there and would otherwise
+strip tldraw's chrome), below `components`/`utilities` (so the app's own classes
+win). Built output confirms `properties < theme < base < vendor < components <
+utilities < unlayered`.
+</Callout>
+
+<Callout type="warning">
+**Layering a vendor sheet cuts both ways: unlayered app CSS now outranks it too,
+whatever the specificity.** Two global rules in `index.css` started reaching
+into the tldraw canvas the moment its stylesheet moved into a layer — `*
+{ -webkit-tap-highlight-color: … }` overrode tldraw's deliberate `transparent`
+(an indigo flash on every tap in a drawing surface), and the mobile
+`button { min-height: 44px }` touch-target floor inflated its 32px toolbar
+buttons. Both are now re-scoped with `.tl-container` exceptions. Check the
+canvases after touching any global selector in `index.css`.
 </Callout>
 
 Two consequences worth knowing before editing `App.tsx`:
