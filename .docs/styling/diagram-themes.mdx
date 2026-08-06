@@ -66,6 +66,17 @@ React Flow diagrams use custom components for the Turbo style:
 - `default` - React Flow's built-in node, restyled by `.react-flow__node-default`: a `#1a1a2e → #16213e` gradient fill with a `#2a8af6` border and blue glow. Nodes with no `type` land here.
 - `turbo` - The only custom type registered (`nodeTypes = { turbo: TurboNode }`). Conic-gradient border ring, `JetBrains Mono`, cloud badge. The ring only *animates* while the node is `.selected`.
 
+<Callout type="warning">
+**A custom node type must forward `isConnectable` to its `Handle`s.** reactflow
+resolves the canvas-level `nodesConnectable` and hands the result to each node as
+a prop — `Handle` never reads it from the store, and its own default is `true`.
+`TurboNode` destructured only `data`, so on a canvas with connections switched
+off its handles stayed live (crosshair cursor, `pointer-events: all`,
+click-connect latching) while the connection line was suppressed, since *that*
+does read the store. The built-in types forward it, which is why the gap only
+shows on `turbo` nodes.
+</Callout>
+
 ### Edge Types  
 - `turbo` - Smoothstep routing with gradient stroke. Applied automatically: every edge is mapped to `type: edge.type || 'turbo'`, and `defaultEdgeOptions={{ type: 'turbo' }}` covers the rest. Arrow markers are deliberately omitted.
 
@@ -96,6 +107,13 @@ const nodes = [
 ## Mermaid Diagrams
 
 Mermaid charts automatically inherit the Turbo theme via CSS and theme variables. The variables come from `initMermaid(isDark)` in `components/MermaidDiagram.tsx` (`theme: 'base'` plus a full dark/light `themeVariables` map); it runs from an effect keyed on `isDark`, immediately before each render, so a theme switch re-themes and re-renders every diagram on screen. The same component then post-processes the SVG — injecting the `#mermaid-gradient` def and rewriting edge-label backgrounds, which inline Mermaid styles would otherwise get wrong.
+
+`mermaid.initialize()` is **global singleton state**, so that effect is
+cancellable: a fast theme toggle can leave an earlier `mermaid.render` in flight
+that resolves after the newer one, and without a guard the stale SVG — carrying
+the previous theme's post-processing — would win the `setSvg` race. Superseded
+results are discarded instead. (A twelve-flip burst converges correctly with and
+without the guard; the ordering is not something to rely on.)
 
 `isDark` is **resolved by `App.tsx` and passed down**, not derived from the mode
 preference inside the renderer. That distinction is the whole point: Atelier
@@ -151,6 +169,11 @@ Contains the CSS half of the Turbo Flow styling:
 - Mermaid theme overrides (`.mermaid-container …`)
 - Dark/light mode variants, via `.dark` and `:root:not(.dark)`
 - Glow and shadow effects
+- `.react-flow__handle:not(.connectable) { opacity: 0 }` — both canvases run
+  with `nodesConnectable={false}`, and reactflow only makes such a handle
+  *inert*, not invisible. An 8px dot that reads as "drag from here" and cannot
+  do anything is the affordance the flag was meant to remove, so it is hidden.
+  Genuinely connectable handles keep the dot.
 
 It also carries the app-wide **theme system** (the palette variable sets for
 `classic` / `atelier`, the reading, trust and search polish). Those are separate
@@ -166,6 +189,7 @@ The rest lives in TSX: Mermaid's `themeVariables` and the SVG post-processing in
 .react-flow__node-default { /* Node styling */ }
 .react-flow__edge-path { /* Edge gradient */ }
 .react-flow__handle { /* Connection points */ }
+.react-flow__handle:not(.connectable) { /* hidden — see below */ }
 
 /* Mermaid */
 .mermaid-container .node rect { /* Node boxes */ }

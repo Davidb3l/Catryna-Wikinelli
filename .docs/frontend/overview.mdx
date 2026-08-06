@@ -3,7 +3,7 @@ id: 8ba895db-7586-4187-92fb-7da033094537
 title: "Frontend Application"
 path: "frontend/overview"
 tags: ["frontend", "react", "vite"]
-relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts"]
+relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts", "frontend/hooks/useSystemTheme.ts"]
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
@@ -152,7 +152,7 @@ It also sets **`strictPort: true`**, so a taken port is a hard startup failure i
 
 - Theme switching on two axes: a named **style** (`classic` / `atelier`) and a light/dark **mode** (see below)
 
-- Settings modal for preferences, persisted to `localStorage` (`catryna.prefs.v1`)
+- Settings modal for preferences, persisted to `localStorage` (`catryna.prefs.v1`). **Canvas Style** (`clean` / `sketchy`) only styles the whiteboard *placeholder card's* border in `BlockRenderer` — tldraw itself has never honoured it. `WhiteboardEditor` used to take the pref as a prop and ignore it; the dead prop is gone rather than left to imply an effect it does not have.
 
 - Version history sidebar
 
@@ -168,6 +168,22 @@ Two independent axes, and keeping them separate is what lets a second identity e
 | **Mode** (`theme`) | `light`, `dark`, `system` | `.dark` class on `<html>` |
 
 **Classic** is the original Stripe-inspired look and honours the mode. **Atelier** is the [catrynawiki.com](https://catrynawiki.com) identity — `#0d0d16` canvas, the Turbo Flow gradient as signature, Fraunces display type over Hanken Grotesk, radial glows and film grain — and is **dark only**, so it pins the `dark` class and disables the mode control rather than hiding it.
+
+<Callout type="info">
+Atelier disables the mode buttons but deliberately does **not** reset the stored
+`theme`, so `{themeStyle:'atelier', theme:'light'}` is a normal state to be in.
+Anything deriving dark/light must therefore consult `themeStyle` too — deriving
+it from `prefs.theme` alone is what themed diagrams against the wrong canvas.
+See `styling/diagram-themes`.
+</Callout>
+
+**`system` tracks the system**, via `hooks/useSystemTheme.ts`. It previously
+read `matchMedia(...).matches` once inside a memo keyed on the user's own
+preferences, with no `change` listener anywhere in the app — so changing the OS
+appearance did nothing until a reload. Worth knowing when testing it: DevTools
+colour-scheme emulation changes what the query *matches* without dispatching
+`change`, so a browser pass cannot exercise the listener. `useSystemTheme.test.tsx`
+drives it with a stub that can.
 
 ### How a whole theme swaps without touching the components
 
@@ -321,7 +337,49 @@ Full-screen modal editors for visual content:
 
 - **DiagramEditor** - React Flow canvas with controls and minimap
 
-- **WhiteboardEditor** - tldraw canvas with clean/sketchy styles
+- **WhiteboardEditor** - full-screen tldraw canvas
+
+Both are **scratchpads, and now say so.** Each shipped a prominent accent
+**Save Diagram** / **Save** button whose entire handler was `onClose` — so the
+control most likely to be pressed after rearranging nodes was the one that threw
+the work away. Same defect as the removed Preview-mode Save, and for the same
+reason: the docs API is `GET`-only and `updateDoc` still round-trips through the
+lossy parser, so a real write path here would corrupt docs rather than persist
+them. Both now carry a labelled **Close** and a `ScratchpadNotice` banner naming
+the `.mdx` file and the `update_doc` tool.
+
+Connection handles are switched off in both canvases (`nodesConnectable={false}`).
+There is no `onConnect` handler and nowhere to persist an edge, so dragging from
+a handle drew a line that vanished on release. reactflow defaults that prop to
+**true**, so the read-only in-doc canvas was advertising it too. Nodes stay
+draggable — nudging one to read an overlapped label is useful and harmless.
+
+Switching it off correctly takes three pieces, and the first two were missed on
+the first attempt:
+
+- **Custom node types must forward `isConnectable`.** reactflow resolves the
+  canvas-level flag and passes it to each node as a **prop**; `Handle` does not
+  read it from the store and defaults to `true`. `TurboNode` took only `data`,
+  so on a turbo-typed diagram the handles stayed fully live — crosshair cursor,
+  `pointer-events: all`, click-connect latching — while the connection *line*
+  was suppressed, because that part does read the store. Strictly worse than
+  leaving connections on. Measured on a turbo diagram: 4/4 handles `connectable`
+  + `connectionindicator` before, 0/4 after.
+- **The editor's `<Controls>` lock had to go** (`showInteractive={false}`). Its
+  handler writes `nodesDraggable`/`nodesConnectable`/`elementsSelectable`
+  straight into the store, and reactflow only re-syncs a prop into the store
+  when the prop's *value* changes. Ours is a constant `false`, so one
+  lock/unlock round-trip turned connections back on permanently.
+- **A non-connectable handle is still painted.** reactflow only makes it inert;
+  `index.css` hides it (`.react-flow__handle:not(.connectable)`), so the dot
+  that reads as "drag from here" is not there to be believed.
+
+<Callout type="info">
+The first attempt passed a browser check because the only React Flow diagram in
+this repo uses `input`/`output`/default nodes — and the **built-ins** forward
+`isConnectable` correctly. The custom `turbo` type is the one that did not. A
+visual pass over the corpus you happen to have is not coverage of the code path.
+</Callout>
 
 Both keep their **chrome eager and their canvas lazy**, so the modal opens
 immediately and the canvas fills in behind a spinner rather than the click
