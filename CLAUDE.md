@@ -177,7 +177,7 @@ catryna-wikinelli/
 │   └── tools/
 │       ├── docs.ts           # Document CRUD tools
 │       ├── search.ts         # Full-text search
-│       ├── diagrams.ts       # React Flow & tldraw
+│       ├── diagrams.ts       # React Flow & whiteboard
 │       ├── coverage.ts       # Documentation coverage
 │       └── drift.ts          # check_drift / verify_doc / propose_doc_repair
 ├── hooks/                    # SessionStart + Stop (drift reminder) hooks
@@ -201,7 +201,7 @@ catryna-wikinelli/
 | `search_docs` | Full-text search across documents |
 | `create_diagram` | Create React Flow architecture diagram |
 | `create_mermaid_diagram` | Create Mermaid diagram (flowchart, sequence, etc.) |
-| `create_whiteboard` | Create tldraw whiteboard |
+| `create_whiteboard` | Create a freeform whiteboard |
 | `get_undocumented_modules` | List source files without docs |
 | `get_doc_coverage` | Get documentation coverage report |
 | `check_drift` | Which docs the code has outgrown (drifted/broken/unverified/clean) |
@@ -249,7 +249,7 @@ Documents are composed of blocks. **You MUST use the correct block types** - unk
 | `divider` | Horizontal rule | `{}` |
 | `markdown` | Raw markdown | `{ content: "# Full markdown..." }` |
 | `react-flow` | Architecture diagrams | `{ nodes: [...], edges: [...] }` |
-| `whiteboard` | tldraw canvas | `{ snapshot: {...} }` |
+| `whiteboard` | Freeform canvas | `{ snapshot: {...} }` |
 
 ### IMPORTANT: How to Create Docs Correctly
 

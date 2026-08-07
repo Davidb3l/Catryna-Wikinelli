@@ -46,8 +46,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "e8150dda4b91b8a0a4f2fa51e77d189a0e71fece",
-      "verifiedAt": "2026-08-05T19:15:35.360Z",
+      "verifiedCommit": "76a776e2a64577d736a64b205da69a1ce047597f",
+      "verifiedAt": "2026-08-07T04:32:48.971Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -122,8 +122,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "77651c079065333e7c61c8d1057fb5d5dec3d276",
-      "verifiedAt": "2026-08-05T17:45:45.344Z",
+      "verifiedCommit": "76a776e2a64577d736a64b205da69a1ce047597f",
+      "verifiedAt": "2026-08-07T04:32:48.954Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -152,7 +152,7 @@
         "frontend/hooks/useSystemTheme.ts",
         "frontend/index.css",
         "frontend/styles/vendor-reactflow.css",
-        "frontend/styles/vendor-tldraw.css",
+        "frontend/styles/vendor-excalidraw.css",
         "frontend/styles/fonts.css"
       ],
       "createdAt": 1767321379263,
@@ -160,8 +160,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "231c667db59fb8ceead7c537bd48abe71a9a8fac",
-      "verifiedAt": "2026-08-07T04:17:22.571Z",
+      "verifiedCommit": "76a776e2a64577d736a64b205da69a1ce047597f",
+      "verifiedAt": "2026-08-07T04:32:48.902Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -185,8 +185,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "132faab6da273f7889ff999ed21fd2c2b8f3e7c5",
-      "verifiedAt": "2026-08-05T22:01:05.414Z",
+      "verifiedCommit": "76a776e2a64577d736a64b205da69a1ce047597f",
+      "verifiedAt": "2026-08-07T04:32:48.937Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -255,15 +255,15 @@
         "frontend/components/FlowDiagram.tsx",
         "frontend/index.html",
         "frontend/styles/vendor-reactflow.css",
-        "frontend/styles/vendor-tldraw.css"
+        "frontend/styles/vendor-excalidraw.css"
       ],
       "createdAt": 1767494114128,
       "updatedAt": 1767494114128,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "c25523b9618b0977ba69cf4855f1245baf12da0f",
-      "verifiedAt": "2026-08-07T04:01:05.907Z",
+      "verifiedCommit": "76a776e2a64577d736a64b205da69a1ce047597f",
+      "verifiedAt": "2026-08-07T04:32:48.921Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -424,5 +424,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1786076242572
+  "lastUpdated": 1786077168971
 }

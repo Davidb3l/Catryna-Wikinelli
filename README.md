@@ -13,7 +13,7 @@ Every project accumulates knowledge that lives nowhere: why the auth flow works 
   source files it describes; `catryna drift` diffs those files since the doc was
   last verified and reports exactly which docs are now contradicted — then hands
   an agent the doc plus the diffs so it can propose the fix.
-- **Humans browse the same docs** in a local React viewer at `http://localhost:1307`, with search, Mermaid/React Flow diagrams, tldraw whiteboards, and a doc-coverage report.
+- **Humans browse the same docs** in a local React viewer at `http://localhost:1307`, with search, Mermaid/React Flow diagrams, whiteboards, and a doc-coverage report.
 
 ## Quickstart
 
@@ -135,7 +135,7 @@ git-diff. Zero dependencies either way.
 | `search_docs` | Full-text search, returns paths + snippets |
 | `check_drift` / `verify_doc` / `propose_doc_repair` | Find drifted docs, re-baseline them, get repair context |
 | `create_mermaid_diagram` / `create_diagram` | Mermaid or React Flow architecture diagrams |
-| `create_whiteboard` | tldraw freeform canvas |
+| `create_whiteboard` | Freeform whiteboard canvas |
 | `get_doc_coverage` / `get_undocumented_modules` | Which source files have docs, which don't |
 
 The `catryna` CLI exposes the same drift workflow plus `catryna doctor` (health

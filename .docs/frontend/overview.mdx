@@ -3,12 +3,12 @@ id: 8ba895db-7586-4187-92fb-7da033094537
 title: "Frontend Application"
 path: "frontend/overview"
 tags: ["frontend", "react", "vite"]
-relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts", "frontend/hooks/useSystemTheme.ts", "frontend/index.css", "frontend/styles/vendor-reactflow.css", "frontend/styles/vendor-tldraw.css", "frontend/styles/fonts.css"]
+relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts", "frontend/hooks/useSystemTheme.ts", "frontend/index.css", "frontend/styles/vendor-reactflow.css", "frontend/styles/vendor-excalidraw.css", "frontend/styles/fonts.css"]
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
-verifiedCommit: "231c667db59fb8ceead7c537bd48abe71a9a8fac"
-verifiedAt: "2026-08-07T04:17:22.571Z"
+verifiedCommit: "76a776e2a64577d736a64b205da69a1ce047597f"
+verifiedAt: "2026-08-07T04:32:48.902Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -27,13 +27,13 @@ The frontend is a React application built with Vite, providing a visual interfac
 
 - **Mermaid** - Text-based diagrams, themed from `initMermaid()` in `components/MermaidDiagram.tsx`
 
-- **tldraw** - Whiteboard/canvas support
+- **Excalidraw** (`@excalidraw/excalidraw`, MIT) - Whiteboard/canvas support
 
 - **Tailwind CSS v4** — a real build step via `@tailwindcss/vite`, configured **CSS-first** in `index.css` (`@import "tailwindcss"` + an `@theme` block). It previously loaded `cdn.tailwindcss.com`, which compiled Tailwind *in the browser on every page load* and kept the whole design system in an inline `<script>`; the viewer now ships ~70 KB of purged CSS and no runtime compiler.
 
 - **Lucide React** - Icon library
 
-React Flow, Mermaid and tldraw are all **lazily loaded**; none of them is
+React Flow, Mermaid and Excalidraw are all **lazily loaded**; none of them is
 reachable from the entry chunk. See *Bundle & code splitting* below before
 importing any of them.
 
@@ -43,7 +43,7 @@ Dependencies are limited to what the viewer actually uses. `@tiptap/*` and `diff
 
 ## Bundle & code splitting
 
-The three heavy libraries — `mermaid`, `reactflow`, `tldraw` — are **lazy**, and
+The three heavy libraries — `mermaid`, `reactflow`, `@excalidraw/excalidraw` — are **lazy**, and
 that is load-bearing rather than an optimization detail. They were imported at
 `App.tsx` module scope, so every page view paid for all three: a **1394 KiB**
 entry chunk, of which mermaid was the bulk (it pulls in cytoscape, katex, and a
@@ -60,7 +60,7 @@ and `TurboEdge.tsx` do import `reactflow`; they are fine because only
 |---|---|---|
 | `components/MermaidDiagram.tsx` | `mermaid` (+ cytoscape, katex, per-type chunks) | a block has `metadata.diagramData.mermaid` |
 | `components/FlowDiagram.tsx` | `reactflow` (+ the Turbo node/edge components) | the non-mermaid diagram branch, or the architecture editor |
-| `components/WhiteboardCanvas.tsx` | `tldraw` | the whiteboard editor is opened (`activeEditor === 'wb'`) |
+| `components/WhiteboardCanvas.tsx` | `@excalidraw/excalidraw` | the whiteboard editor is opened (`activeEditor === 'wb'`) |
 
 Measured on the built bundle: a doc with **no** diagram loads 2 JS chunks; a
 mermaid doc and a React Flow doc each pull their own; tldraw arrives only when
@@ -233,19 +233,27 @@ them to `styles/fonts.css` if a corpus needs them. Fraunces and Hanken Grotesk
 are Atelier-only and are never fetched in Classic.
 
 <Callout type="warning">
-**One third-party origin survives, and it is not ours: `cdn.tldraw.com`.**
-`<Tldraw />` fetches its icons, translations and four of its own webfonts
-(Shantell Sans, IBM Plex Sans/Serif/Mono) from tldraw's CDN unless given an
-`assetUrls` prop. So the whiteboard — and only the whiteboard — still degrades
-offline: missing icons and substituted fonts.
+**The whiteboard runs on Excalidraw because tldraw was not licensed for this.**
 
-It rides the lazy chunk, so first paint and every non-whiteboard view are
-genuinely third-party-free. Closing it means adding the `@tldraw/assets`
-package and passing `assetUrls`; that is a dependency decision, not a cleanup.
+`tldraw@2.4.6` declares `"license": "SEE LICENSE IN LICENSE.md"`, and that file
+is the *tldraw License* — source-available and **non-commercial only**: "you may
+not use or distribute this Software or any derivative works in any form for
+commercial purposes … including … for internal products within commercial
+entities." This repo ships under **MIT** and is published publicly, so anyone
+installing Catryna for internal docs at a company would have been in breach with
+nothing in the project telling them. `@excalidraw/excalidraw` is MIT.
 
-Recorded because an earlier version of this doc claimed **zero** third-party
-origins. It was wrong, and the wrongness was invisible while the network was
-up — which is precisely when nobody checks.
+It also closed the last third-party origin. tldraw fetched its icons,
+translations and four of its own webfonts from **`cdn.tldraw.com`** at runtime
+unless handed an `assetUrls` prop — so the whiteboard degraded offline even
+after the fonts were self-hosted. Excalidraw needs no such thing here: measured
+on a whiteboard open, **zero external requests**.
+
+The cost is real and worth stating: the whiteboard's lazy chunks went from
+~936 KiB (tldraw) to **~2867 KiB** (Excalidraw, across three chunks). Total JS
+in the build rose from 4595 KiB to 7783 KiB. **The entry chunk did not move —
+still 253 KiB**, and `index.html` still preloads only it, so nobody pays that
+cost until they open the whiteboard.
 </Callout>
 
 <Callout type="info">
