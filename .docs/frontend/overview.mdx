@@ -69,7 +69,7 @@ the whiteboard modal opens.
 **The CSS is split the same way.** `reactflow/dist/style.css` and
 `tldraw/tldraw.css` are imported by their boundary modules, so Vite emits them
 as chunk CSS loaded with the chunk. A cold page view fetches exactly one
-stylesheet, `index.css`, and **makes no third-party request at all**.
+stylesheet, `index.css`, and reaches no third-party origin.
 
 <Callout type="warning">
 Both used to be render-blocking `<link>`s in `index.html` pointing at **esm.sh**:
@@ -204,14 +204,25 @@ requested as variable **weight ranges** (`wght@400..700`) rather than the
 discrete weights the old `<link>` asked for. One variable file per family per
 subset covers every weight, so four static Inter instances collapse into one.
 
-| | via Google Fonts | self-hosted |
-|---|---|---|
-| Classic, first view | 220 KiB | **31 KiB** |
-| Atelier | 367 KiB | 130 KiB |
-| third-party origins | 2 | **0** |
+| Scenario (cold cache, doc with code open) | self-hosted |
+|---|---|
+| Classic — `inter-latin` + `jetbrains-mono-latin` | **78 KiB** |
+| Atelier as the stored theme — Hanken + Fraunces + mono, Inter never loads | 130 KiB |
+| Classic first, then switched to Atelier in-session — all four | 178 KiB |
 
 Mirroring the old discrete-weight request would instead have cost 1243 KiB on
-disk. Measured, not estimated — `document.fonts` plus the resource timings.
+disk rather than 349 KiB. The comparable pre-change figures were 220 KiB
+(Classic) and 367 KiB (Atelier), measured against the CDN before the switch.
+</Callout>
+
+<Callout type="warning">
+**Measure font cost on a FRESH ORIGIN.** An earlier version of the table above
+claimed 31 KiB for Classic. That was a warm-cache reading — Inter was already
+cached from a previous load on the same origin, so only the mono file got
+counted, and it was then compared against a cold CDN number. The real figure is
+78 KiB. A different port defeats the HTTP cache; `document.fonts.ready` before
+reading `performance.getEntriesByType('resource')` avoids the other half of the
+mistake. Atelier's cost also depends on whether the reader arrived via Classic.
 </Callout>
 
 `unicode-range` is copied verbatim from Google's own CSS, so the browser still
@@ -221,16 +232,60 @@ and nothing else, and `latin-ext` arrives only when accented characters do. Only
 them to `styles/fonts.css` if a corpus needs them. Fraunces and Hanken Grotesk
 are Atelier-only and are never fetched in Classic.
 
+<Callout type="warning">
+**One third-party origin survives, and it is not ours: `cdn.tldraw.com`.**
+`<Tldraw />` fetches its icons, translations and four of its own webfonts
+(Shantell Sans, IBM Plex Sans/Serif/Mono) from tldraw's CDN unless given an
+`assetUrls` prop. So the whiteboard — and only the whiteboard — still degrades
+offline: missing icons and substituted fonts.
+
+It rides the lazy chunk, so first paint and every non-whiteboard view are
+genuinely third-party-free. Closing it means adding the `@tldraw/assets`
+package and passing `assetUrls`; that is a dependency decision, not a cleanup.
+
+Recorded because an earlier version of this doc claimed **zero** third-party
+origins. It was wrong, and the wrongness was invisible while the network was
+up — which is precisely when nobody checks.
+</Callout>
+
 <Callout type="info">
 **`font-black` renders at 700, not 900 — and always has.** Inter is declared
 `400 700`, matching the weights the old `<link>` requested, so a 900 request
 clamps to the top of the axis (measured: identical glyph widths at 700 and 900,
-no synthetic bolding). The eight `font-black` classes in `App.tsx` therefore
-paint exactly what they painted before this change.
+no synthetic bolding). The `font-black` classes — six in `App.tsx`, eight
+repo-wide — therefore paint exactly what they painted before this change.
 
 Do not "fix" that by widening the range to `100..900`. Inter's variable font
 supports it, but the headings would get visibly heavier — a design change
 dressed up as a font fix.
+</Callout>
+
+<Callout type="info">
+**One thing DID change weight: `font-weight: 560`.** Atelier's display type
+(`index.css`, the `h1/h2/h3` and `.catryna-doc` rules) asks for 560. Against the
+old *static* instances there was no such face, so CSS font matching rounded up
+to the 600 file. A variable axis honours it exactly, so those headings now
+render very slightly lighter — measured on Fraunces at 48px: 500 → 193.84px,
+**560 → 195.98px**, 600 → 197.41px, where it used to snap to the 600 width.
+
+It is the value the stylesheet always asked for, so this is arguably the fix
+rather than the regression — but it is a real visual change and worth knowing
+before someone bisects a "the headings look different" report to the wrong
+commit.
+</Callout>
+
+<Callout type="info">
+**The `font-mono` utility does not use the vendored JetBrains Mono.** `index.css`
+overrides `--font-display` and `--font-body` but never `--font-mono`, so
+Tailwind's stock `ui-monospace, SFMono-Regular, Menlo, …` stack still wins for
+the ~18 `font-mono` usages. JetBrains Mono is reached only by `.catryna-doc
+code`, the diagram rules, and mermaid's `fontFamily` — so it earns its 43 KiB,
+but the app renders two different monospace faces depending on which selector
+got there first.
+
+Pre-existing and left alone deliberately: pointing `--font-mono` at JetBrains
+Mono would change type in eighteen places, which is a design decision rather
+than a font-plumbing fix.
 </Callout>
 
 ## Dev Server Port
