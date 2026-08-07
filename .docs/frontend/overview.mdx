@@ -7,8 +7,8 @@ relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.t
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
-verifiedCommit: "76a776e2a64577d736a64b205da69a1ce047597f"
-verifiedAt: "2026-08-07T04:32:48.902Z"
+verifiedCommit: "65ae3625c42fa3dd44cd032a45323c026b350d03"
+verifiedAt: "2026-08-07T04:40:21.401Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -62,12 +62,22 @@ and `TurboEdge.tsx` do import `reactflow`; they are fine because only
 | `components/FlowDiagram.tsx` | `reactflow` (+ the Turbo node/edge components) | the non-mermaid diagram branch, or the architecture editor |
 | `components/WhiteboardCanvas.tsx` | `@excalidraw/excalidraw` | the whiteboard editor is opened (`activeEditor === 'wb'`) |
 
+<Callout type="info">
+The canvas wrapper is `flex-1 catryna-canvas-fill` — **positioned but not
+height-forced**. `.catryna-canvas-fill` inherited a `height: 100% !important`
+from the tldraw era; against Excalidraw that beat the flex sizing and made the
+canvas the full modal height instead of the space left below the header and the
+scratchpad banner, overflowing the viewport by that much (measured at 375px:
+812px in a 681px slot, bottom bar pushed off screen). Both canvases only need a
+*positioned* parent; the flex algorithm supplies the size.
+</Callout>
+
 Measured on the built bundle: a doc with **no** diagram loads 2 JS chunks; a
-mermaid doc and a React Flow doc each pull their own; tldraw arrives only when
+mermaid doc and a React Flow doc each pull their own; the whiteboard arrives only when
 the whiteboard modal opens.
 
 **The CSS is split the same way.** `reactflow/dist/style.css` and
-`tldraw/tldraw.css` are imported by their boundary modules, so Vite emits them
+`@excalidraw/excalidraw/index.css` are imported by their boundary modules, so Vite emits them
 as chunk CSS loaded with the chunk. A cold page view fetches exactly one
 stylesheet, `index.css`, and reaches no third-party origin.
 
@@ -322,7 +332,7 @@ It also sets **`strictPort: true`**, so a taken port is a hard startup failure i
 
 - Theme switching on two axes: a named **style** (`classic` / `atelier`) and a light/dark **mode** (see below)
 
-- Settings modal for preferences, persisted to `localStorage` (`catryna.prefs.v1`). **Canvas Style** (`clean` / `sketchy`) only styles the whiteboard *placeholder card's* border in `BlockRenderer` — tldraw itself has never honoured it. `WhiteboardEditor` used to take the pref as a prop and ignore it; the dead prop is gone rather than left to imply an effect it does not have.
+- Settings modal for preferences, persisted to `localStorage` (`catryna.prefs.v1`). **Canvas Style** (`clean` / `sketchy`) only styles the whiteboard *placeholder card's* border in `BlockRenderer` — no canvas has ever honoured it. `WhiteboardEditor` used to take the pref as a prop and ignore it; the dead prop is gone rather than left to imply an effect it does not have.
 
 - Version history sidebar
 
@@ -400,7 +410,7 @@ Renders different block types with appropriate styling:
 
 - **diagram** - Mermaid (rendered via the lazy `MermaidDiagram`, with an expand/zoom modal) when `metadata.diagramData.mermaid` is set, otherwise an interactive React Flow canvas (the lazy `FlowDiagram`). The expand modal clones the already-rendered container's `innerHTML`, so it costs no second load and has nothing to show until the lazy chunk has landed.
 
-- **whiteboard** - A placeholder card that launches the full-screen tldraw editor. Stored `whiteboardData` is neither loaded into nor saved from the canvas.
+- **whiteboard** - A placeholder card that launches the full-screen Excalidraw editor. Stored `whiteboardData` is neither loaded into nor saved from the canvas.
 
 ### The trust surface is a set of PURE VIEWS
 
@@ -507,7 +517,7 @@ Full-screen modal editors for visual content:
 
 - **DiagramEditor** - React Flow canvas with controls and minimap
 
-- **WhiteboardEditor** - full-screen tldraw canvas
+- **WhiteboardEditor** - full-screen Excalidraw canvas
 
 Both are **scratchpads, and now say so.** Each shipped a prominent accent
 **Save Diagram** / **Save** button whose entire handler was `onClose` — so the
