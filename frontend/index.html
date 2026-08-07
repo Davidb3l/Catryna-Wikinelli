@@ -70,12 +70,19 @@
         ::-webkit-scrollbar-thumb:hover {
             background: rgba(156, 163, 175, 0.5);
         }
-        /* Full-screen editor canvases need an explicitly sized, positioned
-           parent — Excalidraw and reactflow both fill their container. */
+        /* Full-screen editor canvases need a POSITIONED parent — Excalidraw and
+           reactflow both absolutely fill their container.
+           Deliberately no `height: 100%`: the element is a `flex-1` child of a
+           `flex-col` modal, so the flex algorithm already gives it exactly the
+           space left after the header and the scratchpad banner. Forcing 100%
+           made it the full modal height INSTEAD, overflowing the viewport by
+           the height of that chrome (measured: 812px tall in a 681px slot at
+           375px wide). `min-height: 0` is the usual companion — without it a
+           flex child refuses to shrink below its content. */
         .catryna-canvas-fill {
             position: relative !important;
-            height: 100% !important;
             width: 100% !important;
+            min-height: 0;
         }
     </style>
 </head>
