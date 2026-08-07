@@ -1,5 +1,17 @@
-Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)
+This SIL Open Font License 1.1 applies to ALL FOUR font families vendored in
+this directory. Their individual copyright notices, taken from each font's own
+name table, are:
 
+Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
+Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
+Copyright 2020 The Fraunces Project Authors (https://github.com/undercasetype/Fraunces)
+Copyright 2021 The Hanken Grotesk Project Authors (https://github.com/marcologous/hanken-grotesk)
+
+The licence text below is the standard SIL OFL 1.1 and governs all of them.
+(The copy fetched from google/fonts carried Inter's header with the year 2020;
+Inter's own name table says 2016, which is the year used above.)
+
+-------------------------------------------------------------------------------
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:
 https://scripts.sil.org/OFL
