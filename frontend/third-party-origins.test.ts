@@ -18,10 +18,11 @@ import { join } from 'node:path';
  * network, which is exactly when nobody is looking.
  *
  * SCOPE, stated honestly: this scans the source WE control. It cannot see
- * origins baked into a dependency's own bundle — notably `cdn.tldraw.com`,
- * which `<Tldraw />` uses for its icons, translations and four webfonts unless
- * given an `assetUrls` prop. That one is real, is documented in
- * `frontend/overview`, and is not covered here.
+ * origins baked into a dependency's own bundle. That blind spot is how
+ * `cdn.tldraw.com` went unnoticed — tldraw fetched its icons, translations and
+ * four webfonts from its own CDN at runtime. tldraw has since been replaced by
+ * Excalidraw (see WhiteboardCanvas.tsx), which is checked below, but the limit
+ * still stands for any future dependency.
  */
 
 const here = import.meta.dir;
@@ -35,7 +36,7 @@ const SOURCE = [
   'App.tsx',
   'styles/fonts.css',
   'styles/vendor-reactflow.css',
-  'styles/vendor-tldraw.css',
+  'styles/vendor-excalidraw.css',
   'components/Trust.tsx',
   'components/ErrorBoundary.tsx',
   'components/LazyCanvas.tsx',
@@ -61,7 +62,7 @@ const ALLOWED = new Set([
 ]);
 
 /** Origins that were removed and must not come back. */
-const BANNED = ['cdn.tailwindcss.com', 'esm.sh', 'fonts.googleapis.com', 'fonts.gstatic.com'];
+const BANNED = ['cdn.tailwindcss.com', 'esm.sh', 'fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.tldraw.com'];
 
 describe('the viewer renders without a third-party origin', () => {
   for (const file of SOURCE) {

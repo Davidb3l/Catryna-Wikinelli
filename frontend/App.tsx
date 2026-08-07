@@ -19,7 +19,7 @@ import type { DiagramData } from './components/FlowDiagram';
  * THE THREE HEAVY LIBRARIES ARE LAZY, AND MUST STAY THAT WAY.
  *
  * `mermaid` (plus the cytoscape/katex/per-diagram-type chunks behind it),
- * `reactflow` and `tldraw` together were ~900 KiB of the entry chunk, loaded on
+ * `reactflow` and the whiteboard together were ~900 KiB of the entry chunk, loaded on
  * every page view even though most docs open none of them. Each now lives
  * behind exactly one module that nothing else imports statically:
  *
@@ -28,7 +28,7 @@ import type { DiagramData } from './components/FlowDiagram';
  *   FlowEditorCanvas  -> only when the architecture editor is opened
  *   WhiteboardCanvas  -> only when the whiteboard editor is opened (activeEditor === 'wb')
  *
- * Adding a static `import … from 'mermaid' | 'reactflow' | 'tldraw'` anywhere
+ * Adding a static `import … from 'mermaid' | 'reactflow' | '@excalidraw/excalidraw'`
  * reachable from this file — including a type-only-looking value import such as
  * reactflow's `Position` enum — silently undoes all of it. Import types with
  * `import type`, and put anything that needs the runtime inside the boundary
@@ -951,8 +951,8 @@ const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: DiagramData }
   );
 };
 
-/** `whiteboardStyle` is deliberately NOT threaded in: tldraw ignored it, so the
- *  prop was dead. The pref still drives the placeholder card's border in
+/** `whiteboardStyle` is deliberately NOT threaded in: the canvas ignores it, so
+ *  the prop was dead. The pref still drives the placeholder card's border in
  *  BlockRenderer, which is the only place it has ever had an effect. */
 const WhiteboardEditor: React.FC<{ onClose: () => void }> = ({ onClose }) => (
   <div className="fixed inset-0 z-[100] bg-white dark:bg-zinc-950 flex flex-col animate-in slide-in-from-bottom duration-300">
@@ -961,9 +961,9 @@ const WhiteboardEditor: React.FC<{ onClose: () => void }> = ({ onClose }) => (
       <Button variant="outline" onClick={onClose} className="px-2 sm:px-3"><X size={16} /> Close</Button>
     </header>
     <ScratchpadNotice what="whiteboard" />
-    {/* Same shape as DiagramEditor: chrome eager, canvas lazy. tldraw is the
-        single largest dependency here and nothing but this modal needs it. */}
-    <div className="flex-1 tldraw__editor">
+    {/* Same shape as DiagramEditor: chrome eager, canvas lazy. Excalidraw is
+        the single largest dependency here and nothing but this modal needs it. */}
+    <div className="flex-1 catryna-canvas-fill">
       <LazyCanvas what="whiteboard">
         <WhiteboardCanvas />
       </LazyCanvas>

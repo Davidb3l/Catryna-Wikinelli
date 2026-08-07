@@ -1,0 +1,11 @@
+/* Excalidraw's own stylesheet, in the low-priority `vendor` layer.
+ *
+ * Same reasoning as vendor-reactflow.css: this is imported by a lazy chunk, so
+ * it lands in the document AFTER index.css, and unlayered rules of equal
+ * specificity are decided by order. Without the layer the vendor sheet would
+ * start winning against this project's own styles by accident of load order.
+ *
+ * The layer position is pinned by the `@layer` statement on line 1 of
+ * index.css — see the cascade note there before changing anything here.
+ */
+@import "@excalidraw/excalidraw/index.css" layer(vendor);

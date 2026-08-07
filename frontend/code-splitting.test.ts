@@ -29,13 +29,13 @@ const here = import.meta.dir;
 const read = (p: string) => readFileSync(p, 'utf-8');
 
 /** The libraries that must never be reachable from the entry chunk. */
-const HEAVY = ['mermaid', 'reactflow', 'tldraw'] as const;
+const HEAVY = ['mermaid', 'reactflow', '@excalidraw/excalidraw'] as const;
 
 /** The one module allowed to own each heavy library. */
 const OWNER: Record<(typeof HEAVY)[number], string> = {
   mermaid: 'components/MermaidDiagram.tsx',
   reactflow: 'components/FlowDiagram.tsx',
-  tldraw: 'components/WhiteboardCanvas.tsx',
+  '@excalidraw/excalidraw': 'components/WhiteboardCanvas.tsx',
 };
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

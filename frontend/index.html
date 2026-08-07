@@ -70,8 +70,9 @@
         ::-webkit-scrollbar-thumb:hover {
             background: rgba(156, 163, 175, 0.5);
         }
-        /* Full-screen editors UI overrides */
-        .tldraw__editor {
+        /* Full-screen editor canvases need an explicitly sized, positioned
+           parent — Excalidraw and reactflow both fill their container. */
+        .catryna-canvas-fill {
             position: relative !important;
             height: 100% !important;
             width: 100% !important;
