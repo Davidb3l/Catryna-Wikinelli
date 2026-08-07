@@ -17,6 +17,10 @@
  * vendored; Cyrillic, Greek and Vietnamese are not (add them here if needed).
  *
  * Fraunces and Hanken Grotesk are Atelier-only and are never fetched in Classic.
+ *
+ * All four families are SIL OFL 1.1. The licence text and the exact command to
+ * regenerate these files live in ../fonts/README.md — the OFL requires the
+ * licence to ship alongside the fonts, so do not delete it.
  */
 
 /* latin-ext */
