@@ -3,7 +3,7 @@ id: 8ba895db-7586-4187-92fb-7da033094537
 title: "Frontend Application"
 path: "frontend/overview"
 tags: ["frontend", "react", "vite"]
-relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts", "frontend/hooks/useSystemTheme.ts", "frontend/index.css", "frontend/styles/vendor-reactflow.css", "frontend/styles/vendor-tldraw.css"]
+relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts", "frontend/hooks/useSystemTheme.ts", "frontend/index.css", "frontend/styles/vendor-reactflow.css", "frontend/styles/vendor-tldraw.css", "frontend/styles/fonts.css"]
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
@@ -68,9 +68,8 @@ the whiteboard modal opens.
 
 **The CSS is split the same way.** `reactflow/dist/style.css` and
 `tldraw/tldraw.css` are imported by their boundary modules, so Vite emits them
-as chunk CSS loaded with the chunk. A cold page view fetches one *local*
-stylesheet, `index.css` — plus the Google Fonts sheet, which is still remote and
-still render-blocking (see below).
+as chunk CSS loaded with the chunk. A cold page view fetches exactly one
+stylesheet, `index.css`, and **makes no third-party request at all**.
 
 <Callout type="warning">
 Both used to be render-blocking `<link>`s in `index.html` pointing at **esm.sh**:
@@ -184,6 +183,55 @@ grammar and the file set they cover.
 </Callout>
 
 The viewer has **no LLM dependency and no API key**. It previously shipped a `frontend/services/geminiService.ts` that called the Google Gemini API straight from the browser, with `vite.config.ts` inlining `GEMINI_API_KEY` into the bundle via `define` — for two methods nothing ever invoked. Both the service and the `define` block are gone; summarization and structure suggestion belong to Claude Code over MCP, which has the repo context this never did.
+
+## Webfonts are self-hosted
+
+`frontend/fonts/` holds eight `woff2` files (**349 KiB**), declared by
+`styles/fonts.css` and imported eagerly from `index.css`. All four families are
+**SIL OFL 1.1**; the licence text and the exact regeneration command are in
+`frontend/fonts/README.md`. The OFL requires the licence to ship with the fonts,
+so that file is not optional. They replace a
+render-blocking `<link>` to `fonts.googleapis.com` plus two `preconnect`s — a
+cross-origin stylesheet round-trip before first paint, then font files from a
+second origin.
+
+For a local-first tool that was a real gap: the viewer could not render its own
+typography without the internet.
+
+<Callout type="info">
+**Self-hosting made the viewer *lighter*, not heavier**, because the fonts are
+requested as variable **weight ranges** (`wght@400..700`) rather than the
+discrete weights the old `<link>` asked for. One variable file per family per
+subset covers every weight, so four static Inter instances collapse into one.
+
+| | via Google Fonts | self-hosted |
+|---|---|---|
+| Classic, first view | 220 KiB | **31 KiB** |
+| Atelier | 367 KiB | 130 KiB |
+| third-party origins | 2 | **0** |
+
+Mirroring the old discrete-weight request would instead have cost 1243 KiB on
+disk. Measured, not estimated — `document.fonts` plus the resource timings.
+</Callout>
+
+`unicode-range` is copied verbatim from Google's own CSS, so the browser still
+fetches only the subsets a page needs: an English doc pulls `inter-latin.woff2`
+and nothing else, and `latin-ext` arrives only when accented characters do. Only
+**latin + latin-ext** are vendored — Cyrillic, Greek and Vietnamese are not; add
+them to `styles/fonts.css` if a corpus needs them. Fraunces and Hanken Grotesk
+are Atelier-only and are never fetched in Classic.
+
+<Callout type="info">
+**`font-black` renders at 700, not 900 — and always has.** Inter is declared
+`400 700`, matching the weights the old `<link>` requested, so a 900 request
+clamps to the top of the axis (measured: identical glyph widths at 700 and 900,
+no synthetic bolding). The eight `font-black` classes in `App.tsx` therefore
+paint exactly what they painted before this change.
+
+Do not "fix" that by widening the range to `100..900`. Inter's variable font
+supports it, but the headings would get visibly heavier — a design change
+dressed up as a font fix.
+</Callout>
 
 ## Dev Server Port
 
