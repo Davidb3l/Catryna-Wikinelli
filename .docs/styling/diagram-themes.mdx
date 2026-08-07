@@ -7,8 +7,8 @@ relatedFiles: ["frontend/index.css", "frontend/App.tsx", "frontend/components/Tu
 createdAt: 1767494114128
 updatedAt: 1767494114128
 createdBy: "claude-code"
-verifiedCommit: "65ae3625c42fa3dd44cd032a45323c026b350d03"
-verifiedAt: "2026-08-07T04:40:21.423Z"
+verifiedCommit: "4f9a42ad8ccbf9943bd25e94176c81c43d902b90"
+verifiedAt: "2026-08-07T05:06:25.309Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -192,8 +192,16 @@ file, so `index.css` declares the order explicitly on line 1
 
 Note the cost of layering: unlayered app CSS now outranks the vendor sheets
 whatever the specificity, so global selectors in `index.css` can reach into the
-canvases. Two already did — see the `.excalidraw` exceptions beside the touch-target
-and tap-highlight rules.
+canvases. **Five already did**, and only two were caught the first time —
+`* { -webkit-tap-highlight-color }` and the mobile 44px touch-target floor.
+Review found three more, all Atelier-scoped: `:focus-visible` overriding the
+whiteboard's focus ring on every control, the `h1/h2/h3` display rule putting
+Fraunces on its dialog headings, and `::selection` recolouring its text editor.
+Each now carries `:not(.excalidraw *)` or an `.excalidraw` reset.
+
+The lesson worth keeping: after layering a vendor sheet, audit **every**
+unlayered global in `index.css` against the vendor's DOM, not just the ones that
+happen to look risky.
 
 It also carries the app-wide **theme system** (the palette variable sets for
 `classic` / `atelier`, the reading, trust and search polish). Those are separate
