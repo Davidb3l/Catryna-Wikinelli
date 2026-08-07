@@ -1,4 +1,6 @@
 import React from 'react';
+// MUST precede the Excalidraw import — see the file for why.
+import './excalidraw-asset-path';
 import { Excalidraw } from '@excalidraw/excalidraw';
 /**
  * The stylesheet comes from node_modules and rides this lazy chunk — see the

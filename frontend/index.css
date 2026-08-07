@@ -303,10 +303,14 @@ body { font-family: var(--font-body); }
 }
 [data-theme='atelier'] #root { position: relative; z-index: 1; }
 
-/* Display type: headings in the app chrome and the doc body pick up Fraunces. */
-[data-theme='atelier'] h1,
-[data-theme='atelier'] h2,
-[data-theme='atelier'] h3 {
+/* Display type: headings in the app chrome and the doc body pick up Fraunces.
+   `:not(.excalidraw *)` because these are UNLAYERED and the whiteboard's sheet
+   lives in `layer(vendor)` — without it, Fraunces was landing on Excalidraw's
+   own dialog and panel headings, which are `h2`/`h3`. Same reason as the
+   touch-target and tap-highlight exceptions further down. */
+[data-theme='atelier'] h1:not(.excalidraw *),
+[data-theme='atelier'] h2:not(.excalidraw *),
+[data-theme='atelier'] h3:not(.excalidraw *) {
   font-family: var(--font-display);
   font-weight: 560;
   letter-spacing: -0.02em;
@@ -333,9 +337,13 @@ body { font-family: var(--font-body); }
   color: transparent;
 }
 
-/* Selection + focus ring follow the theme's signature colours. */
+/* Selection + focus ring follow the theme's signature colours — for OUR chrome.
+   Scoped away from the whiteboard for the same cascade reason as above: these
+   are unlayered, so they outrank Excalidraw's own focus ring on every control
+   in its toolbar and its text-editor selection colour. */
 [data-theme='atelier'] ::selection { background: #e92a67; color: #fff; }
-[data-theme='atelier'] :focus-visible {
+[data-theme='atelier'] .excalidraw ::selection { background: Highlight; color: HighlightText; }
+[data-theme='atelier'] :focus-visible:not(.excalidraw *) {
   outline: 2px solid #a853ba;
   outline-offset: 2px;
 }

@@ -141,6 +141,13 @@ into the tldraw canvas the moment its stylesheet moved into a layer — `*
 `button { min-height: 44px }` touch-target floor inflated its 32px toolbar
 buttons. Both are now re-scoped with `.tl-container` exceptions. Check the
 canvases after touching any global selector in `index.css`.
+
+There are **five** such exceptions now, not two. Beyond the tap-highlight and
+the 44px touch-target floor, three Atelier globals were reaching in as well:
+`:focus-visible` was overriding Excalidraw's focus ring on every control, the
+`h1/h2/h3` display-type rule was putting Fraunces on its dialog headings, and
+`::selection` was recolouring its text editor. All now carry
+`:not(.excalidraw *)` or an `.excalidraw` reset.
 </Callout>
 
 Two consequences worth knowing before editing `App.tsx`:
@@ -245,25 +252,55 @@ are Atelier-only and are never fetched in Classic.
 <Callout type="warning">
 **The whiteboard runs on Excalidraw because tldraw was not licensed for this.**
 
-`tldraw@2.4.6` declares `"license": "SEE LICENSE IN LICENSE.md"`, and that file
-is the *tldraw License* — source-available and **non-commercial only**: "you may
+`tldraw@2.4.6` declares `"license": "SEE LICENSE IN LICENSE.md"`. The shipped
+`LICENSE.md` is a single line linking to
+`github.com/tldraw/tldraw/blob/main/LICENSE.md`; that is where the terms live —
+the *tldraw License*, source-available and **non-commercial only**: "you may
 not use or distribute this Software or any derivative works in any form for
 commercial purposes … including … for internal products within commercial
 entities." This repo ships under **MIT** and is published publicly, so anyone
 installing Catryna for internal docs at a company would have been in breach with
 nothing in the project telling them. `@excalidraw/excalidraw` is MIT.
 
-It also closed the last third-party origin. tldraw fetched its icons,
-translations and four of its own webfonts from **`cdn.tldraw.com`** at runtime
-unless handed an `assetUrls` prop — so the whiteboard degraded offline even
-after the fonts were self-hosted. Excalidraw needs no such thing here: measured
-on a whiteboard open, **zero external requests**.
+It also closed the last third-party origin — but **not for free, and not at
+first**. tldraw fetched its icons, translations and four webfonts from
+`cdn.tldraw.com`. Excalidraw does the same thing: its font loader builds URLs
+from `window.EXCALIDRAW_ASSET_PATH` and then always appends
+`https://esm.sh/@excalidraw/excalidraw@<version>/dist/prod/` as a fallback, so
+with that global unset the fallback is the *only* entry. Its scene fonts are
+now vendored in `public/excalidraw-assets/` (480 KiB, 25 woff2) and the global
+is set in `components/excalidraw-asset-path.ts`, imported before the library.
 
-The cost is real and worth stating: the whiteboard's lazy chunks went from
-~936 KiB (tldraw) to **~2867 KiB** (Excalidraw, across three chunks). Total JS
-in the build rose from 4595 KiB to 7783 KiB. **The entry chunk did not move —
-still 253 KiB**, and `index.html` still preloads only it, so nobody pays that
-cost until they open the whiteboard.
+<Callout type="warning">
+**Opening the whiteboard is not using it.** The first measurement here reported
+"zero external requests" and was wrong: Excalidraw fetches a scene font only
+when one is *needed*. Open the canvas and nothing happens; pick the text tool
+and type, and Excalifont comes from `esm.sh`. A second mistake of the same
+shape found the same way — a check that exercised the happy path and stopped.
+Verified after the fix by forcing `document.fonts.load` for Excalifont, Nunito,
+Virgil and Cascadia: all four resolve to `/excalidraw-assets/`, zero esm.sh.
+
+CJK is the stated exception. Xiaolai is **12 MB of the 13 MB** font directory,
+so it is not vendored; typing CJK text in the whiteboard would still reach
+esm.sh. Vendoring it for a scratchpad that persists nothing was not worth 12 MB
+in the repo.
+</Callout>
+
+The cost, measured against the actual load path rather than the whole chunk
+list: the whiteboard's **on-open** JS goes from ~936 KiB (tldraw) to
+**~1113 KiB** — `WhiteboardCanvas` 569 + `chunk-K2UTITRG` 521 + 23 KiB of
+small static chunks. That is **1.19×**, not the 3× an earlier version of this
+doc claimed. Its CSS does grow materially, 64 → **138 KiB**, and that is paid on
+open too.
+
+Total JS across the whole build rose 4595 → 7783 KiB, but most of that
+difference is `chunk-EIO257PC` (1778 KiB), a base64 **harfbuzz WASM** blob in
+the font-subsetting worker reached through `__vite__mapDeps` — it loads on
+*export*, not on open. Quoting it as the cost of opening a whiteboard was
+apples-to-oranges.
+
+**The entry chunk did not move — still 253 KiB**, and `index.html` still
+preloads only it, so nobody pays any of this until they open the whiteboard.
 </Callout>
 
 <Callout type="info">

@@ -142,13 +142,13 @@ export function registerDiagramTools(server: McpServer): void {
     }
   );
 
-  // CREATE WHITEBOARD (tldraw)
+  // CREATE WHITEBOARD
   server.tool(
     "create_whiteboard",
     {
       path: z.string().describe("Doc path for the whiteboard"),
       title: z.string().optional().describe("Whiteboard title"),
-      snapshot: z.record(z.unknown()).describe("tldraw snapshot data"),
+      snapshot: z.record(z.unknown()).describe("whiteboard snapshot data"),
     },
     async ({ path, title, snapshot }) => {
       try {

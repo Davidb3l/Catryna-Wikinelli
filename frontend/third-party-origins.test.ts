@@ -18,11 +18,16 @@ import { join } from 'node:path';
  * network, which is exactly when nobody is looking.
  *
  * SCOPE, stated honestly: this scans the source WE control. It cannot see
- * origins baked into a dependency's own bundle. That blind spot is how
- * `cdn.tldraw.com` went unnoticed — tldraw fetched its icons, translations and
- * four webfonts from its own CDN at runtime. tldraw has since been replaced by
- * Excalidraw (see WhiteboardCanvas.tsx), which is checked below, but the limit
- * still stands for any future dependency.
+ * origins baked into a dependency's own bundle, and that blind spot has now
+ * bitten TWICE — tldraw fetched its icons and fonts from `cdn.tldraw.com`, and
+ * Excalidraw falls back to `esm.sh` for its scene fonts unless
+ * `EXCALIDRAW_ASSET_PATH` is set. Both were missed by a browser check that
+ * opened the whiteboard without USING it: the request only fires when a font is
+ * actually needed.
+ *
+ * So the Excalidraw case is pinned by an explicit assertion below rather than
+ * by a scan. The general limit still stands for any future dependency: if a
+ * package can phone home, no source-text test here will see it.
  */
 
 const here = import.meta.dir;
@@ -89,6 +94,26 @@ describe('the viewer renders without a third-party origin', () => {
           .toBe(`${file} still uses ${host}: false`);
       }
     }
+  });
+
+  test('Excalidraw is pinned to self-hosted assets, not its esm.sh fallback', () => {
+    // Excalidraw builds its font URL list from `window.EXCALIDRAW_ASSET_PATH`
+    // and then ALWAYS appends `https://esm.sh/@excalidraw/excalidraw@<v>/dist/prod/`
+    // as a fallback. With the global unset that fallback is the only entry, so
+    // the whiteboard silently fetches Excalifont from esm.sh the moment anyone
+    // types — an origin this very file bans. Verified in the browser: unset it
+    // and the request fires; set it and every scene font comes from /public.
+    const setter = read('components/excalidraw-asset-path.ts');
+    expect(setter).toContain('window.EXCALIDRAW_ASSET_PATH');
+    expect(setter).toMatch(/EXCALIDRAW_ASSET_PATH\s*=\s*['"]\/excalidraw-assets\//);
+
+    // …and it must be imported BEFORE the library, or the global is set too late.
+    const canvas = read('components/WhiteboardCanvas.tsx');
+    const setterAt = canvas.indexOf("./excalidraw-asset-path");
+    const libAt = canvas.indexOf("'@excalidraw/excalidraw'");
+    expect(`asset-path import present: ${setterAt >= 0}`).toBe('asset-path import present: true');
+    expect(`asset-path precedes the library: ${setterAt < libAt}`)
+      .toBe('asset-path precedes the library: true');
   });
 
   test('webfonts are declared locally, not fetched from a CDN', () => {

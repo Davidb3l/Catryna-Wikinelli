@@ -47,7 +47,7 @@ that contradicts the code is worse than no doc, because an agent will believe it
 | `verify_doc` | Re-baseline a doc against HEAD after you've made it accurate again |
 | `propose_doc_repair` | Get a repair bundle: the doc's content + the git diff of each changed anchor |
 | `create_mermaid_diagram` / `create_diagram` | Mermaid or React Flow architecture diagrams |
-| `create_whiteboard` | tldraw freeform canvas |
+| `create_whiteboard` | Freeform whiteboard canvas |
 | `get_doc_coverage` | Coverage report: documented vs undocumented source files |
 | `get_undocumented_modules` | List source files with no doc referencing them |
 

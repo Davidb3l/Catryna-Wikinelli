@@ -13,7 +13,7 @@ import { Loader2, AlertCircle } from 'lucide-react';
  *
  * Triggers are ordinary, not exotic: a dev server restart, a deploy that
  * rotates content hashes while a tab is open, or a flaky connection during the
- * ~1 MiB mermaid graph or the ~936 KiB tldraw chunk.
+ * ~1 MiB mermaid graph or the ~1.1 MiB whiteboard chunks.
  *
  * **Recovery is a page reload, and the button says so.** React caches the
  * rejected promise on the lazy component for the life of the page
