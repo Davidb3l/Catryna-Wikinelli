@@ -113,6 +113,14 @@ all of them happened to be `!`-prefixed.
 strip tldraw's chrome), below `components`/`utilities` (so the app's own classes
 win). Built output confirms `properties < theme < base < vendor < components <
 utilities < unlayered`.
+
+With that in place the `!`-prefixed utilities on reactflow's `<Controls>` and
+`<MiniMap>` became redundant and are gone — a layered rule loses to `utilities`
+on layer precedence alone, so specificity never enters into it. Verified
+pixel-identical: controls at `left/bottom: 16px` on desktop and `8px` under
+`sm:`, minimap `block` / `none` across the breakpoint. **If you find yourself
+reaching for `!` against vendor CSS again, the layer order is wrong — fix that
+instead.**
 </Callout>
 
 <Callout type="warning">
