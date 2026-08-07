@@ -21,6 +21,9 @@
 
 @import "tailwindcss";
 
+/* Self-hosted webfonts. Eager by design — typography is first-paint. */
+@import "./styles/fonts.css";
+
 /* Sources are declared EXPLICITLY rather than left to v4's automatic detection.
    Auto-detection produced zero utilities here — the compile succeeded and the
    theme variables were emitted, but no class rules existed, so every colour
