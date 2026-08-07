@@ -66,7 +66,7 @@ const FlowDiagram: React.FC<{ diagramData: DiagramData }> = ({ diagramData }) =>
       preventScrolling={false}
     >
       <Background color="#71717a" gap={16} size={1} />
-      <Controls showInteractive={false} className="!left-2 !bottom-2 sm:!left-4 sm:!bottom-4" />
+      <Controls showInteractive={false} className="left-2 bottom-2 sm:left-4 sm:bottom-4" />
     </ReactFlow>
   </>
 );
@@ -120,8 +120,8 @@ export const FlowEditorCanvas: React.FC<{ diagramData?: DiagramData }> = ({ diag
             re-syncs a prop into the store when the prop's VALUE changes — ours
             is a constant, so one lock/unlock round-trip leaves connections
             permanently back on with nothing to restore them. */}
-        <Controls showInteractive={false} className="!left-2 !bottom-2 sm:!left-4 sm:!bottom-4" />
-        <MiniMap className="!hidden sm:!block" />
+        <Controls showInteractive={false} className="left-2 bottom-2 sm:left-4 sm:bottom-4" />
+        <MiniMap className="hidden sm:block" />
       </ReactFlow>
     </>
   );
