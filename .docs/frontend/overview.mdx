@@ -203,7 +203,7 @@ The viewer has **no LLM dependency and no API key**. It previously shipped a `fr
 
 ## Webfonts are self-hosted
 
-`frontend/fonts/` holds eight `woff2` files (**349 KiB**), declared by
+`frontend/fonts/` holds thirteen `woff2` files (**440 KiB**), declared by
 `styles/fonts.css` and imported eagerly from `index.css`. All four families are
 **SIL OFL 1.1**; the licence text and the exact regeneration command are in
 `frontend/fonts/README.md`. The OFL requires the licence to ship with the fonts,
@@ -244,10 +244,21 @@ mistake. Atelier's cost also depends on whether the reader arrived via Classic.
 
 `unicode-range` is copied verbatim from Google's own CSS, so the browser still
 fetches only the subsets a page needs: an English doc pulls `inter-latin.woff2`
-and nothing else, and `latin-ext` arrives only when accented characters do. Only
-**latin + latin-ext** are vendored — Cyrillic, Greek and Vietnamese are not; add
-them to `styles/fonts.css` if a corpus needs them. Fraunces and Hanken Grotesk
-are Atelier-only and are never fetched in Classic.
+and nothing else; `latin-ext` arrives only with accented characters, Cyrillic
+only with Cyrillic ones. Fraunces and Hanken Grotesk are Atelier-only and are
+never fetched in Classic.
+
+**Vendored:** latin, latin-ext, cyrillic, cyrillic-ext (13 faces, 440 KiB).
+**Not vendored:** Greek, Greek-ext, Vietnamese — roughly 80 KiB more.
+
+<Callout type="info">
+Coverage is uneven because Google's is. Inter and JetBrains Mono publish both
+Cyrillic subsets; Hanken Grotesk publishes only `cyrillic-ext`; **Fraunces
+publishes no Cyrillic at all**. Atelier's display face is Fraunces, so Cyrillic
+*headings* in that theme fall back to Georgia while the body text (Hanken
+Grotesk) renders correctly. That is upstream, not a packaging mistake here — and
+worth knowing before someone files it as a bug.
+</Callout>
 
 <Callout type="warning">
 **The whiteboard runs on Excalidraw because tldraw was not licensed for this.**

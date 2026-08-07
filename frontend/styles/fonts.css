@@ -12,9 +12,20 @@
  * than the CDN did (Classic theme: 220 KiB of static instances -> 78 KiB).
  *
  * `unicode-range` is preserved verbatim from Google's own CSS, so the browser
- * still fetches only the subsets a page actually needs — latin-ext is not
- * downloaded unless accented characters appear. Only latin + latin-ext are
- * vendored; Cyrillic, Greek and Vietnamese are not (add them here if needed).
+ * still fetches only the subsets a page actually needs — Cyrillic is not
+ * downloaded unless Cyrillic characters appear.
+ *
+ * VENDORED: latin, latin-ext, cyrillic, cyrillic-ext.
+ * NOT vendored: Greek, Greek-ext, Vietnamese (~80 KiB more if wanted).
+ *
+ * Coverage is uneven because Google's own coverage is — these are the subsets
+ * each family actually publishes:
+ *   Inter, JetBrains Mono  latin, latin-ext, cyrillic, cyrillic-ext
+ *   Hanken Grotesk         latin, latin-ext, cyrillic-ext   (no `cyrillic`)
+ *   Fraunces               latin, latin-ext                 (no Cyrillic at all)
+ * So in ATELIER, whose display face is Fraunces, Cyrillic headings fall back to
+ * Georgia/serif. Body text is Hanken Grotesk and is covered. That is upstream,
+ * not a packaging mistake here.
  *
  * Fraunces and Hanken Grotesk are Atelier-only and are never fetched in Classic.
  *
@@ -43,6 +54,16 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('../fonts/hanken-grotesk-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+
 /* latin-ext */
 @font-face {
   font-family: 'Hanken Grotesk';
@@ -63,6 +84,26 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/* cyrillic-ext */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('../fonts/inter-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+
+/* cyrillic */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('../fonts/inter-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
 /* latin-ext */
 @font-face {
   font-family: 'Inter';
@@ -81,6 +122,26 @@
   font-display: swap;
   src: url('../fonts/inter-latin.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* cyrillic-ext */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('../fonts/jetbrains-mono-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+
+/* cyrillic */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('../fonts/jetbrains-mono-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
 }
 
 /* latin-ext */

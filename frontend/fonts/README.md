@@ -30,9 +30,14 @@ Each is distributed by Google Fonts from `ofl/<family>/` in
 what makes self-hosting cheaper than the CDN was: one file per family per subset
 covers every weight, so four static Inter instances collapse into one.
 
-Only the **latin** and **latin-ext** subsets. Cyrillic, Greek and Vietnamese are
-not vendored — add them to the URL below and to `../styles/fonts.css` if a
-corpus needs them.
+**latin, latin-ext, cyrillic and cyrillic-ext.** Greek, Greek-ext and
+Vietnamese are not vendored (~80 KiB more) — add them to the URL below and to
+`../styles/fonts.css` if a corpus needs them.
+
+Google's own coverage is uneven, so ours is too: Inter and JetBrains Mono
+publish both Cyrillic subsets, Hanken Grotesk only `cyrillic-ext`, and Fraunces
+none. Atelier's display face is Fraunces, so Cyrillic *headings* in that theme
+fall back to Georgia; body text (Hanken Grotesk) is covered.
 
 ## Regenerating
 

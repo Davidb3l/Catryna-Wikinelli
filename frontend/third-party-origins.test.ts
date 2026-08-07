@@ -119,7 +119,10 @@ describe('the viewer renders without a third-party origin', () => {
   test('webfonts are declared locally, not fetched from a CDN', () => {
     const fonts = read('styles/fonts.css');
     const srcs = [...fonts.matchAll(/src:\s*url\(([^)]+)\)/g)].map(m => m[1].replace(/['"]/g, ''));
-    expect(srcs.length).toBe(8);
+    // latin + latin-ext for all four families, plus Cyrillic where Google
+    // publishes it (Inter and JetBrains Mono get both subsets, Hanken Grotesk
+    // only cyrillic-ext, Fraunces none). See styles/fonts.css.
+    expect(srcs.length).toBe(13);
     for (const s of srcs) {
       expect(`${s} is relative: ${s.startsWith('../fonts/')}`).toBe(`${s} is relative: true`);
     }
