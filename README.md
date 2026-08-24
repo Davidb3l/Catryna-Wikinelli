@@ -1,6 +1,15 @@
 # Catryna Wikinelli
 
-**A local-first code wiki that your AI coding agent writes and your team reads — docs live as MDX files in a `.docs/` folder, versioned with your code.**
+**Catryna Wikinelli is the Sothis suite's living documentation — a local-first code wiki that your Claude Code AI coding agent writes and your team reads, with docs living as MDX files in a `.docs/` folder, versioned with your code.**
+
+<!-- When github.com/Davidb3l/sothis-suite is published, retarget this link to it. -->
+> **Part of the [Sothis suite](https://github.com/Davidb3l/Sirius-Forester)** — the
+> local-first fleet for Claude Code agents:
+> [Sirius Forester](https://siriusforester.com) (foreman) ·
+> [Hayvenhurst](https://hayvenhurst.dev) (code graph) ·
+> [Ametrite](https://ametrite.com) (board) ·
+> **Catryna Wikinelli** (docs) ·
+> [PingMyBell](https://github.com/Davidb3l/pingmybell) (the bell)
 
 Every project accumulates knowledge that lives nowhere: why the auth flow works the way it does, which module owns what, the diagram someone drew once on a whiteboard. Wikis in Notion or Confluence drift out of date because updating them is a separate chore from writing code. Catryna fixes the incentive problem: your coding agent (Claude Code, or anything that speaks MCP) creates and updates the docs *as part of the coding session*, and because the docs are plain files in your repo, the agent also reads them back before touching code — so the knowledge actually gets used, and stale docs get caught in review like any other diff.
 

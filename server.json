@@ -1,0 +1,33 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.davidb3l/catryna",
+  "title": "Catryna Wikinelli",
+  "description": "Living documentation of the Sothis suite. Claude Code stdio MCP; Windows, macOS, Linux.",
+  "version": "1.3.0",
+  "websiteUrl": "https://catrynawiki.com",
+  "repository": {
+    "url": "https://github.com/Davidb3l/Catryna-Wikinelli",
+    "source": "github",
+    "id": "1125714577"
+  },
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "com.github": {
+        "serverDisplayName": "Catryna Wikinelli"
+      },
+      "com.catrynawiki": {
+        "suite": "Sothis suite — Sirius Forester (foreman), Hayvenhurst (code graph), Ametrite (board), Catryna Wikinelli (docs), PingMyBell (the bell)",
+        "role": "living documentation — git-versioned MDX docs in .docs/, readable by agents and humans",
+        "runtime": "bun",
+        "mcpCommand": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/run-server.sh (plugin) or `bun run src/index.ts` from a checkout",
+        "transport": "stdio",
+        "platforms": ["windows-x64", "macos-x64", "macos-arm64", "linux-x64", "linux-arm64"],
+        "clients": ["Claude Code", "any MCP client that speaks stdio JSON-RPC"],
+        "install": "Claude Code plugin: `claude plugin marketplace add Davidb3l/Sirius-Forester` then `claude plugin install catryna@sirius-forester`. Requires bun (https://bun.sh).",
+        "projectScopeConfig": "A repo-root .mcp.json with { \"mcpServers\": { \"catryna\": { \"command\": \"bun\", \"args\": [\"run\", \"src/index.ts\"] } } } works inside a Catryna checkout; elsewhere point the command at the installed plugin root.",
+        "requires": "the server keeps the client's cwd — it resolves .docs/ from process.cwd()",
+        "license": "MIT"
+      }
+    }
+  }
+}
