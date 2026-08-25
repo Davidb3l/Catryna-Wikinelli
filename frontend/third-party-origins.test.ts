@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -114,6 +114,27 @@ describe('the viewer renders without a third-party origin', () => {
     expect(`asset-path import present: ${setterAt >= 0}`).toBe('asset-path import present: true');
     expect(`asset-path precedes the library: ${setterAt < libAt}`)
       .toBe('asset-path precedes the library: true');
+  });
+
+  test('every Excalidraw scene font family is vendored, CJK included', () => {
+    // The asset path only helps if the files are actually there. A copy that
+    // misses a family 404s and Excalidraw falls through to its esm.sh fallback
+    // WITHOUT complaining — the failure is a network request, not an error.
+    // Xiaolai is called out by name because it is 12 MB and therefore the one
+    // most likely to get "optimised" back out.
+    const dir = join(here, 'public/excalidraw-assets/fonts');
+    const families = readdirSync(dir).filter(f => statSync(join(dir, f)).isDirectory());
+    for (const fam of ['Xiaolai', 'Excalifont', 'Nunito', 'Virgil', 'Assistant',
+                       'Cascadia', 'ComicShanns', 'Liberation', 'Lilita']) {
+      expect(`${fam} vendored: ${families.includes(fam)}`).toBe(`${fam} vendored: true`);
+    }
+    // Xiaolai ships as many subsets; a truncated copy is worse than none.
+    const xiaolai = readdirSync(join(dir, 'Xiaolai')).filter(f => f.endsWith('.woff2'));
+    expect(`Xiaolai subsets: ${xiaolai.length >= 200}`).toBe('Xiaolai subsets: true');
+
+    // And the licences must travel with the binaries into dist/.
+    expect(existsSync(join(here, 'public/excalidraw-assets/OFL.txt'))).toBe(true);
+    expect(existsSync(join(here, 'public/excalidraw-assets/README.md'))).toBe(true);
   });
 
   test('webfonts are declared locally, not fetched from a CDN', () => {

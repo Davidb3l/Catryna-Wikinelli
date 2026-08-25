@@ -279,8 +279,10 @@ first**. tldraw fetched its icons, translations and four webfonts from
 from `window.EXCALIDRAW_ASSET_PATH` and then always appends
 `https://esm.sh/@excalidraw/excalidraw@<version>/dist/prod/` as a fallback, so
 with that global unset the fallback is the *only* entry. Its scene fonts are
-now vendored in `public/excalidraw-assets/` (480 KiB, 25 woff2) and the global
-is set in `components/excalidraw-asset-path.ts`, imported before the library.
+now vendored in `public/excalidraw-assets/` (**13 MB, 234 woff2, all nine
+families**) and the global is set in `components/excalidraw-asset-path.ts`,
+imported before the library. Their licences travel with them — `OFL.txt` and a
+`README.md` sit beside the fonts, so they reach `dist/` on deploy.
 
 <Callout type="warning">
 **Opening the whiteboard is not using it.** The first measurement here reported
@@ -291,10 +293,15 @@ shape found the same way — a check that exercised the happy path and stopped.
 Verified after the fix by forcing `document.fonts.load` for Excalifont, Nunito,
 Virgil and Cascadia: all four resolve to `/excalidraw-assets/`, zero esm.sh.
 
-CJK is the stated exception. Xiaolai is **12 MB of the 13 MB** font directory,
-so it is not vendored; typing CJK text in the whiteboard would still reach
-esm.sh. Vendoring it for a scratchpad that persists nothing was not worth 12 MB
-in the repo.
+**Every family is vendored, Xiaolai SC included.** That is 12 MB of the 13 MB
+directory — 41,577 codepoints, 20,949 of them CJK ideographs, split across
+{{count: frontend/public/excalidraw-assets/fonts/Xiaolai/*.woff2}} subset files.
+It is repo cost, not page weight: `unicode-range` means typing
+`你好世界，这是中文测试` fetched **four** of them, measured.
+
+The alternative was leaving Chinese users, and only Chinese users, silently
+falling back to a CDN while everyone else worked offline. Not a trade worth
+making to save disk.
 </Callout>
 
 The cost, measured against the actual load path rather than the whole chunk
