@@ -3,12 +3,12 @@ id: 49ba4ce6-9348-476a-9e54-58b48fdbab2c
 title: "Diagram Themes & Styling"
 path: "styling/diagram-themes"
 tags: ["styling", "react-flow", "mermaid", "turbo-flow", "theming"]
-relatedFiles: ["frontend/index.css", "frontend/App.tsx", "frontend/components/TurboNode.tsx", "frontend/components/TurboEdge.tsx", "frontend/components/TurboEdgeGradient.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/index.html", "frontend/styles/vendor-reactflow.css", "frontend/styles/vendor-excalidraw.css"]
+relatedFiles: ["frontend/index.css", "frontend/App.tsx", "frontend/components/TurboNode.tsx", "frontend/components/TurboEdge.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/index.html", "frontend/styles/vendor-reactflow.css", "frontend/styles/vendor-excalidraw.css"]
 createdAt: 1767494114128
 updatedAt: 1767494114128
 createdBy: "claude-code"
-verifiedCommit: "4f9a42ad8ccbf9943bd25e94176c81c43d902b90"
-verifiedAt: "2026-08-07T05:06:25.309Z"
+verifiedCommit: "e8b4356e95c6887636771de91b1b4f710bc3013b"
+verifiedAt: "2026-08-25T16:53:53.922Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -51,7 +51,7 @@ Turbo components import `reactflow` too, but nothing reaches them except through
 |---|---|
 | `components/MermaidDiagram.tsx` | `initMermaid()`, the `themeVariables` maps, and the SVG post-processing |
 | `components/FlowDiagram.tsx` | `nodeTypes` / `edgeTypes`, node & edge normalization, both canvases |
-| `components/TurboEdgeGradient.tsx` | the gradient `<defs>` |
+| `components/TurboEdge.tsx` | the per-edge `<linearGradient>` and the smoothstep path |
 | `index.css` | everything CSS-side (see below) |
 | `styles/vendor-reactflow.css` | reactflow's own sheet, wrapped in `layer(vendor)` |
 
@@ -87,8 +87,42 @@ shows on `turbo` nodes.
 - **Smoothstep routing**: Clean right-angle paths with `borderRadius: 8` and `offset: 0` for tight connections
 - **Handle positions**: `normalizeNodes()` in `components/FlowDiagram.tsx` defaults every node to `sourcePosition: Bottom` / `targetPosition: Top`. This only affects `default` nodes — `TurboNode` hardcodes its handles to Left (target) / Right (source), so those props are ignored for `turbo` nodes.
 
+<Callout type="info">
+**Edge colour follows the theme now, and the way it does changed.** Each edge
+emits its OWN `<linearGradient>` from `components/TurboEdge.tsx`, applied as an
+inline `stroke`; the stops read `--turbo-edge-0/1/2`, which `index.css` defines
+per theme. There is no shared `<defs>` any more — `TurboEdgeGradient.tsx` is
+deleted.
+
+Three things drove that, and the first is the one worth remembering:
+
+- **A perfectly vertical or horizontal edge used to render as nothing at all.**
+  The shared gradients used the default `gradientUnits="objectBoundingBox"`,
+  which is measured against the path's bounding box — and such an edge has a box
+  with zero width or height, so SVG ignores the paint server entirely. Reachable
+  with ordinary `default` nodes: `normalizeNodes` gives them Bottom → Top
+  handles, so stacking two at the same x produces exactly that path. Measured
+  in-app: `bbox: [0, 174]`, invisible before, drawn now. `userSpaceOnUse`
+  anchored to the edge's own endpoints has no bounding box to degenerate.
+- **Light mode never got a gradient.** `#turbo-edge-gradient-light` was defined
+  and referenced nowhere.
+- **Duplicate IDs were reachable.** `FlowDiagram` and `FlowEditorCanvas` each
+  rendered the shared `<defs>`, so opening the editor over a doc that already
+  showed a diagram put two `id="turbo-edge-gradient"` in one document. Harmless
+  while identical, silently wrong the moment they were not — `url(#id)` takes
+  the first in document order. Per-edge IDs remove the class of bug.
+</Callout>
+
 <Callout type="warning">
-Edge colour does **not** currently follow the theme. `.react-flow__edge .react-flow__edge-path` always strokes `url(#turbo-edge-gradient)`, the dark pink→purple→blue gradient, and out-specifies the `:root:not(.dark)` `#635BFF` fallback. `TurboEdgeGradient` also defines `#turbo-edge-gradient-light`, but nothing references it — so light-mode diagrams draw dark-mode edges.
+**An earlier version of this callout described the bug incorrectly**, and the
+correction is instructive. It claimed the dark gradient "out-specifies the
+`:root:not(.dark)` `#635BFF` fallback — so light-mode diagrams draw dark-mode
+edges." Backwards: `:root:not(.dark) .react-flow__edge-path` is (0,3,0) and
+already beat `.react-flow__edge .react-flow__edge-path` at (0,2,0). Light mode
+was never drawing dark edges; it was drawing a theme-correct but **flat**
+`#635BFF` and losing the gradient. Measured at the time on
+`diagrams/system-architecture`: dark `url("#turbo-edge-gradient")`, light
+`rgb(99, 91, 255)`.
 </Callout>
 
 ```typescript
@@ -209,7 +243,7 @@ concerns that share a file: the diagram styling above keys off the `.dark`
 class, while the named themes key off `[data-theme]`, so the two do not
 interact. See the `frontend/overview` doc.
 
-The rest lives in TSX: Mermaid's `themeVariables` and the SVG post-processing in `components/MermaidDiagram.tsx`, and the gradient `<defs>` in `components/TurboEdgeGradient.tsx`.
+The rest lives in TSX: Mermaid's `themeVariables` and the SVG post-processing in `components/MermaidDiagram.tsx`, and the per-edge gradient `<defs>` emitted by `components/TurboEdge.tsx` (one `<linearGradient>` per edge, `gradientUnits="userSpaceOnUse"`, stops reading `--turbo-edge-0/1/2`).
 
 ### Key CSS Classes
 ```css

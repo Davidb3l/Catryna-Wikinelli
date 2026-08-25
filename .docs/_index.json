@@ -160,8 +160,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "33b80a37ed85bfc5fa70b19e0f33936b9149129b",
-      "verifiedAt": "2026-08-07T07:11:48.666Z",
+      "verifiedCommit": "e8b4356e95c6887636771de91b1b4f710bc3013b",
+      "verifiedAt": "2026-08-25T16:53:53.908Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -250,7 +250,6 @@
         "frontend/App.tsx",
         "frontend/components/TurboNode.tsx",
         "frontend/components/TurboEdge.tsx",
-        "frontend/components/TurboEdgeGradient.tsx",
         "frontend/components/MermaidDiagram.tsx",
         "frontend/components/FlowDiagram.tsx",
         "frontend/index.html",
@@ -262,8 +261,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "4f9a42ad8ccbf9943bd25e94176c81c43d902b90",
-      "verifiedAt": "2026-08-07T05:06:25.309Z",
+      "verifiedCommit": "e8b4356e95c6887636771de91b1b4f710bc3013b",
+      "verifiedAt": "2026-08-25T16:53:53.922Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -424,5 +423,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1786086708667
+  "lastUpdated": 1787676833923
 }

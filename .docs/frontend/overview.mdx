@@ -7,8 +7,8 @@ relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.t
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
-verifiedCommit: "33b80a37ed85bfc5fa70b19e0f33936b9149129b"
-verifiedAt: "2026-08-07T07:11:48.666Z"
+verifiedCommit: "e8b4356e95c6887636771de91b1b4f710bc3013b"
+verifiedAt: "2026-08-25T16:53:53.908Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -203,7 +203,7 @@ The viewer has **no LLM dependency and no API key**. It previously shipped a `fr
 
 ## Webfonts are self-hosted
 
-`frontend/fonts/` holds thirteen `woff2` files (**440 KiB**), declared by
+`frontend/fonts/` holds twenty `woff2` files (**485 KiB** of woff2), declared by
 `styles/fonts.css` and imported eagerly from `index.css`. All four families are
 **SIL OFL 1.1**; the licence text and the exact regeneration command are in
 `frontend/fonts/README.md`. The OFL requires the licence to ship with the fonts,
@@ -248,16 +248,35 @@ and nothing else; `latin-ext` arrives only with accented characters, Cyrillic
 only with Cyrillic ones. Fraunces and Hanken Grotesk are Atelier-only and are
 never fetched in Classic.
 
-**Vendored:** latin, latin-ext, cyrillic, cyrillic-ext (13 faces, 440 KiB).
-**Not vendored:** Greek, Greek-ext, Vietnamese — roughly 80 KiB more.
+**Vendored: every subset Google publishes for these four families** — latin,
+latin-ext, cyrillic, cyrillic-ext, greek, greek-ext, vietnamese. 20 faces,
+485 KiB of woff2. There is no script these families can render that the viewer
+has to go online for.
 
 <Callout type="info">
-Coverage is uneven because Google's is. Inter and JetBrains Mono publish both
-Cyrillic subsets; Hanken Grotesk publishes only `cyrillic-ext`; **Fraunces
-publishes no Cyrillic at all**. Atelier's display face is Fraunces, so Cyrillic
-*headings* in that theme fall back to Georgia while the body text (Hanken
-Grotesk) renders correctly. That is upstream, not a packaging mistake here — and
-worth knowing before someone files it as a bug.
+Coverage is uneven because Google's is, and the gaps are upstream rather than
+omissions here:
+
+| Family | latin | latin-ext | cyrillic | cyrillic-ext | greek | greek-ext | vietnamese |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Inter | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| JetBrains Mono | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ |
+| Hanken Grotesk | ✓ | ✓ | — | ✓ | — | — | ✓ |
+| Fraunces | ✓ | ✓ | — | — | — | — | ✓ |
+
+Consequences worth knowing before someone files them as bugs:
+
+- **Atelier has no Greek face at all** — Fraunces (display) and Hanken Grotesk
+  (body) both lack it, so Greek falls back to Georgia/system-sans there.
+  Cyrillic headings likewise fall back; Cyrillic body text is covered.
+- **Classic covers Greek fully**, except polytonic Greek inside code blocks —
+  JetBrains Mono publishes no `greek-ext`.
+- **Vietnamese is the one subset all four publish**, so it is complete in both
+  themes.
+
+A correction while here: an earlier version of this section quoted the
+pre-Greek/Vietnamese font set as 440 KiB. That was `du` on the whole directory,
+which counts `OFL.txt` and `README.md`; the woff2 alone were 404.9 KiB.
 </Callout>
 
 <Callout type="warning">
@@ -379,7 +398,7 @@ It also sets **`strictPort: true`**, so a taken port is a hard startup failure i
 
 - Project selector — lists every scanned project that has a `.docs/_index.json` and switches the server's docs root
 
-- Command palette for quick doc search. It opens from the header **Search** button; the `⌘K` next to it is a rendered hint only — no keydown handler is registered.
+- Command palette for quick doc search. It opens from the header **Search** button, and the `⌘K` hint next to it is now real: a window `keydown` handler in `App` binds `⌘K`/`Ctrl+K` (Windows), calls `preventDefault` so the browser's own binding does not fire, and stands down while a full-screen editor is open — Excalidraw binds `⌘K` itself, and `handleDocSelect` does not close the editor, so a doc picked from a palette floating over it would stay hidden behind it. It also stands down inside a contentEditable or a *writable* input/textarea; a code block's `readOnly` textarea covers most of a code block's area, so excluding those too would leave the shortcut dead across most of the corpus. The palette's own `ESC` hint is bound as well.
 
 - Document viewer with block rendering
 
@@ -391,7 +410,7 @@ It also sets **`strictPort: true`**, so a taken port is a hard startup failure i
 
 - Version history sidebar
 
-- Toast notifications
+- Toast notifications. The icon follows `toast.type` — red `AlertCircle` for `error`, accent `Info` for `info`, green `Check` for success. Every toast used to wear the green check, so failures announced themselves under a success icon.
 
 ## Theming
 
@@ -457,15 +476,15 @@ Renders different block types with appropriate styling:
 
 - **heading-1 / heading-2 / heading-3** - H1 gets its own size; H2 and H3 currently share one style
 
-- **code** - Read-only `<textarea>` with optional line numbers. There is no syntax highlighting, and the copy button only raises a "Copied" toast — it does not write to the clipboard.
+- **code** - Read-only `<textarea>` with optional line numbers. There is no syntax highlighting. The copy button writes the block's content through `navigator.clipboard.writeText` and only toasts "Copied" once the promise resolves; an insecure context, a denied permission or an unfocused document raise a red **"Copy failed — clipboard blocked"** toast with the underlying error logged to the console. It used to toast "Copied" and touch nothing.
 
-- **callout** - Rendered with a single info style; `metadata.level` is not yet used to vary the colours
+- **callout** - `metadata.level` (lifted from the authored `type="…"` by `parseMdx` in `docs-api.ts`) now picks the colour and icon: `warning` → amber + `AlertTriangle`, `error` → red + `AlertCircle`, everything else → the neutral indigo/accent note + `Info`. Every callout used to paint the info style, so the corpus's warnings read as notes. The class strings are written out whole because Tailwind v4 scans source for literals — an interpolated `border-${level}-500` would be purged.
 
 - **table** - Markdown or `<Table data={...} />` tables, from `metadata.headers` / `metadata.rows`
 
 - **diagram** - Mermaid (rendered via the lazy `MermaidDiagram`, with an expand/zoom modal) when `metadata.diagramData.mermaid` is set, otherwise an interactive React Flow canvas (the lazy `FlowDiagram`). The expand modal clones the already-rendered container's `innerHTML`, so it costs no second load and has nothing to show until the lazy chunk has landed.
 
-- **whiteboard** - A placeholder card that launches the full-screen Excalidraw editor. Stored `whiteboardData` is neither loaded into nor saved from the canvas.
+- **whiteboard** - A placeholder card that launches the full-screen Excalidraw editor. Stored `whiteboardData` is neither loaded into nor saved from the canvas. `WhiteboardEditor` threads the resolved `isDark` into `WhiteboardCanvas`, which passes it to Excalidraw's `theme` prop — the canvas previously stayed light while the rest of the viewer was dark.
 
 ### The trust surface is a set of PURE VIEWS
 
