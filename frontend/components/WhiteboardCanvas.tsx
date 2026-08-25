@@ -26,8 +26,16 @@ import '../styles/vendor-excalidraw.css';
  * It also removed the last third-party origin: tldraw fetched its icons,
  * translations and four of its own webfonts from `cdn.tldraw.com` at runtime.
  */
-const WhiteboardCanvas: React.FC = () => (
+const WhiteboardCanvas: React.FC<{ isDark: boolean }> = ({ isDark }) => (
   <Excalidraw
+    // Excalidraw defaults to its light theme, which put a white canvas inside a
+    // `dark:bg-zinc-950` modal — and Atelier is dark unconditionally, so there
+    // was no preference that made it match. `isDark` is App.tsx's own memo.
+    //
+    // Controlling `theme` also drops Excalidraw's own theme item from the menu
+    // (it only offers `toggleTheme` while the prop is undefined), which is the
+    // intended trade: the canvas follows the app rather than drifting from it.
+    theme={isDark ? 'dark' : 'light'}
     // Nothing persists — the docs API is GET-only and `updateDoc` still
     // round-trips through the lossy parser. The ScratchpadNotice above the
     // canvas says so; do not add a save handler here without a write path.

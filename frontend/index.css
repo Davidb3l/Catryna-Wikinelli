@@ -794,20 +794,37 @@ body {
   outline: none;
 }
 
-/* --- Edge Styles with Gradient --- */
-.react-flow__edge .react-flow__edge-path {
-  stroke: url(#turbo-edge-gradient);
+/* --- Edge Styles with Gradient ---
+   The gradient itself is emitted PER EDGE by `components/TurboEdge.tsx` and
+   applied as an inline `stroke`, so these rules only carry width/opacity and a
+   flat fallback for any edge that is not a `turbo` edge.
+
+   The colours live here as variables because the theme owns them: TurboEdge's
+   `<stop>`s read `--turbo-edge-*`, so light/dark switches with the `.dark`
+   class and no JavaScript is involved.
+
+   Light mode previously never got a gradient at all. `#turbo-edge-gradient-light`
+   was defined in TurboEdgeGradient and referenced nowhere, and the flat
+   `:root:not(.dark)` fallback at (0,3,0) outranked the gradient rule at (0,2,0)
+   — so every light diagram painted a solid #635BFF. */
+.react-flow__edge-path {
   stroke-width: 2;
   stroke-opacity: 0.75;
+  /* Flat fallback: only reached by non-turbo edges, since TurboEdge sets an
+     inline stroke that beats this. */
+  stroke: var(--turbo-edge-1);
 }
 
-/* Fallback stroke for edges without gradient */
-.react-flow__edge-path {
-  stroke: #a853ba;
+:root {
+  --turbo-edge-0: #e92a67;
+  --turbo-edge-1: #a853ba;
+  --turbo-edge-2: #2a8af6;
 }
 
-:root:not(.dark) .react-flow__edge-path {
-  stroke: #635BFF;
+:root:not(.dark) {
+  --turbo-edge-0: #635BFF;
+  --turbo-edge-1: #a853ba;
+  --turbo-edge-2: #00D4FF;
 }
 
 /* --- Controls Styles --- */

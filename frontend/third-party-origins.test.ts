@@ -50,7 +50,6 @@ const SOURCE = [
   'components/WhiteboardCanvas.tsx',
   'components/TurboNode.tsx',
   'components/TurboEdge.tsx',
-  'components/TurboEdgeGradient.tsx',
   'hooks/useDocs.ts',
   'hooks/useSystemTheme.ts',
 ];
@@ -140,12 +139,24 @@ describe('the viewer renders without a third-party origin', () => {
   test('webfonts are declared locally, not fetched from a CDN', () => {
     const fonts = read('styles/fonts.css');
     const srcs = [...fonts.matchAll(/src:\s*url\(([^)]+)\)/g)].map(m => m[1].replace(/['"]/g, ''));
-    // latin + latin-ext for all four families, plus Cyrillic where Google
-    // publishes it (Inter and JetBrains Mono get both subsets, Hanken Grotesk
-    // only cyrillic-ext, Fraunces none). See styles/fonts.css.
-    expect(srcs.length).toBe(13);
+    // EVERY subset Google publishes for these four families. The count is 20
+    // rather than 28 because Google's own coverage is uneven, and the shortfall
+    // is upstream — not something to "fix" here by inventing files:
+    //   Inter           7  latin, latin-ext, cyrillic, cyrillic-ext, greek, greek-ext, vietnamese
+    //   JetBrains Mono  6  the same, minus greek-ext
+    //   Hanken Grotesk  4  latin, latin-ext, cyrillic-ext, vietnamese
+    //   Fraunces        3  latin, latin-ext, vietnamese
+    // See styles/fonts.css for what each gap means at render time.
+    expect(srcs.length).toBe(20);
     for (const s of srcs) {
       expect(`${s} is relative: ${s.startsWith('../fonts/')}`).toBe(`${s} is relative: true`);
+    }
+
+    // A declared src with no file behind it is the quiet failure: the @font-face
+    // simply never matches, the subset falls back to a system face, and nothing
+    // errors. Cheap to assert, so assert it.
+    for (const s of srcs) {
+      expect(`${s} exists: ${existsSync(join(here, 'styles', s))}`).toBe(`${s} exists: true`);
     }
   });
 });

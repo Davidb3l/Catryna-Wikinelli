@@ -6,7 +6,8 @@ import {
   MousePointer2, History, RotateCcw, Check, Monitor, Moon, Sun,
   Type as TypeIcon, Layout, Box, Share2, Layers, Folder, Copy, ExternalLink,
   Filter, Calendar, Tag, AlertCircle, GripVertical, Trash2, Maximize2,
-  Table as TableIcon, BarChart3, PieChart, Info, Loader2, FolderOpen, ChevronUp
+  Table as TableIcon, BarChart3, PieChart, Info, Loader2, FolderOpen, ChevronUp,
+  AlertTriangle
 } from 'lucide-react';
 import { NavItem, Document, Block, UserPreferences, HistoryEntry, DriftStatus, DocDrift, CoverageTrendResponse } from './types';
 import { useDocsList, useDoc, useDocsSearch, useDrift, useCoverage, useCoverageTrend, EMPTY_DOC } from './hooks/useDocs';
@@ -92,6 +93,18 @@ const CommandPalette: React.FC<{ isOpen: boolean; onClose: () => void; onSelect:
       search(query);
     }
   }, [query, search]);
+
+  // The ESC hint below was as decorative as the header's ⌘K: nothing listened
+  // for it, so the palette could only be dismissed by clicking the backdrop or
+  // picking a result.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -254,11 +267,55 @@ export default function App() {
     root.setAttribute('data-theme', themeStyle);
   }, [isDark, themeStyle]);
 
-  const addToast = (message: string, type: Toast['type'] = 'success') => {
+  // The header has advertised a ⌘K hint since the first version with nothing
+  // bound to it. Ctrl+K too, since the viewer runs on Windows.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'k' || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      // A full-screen editor owns the viewport, and Excalidraw binds ⌘K itself
+      // (insert link). Bail before preventDefault so the canvas keeps its own
+      // shortcut — and because handleDocSelect does not close the editor, so a
+      // doc picked from a palette floating over it would stay hidden behind it.
+      if (activeEditor) return;
+      // Swallow the combo on every path below, or the browser's own ⌘K (Chrome's
+      // omnibox, Firefox's quick-find) fires wherever the palette stays shut.
+      e.preventDefault();
+      // Don't steal the key mid-word. A code block's textarea is `readOnly`
+      // though — a selection surface, not a typing one — and every code block
+      // renders one covering most of its area, so excluding those outright
+      // would leave the advertised shortcut dead across most of the corpus.
+      const el = e.target as HTMLElement | null;
+      if (el?.isContentEditable) return;
+      if ((el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && !el.readOnly) return;
+      setIsSearchOpen(true);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeEditor]);
+
+  const addToast = useCallback((message: string, type: Toast['type'] = 'success') => {
     const id = Math.random().toString(36).substring(7);
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
-  };
+  }, []);
+
+  // The copy button used to toast "Copied" and touch nothing — same class of lie
+  // as the old fake Save. The Clipboard API is unavailable outside a secure
+  // context and can be refused by permission, so the toast follows the promise:
+  // success only after the write resolves, and a plainly-worded failure otherwise.
+  const handleCopyCode = useCallback(async (content: string) => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(content);
+      addToast('Copied');
+    } catch (err) {
+      // Insecure context, denied permission and "document not focused" all land
+      // here and are worth telling apart; the toast is truncated on mobile, so
+      // the detail goes to the console rather than into the message.
+      console.error('[Catryna] clipboard write failed', err);
+      addToast('Copy failed — clipboard blocked', 'error');
+    }
+  }, [addToast]);
 
   // The path of the doc actually rendered right now. EMPTY_DOC has an empty
   // path array, which correctly yields no badge.
@@ -353,7 +410,7 @@ export default function App() {
   return (
     <div className={`flex h-screen w-full overflow-hidden bg-white dark:bg-zinc-950 transition-colors`}>
       {activeEditor === 'diag' && <DiagramEditor onClose={() => { setActiveEditor(null); setEditorDiagramData(null); }} diagramData={editorDiagramData || undefined} />}
-      {activeEditor === 'wb' && <WhiteboardEditor onClose={() => setActiveEditor(null)} />}
+      {activeEditor === 'wb' && <WhiteboardEditor onClose={() => setActiveEditor(null)} isDark={isDark} />}
       {activeEditor === 'coverage' && <CoverageReport onClose={() => setActiveEditor(null)} />}
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} prefs={prefs} setPrefs={setPrefs} />
       <CommandPalette isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} onSelect={handleDocSelect} docs={docs} />
@@ -519,7 +576,7 @@ export default function App() {
                 {currentDoc.blocks
                   .filter(block => !(block.type === 'heading-1' && block.content === currentDoc.title))
                   .map(block => (
-                  <BlockRenderer key={block.id} block={block} isEditing={isEditing} showLineNumbers={prefs.editorLineNumbers} whiteboardStyle={prefs.whiteboardStyle} isDark={isDark} onOpenEditor={(type, data) => { setActiveEditor(type); if (data) setEditorDiagramData(data); }} onDelete={id => {}} onCopy={() => addToast('Copied')} />
+                  <BlockRenderer key={block.id} block={block} isEditing={isEditing} showLineNumbers={prefs.editorLineNumbers} whiteboardStyle={prefs.whiteboardStyle} isDark={isDark} onOpenEditor={(type, data) => { setActiveEditor(type); if (data) setEditorDiagramData(data); }} onDelete={id => {}} onCopy={handleCopyCode} />
                 ))}
               </div>
             </div>
@@ -552,7 +609,7 @@ export default function App() {
 }
 
 const BlockRenderer: React.FC<{
-  block: Block; isEditing: boolean; showLineNumbers: boolean; whiteboardStyle: 'clean' | 'sketchy'; isDark: boolean; onOpenEditor: (t: any, data?: any) => void; onDelete: (id: string) => void; onCopy: () => void
+  block: Block; isEditing: boolean; showLineNumbers: boolean; whiteboardStyle: 'clean' | 'sketchy'; isDark: boolean; onOpenEditor: (t: any, data?: any) => void; onDelete: (id: string) => void; onCopy: (content: string) => void
 }> = ({ block, isEditing, showLineNumbers, whiteboardStyle, isDark, onOpenEditor, onDelete, onCopy }) => {
   // Gates the mermaid Expand button. The zoom modal is a ONE-SHOT DOM clone of
   // the rendered container, so expanding before the lazy chunk has produced an
@@ -722,7 +779,7 @@ const BlockRenderer: React.FC<{
       <div className="px-3 sm:px-4 py-2 sm:py-2.5 bg-zinc-900 border-b border-zinc-800 flex justify-between items-center">
         <span className="text-[9px] sm:text-[10px] font-mono text-zinc-500 flex items-center gap-1.5 sm:gap-2 uppercase tracking-widest font-bold truncate max-w-[60%]"><Terminal size={12} className="shrink-0" /> <span className="truncate">{block.metadata?.filePath || 'app.ts'}</span></span>
         <div className="flex gap-1 sm:gap-2 opacity-100 sm:opacity-0 group-hover/code:opacity-100 transition-opacity">
-           <button onClick={onCopy} className="p-1.5 sm:p-1 hover:bg-zinc-800 rounded-sm text-zinc-500 hover:text-white"><Copy size={14} className="sm:w-3 sm:h-3" /></button>
+           <button onClick={() => onCopy(block.content)} title="Copy code" className="p-1.5 sm:p-1 hover:bg-zinc-800 rounded-sm text-zinc-500 hover:text-white"><Copy size={14} className="sm:w-3 sm:h-3" /></button>
            <a href={`vscode://file/${block.metadata?.filePath}`} className="p-1.5 sm:p-1 hover:bg-zinc-800 rounded-sm text-zinc-500 hover:text-white hidden sm:block"><ExternalLink size={12} /></a>
         </div>
       </div>
@@ -737,14 +794,32 @@ const BlockRenderer: React.FC<{
     <div id={block.id} contentEditable={isEditing} className={`${block.type === 'heading-1' ? 'text-2xl sm:text-3xl font-black' : 'text-lg sm:text-xl font-bold'} mt-6 sm:mt-8 mb-3 sm:mb-4 outline-none text-navy dark:text-zinc-50 border-b-2 border-transparent focus:border-accent/20 scroll-mt-16 sm:scroll-mt-20`} suppressContentEditableWarning>{block.content}</div>
   );
 
-  if (block.type === 'callout') return wrapper(
-    <div className={`p-3 sm:p-4 rounded-lg sm:rounded-xl border flex gap-3 sm:gap-4 my-3 sm:my-4 bg-accent/5 dark:bg-indigo-950/20 border-accent/20 dark:border-indigo-900/50`}>
-      <Info size={16} className="text-accent shrink-0 mt-0.5 sm:w-[18px] sm:h-[18px]" />
-      <div contentEditable={isEditing} className="text-xs sm:text-sm leading-relaxed text-navy-light dark:text-zinc-300 outline-none" suppressContentEditableWarning>
-        {isEditing ? block.content : parseInlineMarkdown(block.content)}
+  if (block.type === 'callout') {
+    // Every callout used to paint the info style, so the corpus's warnings read
+    // as notes — the `type="..."` the author wrote was parsed into
+    // `metadata.level` (docs-api.ts parseMdx) and then thrown away here.
+    // The class strings are written out whole because Tailwind v4 scans the
+    // source for literals; an interpolated `border-${level}-500` would be purged.
+    const level = block.metadata?.level;
+    const style = level === 'warning'
+      ? { box: 'bg-amber-500/5 dark:bg-amber-950/20 border-amber-500/30 dark:border-amber-900/50', icon: 'text-amber-500', Icon: AlertTriangle }
+      : level === 'error'
+        ? { box: 'bg-red-500/5 dark:bg-red-950/20 border-red-500/30 dark:border-red-900/50', icon: 'text-red-500', Icon: AlertCircle }
+        // 'info', plus the 'success' the union declares but no doc in the corpus
+        // uses, plus whatever arbitrary string parseMdx lifts out of `type="…"`.
+        // They share the neutral note styling: a fifth colour for a level nobody
+        // writes would be invented, not observed.
+        : { box: 'bg-accent/5 dark:bg-indigo-950/20 border-accent/20 dark:border-indigo-900/50', icon: 'text-accent', Icon: Info };
+    const CalloutIcon = style.Icon;
+    return wrapper(
+      <div className={`p-3 sm:p-4 rounded-lg sm:rounded-xl border flex gap-3 sm:gap-4 my-3 sm:my-4 ${style.box}`}>
+        <CalloutIcon size={16} className={`${style.icon} shrink-0 mt-0.5 sm:w-[18px] sm:h-[18px]`} />
+        <div contentEditable={isEditing} className="text-xs sm:text-sm leading-relaxed text-navy-light dark:text-zinc-300 outline-none" suppressContentEditableWarning>
+          {isEditing ? block.content : parseInlineMarkdown(block.content)}
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
   if (block.type === 'table') {
     const headers = block.metadata?.headers || [];
@@ -810,7 +885,13 @@ const ToastContainer: React.FC<{ toasts: Toast[]; onRemove: (id: string) => void
   <div className="fixed bottom-4 sm:bottom-6 left-4 right-4 sm:left-auto sm:right-6 z-[400] flex flex-col gap-2 pointer-events-none">
     {toasts.map(toast => (
       <div key={toast.id} className="pointer-events-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-2xl p-3 sm:p-4 min-w-0 sm:min-w-[200px] flex items-center gap-2 sm:gap-3 animate-in slide-in-from-bottom-4 sm:slide-in-from-right-4">
-        <Check size={14} className="text-green-500 shrink-0" />
+        {/* Every toast used to wear a green check, so `addToast(…, 'error')`
+            announced a failure under a success icon. The icon follows the type. */}
+        {toast.type === 'error'
+          ? <AlertCircle size={14} className="text-red-500 shrink-0" />
+          : toast.type === 'info'
+            ? <Info size={14} className="text-accent shrink-0" />
+            : <Check size={14} className="text-green-500 shrink-0" />}
         <span className="text-xs font-bold flex-1 truncate">{toast.message}</span>
         <button onClick={() => onRemove(toast.id)} className="text-zinc-400 p-1 shrink-0"><X size={14} /></button>
       </div>
@@ -954,7 +1035,7 @@ const DiagramEditor: React.FC<{ onClose: () => void; diagramData?: DiagramData }
 /** `whiteboardStyle` is deliberately NOT threaded in: the canvas ignores it, so
  *  the prop was dead. The pref still drives the placeholder card's border in
  *  BlockRenderer, which is the only place it has ever had an effect. */
-const WhiteboardEditor: React.FC<{ onClose: () => void }> = ({ onClose }) => (
+const WhiteboardEditor: React.FC<{ onClose: () => void; isDark: boolean }> = ({ onClose, isDark }) => (
   <div className="fixed inset-0 z-[100] bg-white dark:bg-zinc-950 flex flex-col animate-in slide-in-from-bottom duration-300">
     <header className="h-12 sm:h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-3 sm:px-6 shrink-0 z-10 bg-white dark:bg-zinc-950">
       <div className="flex items-center gap-2 sm:gap-4"><span className="font-bold flex items-center gap-2 text-sm sm:text-base"><Box size={18} className="text-amber-500" /> Whiteboard</span></div>
@@ -965,7 +1046,7 @@ const WhiteboardEditor: React.FC<{ onClose: () => void }> = ({ onClose }) => (
         the single largest dependency here and nothing but this modal needs it. */}
     <div className="flex-1 catryna-canvas-fill">
       <LazyCanvas what="whiteboard">
-        <WhiteboardCanvas />
+        <WhiteboardCanvas isDark={isDark} />
       </LazyCanvas>
     </div>
   </div>

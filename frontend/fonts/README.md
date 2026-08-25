@@ -30,14 +30,38 @@ Each is distributed by Google Fonts from `ofl/<family>/` in
 what makes self-hosting cheaper than the CDN was: one file per family per subset
 covers every weight, so four static Inter instances collapse into one.
 
-**latin, latin-ext, cyrillic and cyrillic-ext.** Greek, Greek-ext and
-Vietnamese are not vendored (~80 KiB more) — add them to the URL below and to
-`../styles/fonts.css` if a corpus needs them.
+**Every subset Google publishes for these four families** — latin, latin-ext,
+cyrillic, cyrillic-ext, greek, greek-ext, vietnamese. Nothing is deliberately
+left out, so there is no script these families can render that the viewer has to
+go online for.
 
-Google's own coverage is uneven, so ours is too: Inter and JetBrains Mono
-publish both Cyrillic subsets, Hanken Grotesk only `cyrillic-ext`, and Fraunces
-none. Atelier's display face is Fraunces, so Cyrillic *headings* in that theme
-fall back to Georgia; body text (Hanken Grotesk) is covered.
+That is 20 files, not 28, because **Google's own coverage is uneven** and the
+gaps are upstream. Verified empirically against the CSS the command below
+returns — do not assume a family publishes a subset just because another one
+does:
+
+| Family | latin | latin-ext | cyrillic | cyrillic-ext | greek | greek-ext | vietnamese |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| Inter | ● | ● | ● | ● | ● | ● | ● |
+| JetBrains Mono | ● | ● | ● | ● | ● | — | ● |
+| Hanken Grotesk | ● | ● | — | ● | — | — | ● |
+| Fraunces | ● | ● | — | — | — | — | ● |
+
+What the dashes mean when someone reads a doc:
+
+- **Atelier has no Greek face at all.** Its display face is Fraunces and its body
+  face is Hanken Grotesk, neither of which publishes Greek, so Greek renders in
+  the Georgia/serif and system-sans fallbacks. Cyrillic *headings* fall back the
+  same way; Cyrillic body text is covered by Hanken Grotesk's `cyrillic-ext`.
+- **Classic covers Greek, Cyrillic and Vietnamese in full**, except polytonic
+  Greek (`greek-ext`) inside code blocks — JetBrains Mono does not publish it,
+  so that falls back to the system monospace.
+- **Vietnamese is complete in both themes**; it is the one non-Latin subset all
+  four families publish.
+
+Adding these subsets added **no new family**, so `OFL.txt` did not change. That
+was checked rather than assumed: each new file's own `name` table reports one of
+the four families already listed above, with the same copyright string.
 
 ## Regenerating
 
@@ -50,6 +74,21 @@ every subset.
 curl -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36" \
   'https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=JetBrains+Mono:wght@400..500&family=Fraunces:opsz,wght@9..144,400..600&family=Hanken+Grotesk:wght@300..700&display=swap'
 ```
+
+That one request returns **every** subset each family publishes — there is no
+`subset=` parameter to add, so the CSS above is the authority on what exists.
+Save each `src` to `<family-slug>-<subset>.woff2` here, and reproduce the block
+in `../styles/fonts.css` with only the `src` rewritten to the local path.
+
+Two things worth checking on the way through, both of which have a real failure
+mode behind them:
+
+- The **UA string is load-bearing.** Google serves woff2 with `unicode-range`
+  only to a browser it recognises; an unset or curl-default agent gets a single
+  fat TTF face per family and the subsetting disappears.
+- Confirm the files are **variable**: `fvar` should report a `wght` axis (and
+  `opsz` for Fraunces). A static instance would still render, at roughly 3.5x
+  the bytes for the same coverage.
 
 Weight ranges must stay in step with what the app uses — see the `font-black`
 note in the `frontend/overview` doc before widening any of them.

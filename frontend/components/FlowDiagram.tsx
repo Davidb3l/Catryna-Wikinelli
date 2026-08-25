@@ -5,7 +5,6 @@ import ReactFlow, { Background, Controls, MiniMap, Position } from 'reactflow';
 import '../styles/vendor-reactflow.css';
 import { TurboNode } from './TurboNode';
 import { TurboEdge } from './TurboEdge';
-import { TurboEdgeGradient } from './TurboEdgeGradient';
 
 /**
  * THE REACT FLOW BOUNDARY.
@@ -46,7 +45,6 @@ const normalizeEdges = (edges: any[]) => edges.map((edge) => ({
 /** Read-only canvas embedded in a doc. The caller owns the sized wrapper. */
 const FlowDiagram: React.FC<{ diagramData: DiagramData }> = ({ diagramData }) => (
   <>
-    <TurboEdgeGradient />
     <ReactFlow
       nodes={normalizeNodes(diagramData.nodes || [])}
       edges={normalizeEdges(diagramData.edges || [])}
@@ -93,7 +91,6 @@ export const FlowEditorCanvas: React.FC<{ diagramData?: DiagramData }> = ({ diag
 
   return (
     <>
-      <TurboEdgeGradient />
       <ReactFlow
         nodes={nodes}
         edges={edges}
