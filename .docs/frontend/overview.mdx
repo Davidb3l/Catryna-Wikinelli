@@ -7,8 +7,8 @@ relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.t
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
-verifiedCommit: "e8b4356e95c6887636771de91b1b4f710bc3013b"
-verifiedAt: "2026-08-25T16:53:53.908Z"
+verifiedCommit: "58fa6e7c7faedf795d44c08561ac16eb0c81f90b"
+verifiedAt: "2026-08-25T19:05:18.617Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -408,7 +408,7 @@ It also sets **`strictPort: true`**, so a taken port is a hard startup failure i
 
 - Settings modal for preferences, persisted to `localStorage` (`catryna.prefs.v1`). **Canvas Style** (`clean` / `sketchy`) only styles the whiteboard *placeholder card's* border in `BlockRenderer` — no canvas has ever honoured it. `WhiteboardEditor` used to take the pref as a prop and ignore it; the dead prop is gone rather than left to imply an effect it does not have.
 
-- Version history sidebar
+- Version history sidebar — real git history per doc, with read-only snapshot viewing (see **Version History** below)
 
 - Toast notifications. The icon follows `toast.type` — red `AlertCircle` for `error`, accent `Info` for `info`, green `Check` for success. Every toast used to wear the green check, so failures announced themselves under a success icon.
 
@@ -526,7 +526,7 @@ It was briefly written with hand-declared `props`/`state` and reload-only recove
 
 ### Preview Mode (formerly "Edit")
 
-Content-editable blocks for previewing changes locally. **Nothing persists, and the UI now says so** — a banner names the `.mdx` file to edit and the `update_doc` MCP tool.
+Content-editable blocks for previewing changes locally. **Nothing persists, and the UI now says so** — a banner names the `.mdx` file to edit and the `update_doc` MCP tool. The per-block hover gutter is gone too: its grab handle set `cursor-grab` with no drag logic behind it, and its delete button was wired to a no-op. Both return with a real editor.
 
 <Callout type="warning">
 This used to present a **Save** button that ran an 800 ms timer and toasted "Saved". There was no write path (the docs API is `GET`-only), and the contentEditable blocks are never read back into state — the edits existed only as DOM nodes and were discarded on the next render. Nothing was saved, nothing could have been, and the user was told otherwise.
@@ -536,7 +536,21 @@ A real write path is deliberately not built yet. `updateDoc` re-serializes block
 
 ### Version History
 
-The sidebar renders `currentDoc.history`, but the API never returns a `history` field and `toDocument()` never sets one — so it always shows "No versions found", and **Revert** only closes the panel. Git is the real history today.
+**Real, and git-backed.** The sidebar fetches `GET /api/docs/history?path=…` when opened — every commit that touched the doc's `.mdx`, renames followed (`git log --follow`), newest first with hash, author, date and subject. **View this version** fetches `GET /api/docs/version?path=…&hash=…` and renders that snapshot read-only in the main pane under an indigo banner naming the commit; TOC and scroll spy derive from the snapshot's headings, not today's. "Back to current" (banner or sidebar) restores the live doc, and any doc/project navigation clears the snapshot.
+
+While a snapshot is displayed the **verified badge is hidden** (its baseline describes the live doc, not the version on screen), the **Preview-edits toggle is hidden** (snapshot blocks are forced read-only, so the toggle would visibly do nothing), and the **hero title is the snapshot's own H1** — old content under today's title would show two contradictory titles. If the snapshot fetch fails, the pane shows an explicit failure message rather than quietly rendering the live doc under a "Viewing version" banner.
+
+<Callout type="warning">
+**The list is rename-following, not exhaustive — and the sidebar says so.** `git log --follow` forces git's history simplification and silently ignores `--full-history` (verified empirically), so a merge commit that only *resolves a conflict* in the doc is not listed. That is why no entry is labelled "the current version" and every entry — the newest included — is viewable: the newest listed commit is not guaranteed to be the one that produced today's content. Commits from before a file was **moved into `.docs/`** are also dropped: their content lives outside the containment boundary the API enforces everywhere else.
+</Callout>
+
+<Callout type="warning">
+There is deliberately **no Revert button**. The docs API has no write path (see Preview Mode above), so an in-viewer revert cannot be honest — and this sidebar's previous life was exactly that lie: a "Revert" that toasted "Reverted" over a `doc.history` field nothing ever populated. Restoring a version stays a git operation done outside the viewer.
+</Callout>
+
+<Callout type="info">
+**Historical honesty:** computed-fact tokens (`{{count: …}}` etc.) are NOT evaluated for snapshots. Rendering them against today's tree would put current numbers into an old document, so the snapshot shows its source form — and the banner says so.
+</Callout>
 
 ### Coverage Report
 
@@ -665,6 +679,10 @@ The endpoints read the `.docs/` folder off disk:
 - `GET /api/docs/:path` - reads `{path}.mdx`, runs the config's own `parseMdx()`, and returns `{ ...indexMetadata, path, blocks, raw }`
 
 - `GET /api/projects` / `POST /api/projects/select` - project discovery and switching
+
+- `GET /api/docs/history?path=` - the doc's git history via `gitDocHistory()`: `git log --follow` from the project root, unit/record-separator framed, `--name-only` so each commit carries the file's path *at that commit*. Not a repo → `{ gitRepo: false, commits: [] }`, still 200
+
+- `GET /api/docs/version?path=…&hash=` - one snapshot: the hash (lowercase hex, 7-40 chars, else 400; a prefix resolves to the newest match) is resolved against the doc's own history server-side and served with `git show <hash>:<path-at-that-commit>` — the client never supplies a git path. Parsed through `parseMdx()`; computed tokens left unrendered. Both routes match their **exact** pathname (a `startsWith` here once made every doc named `version*`/`history*` unservable), refuse git glob metacharacters in `path`, and run the same containment check as `GET /api/docs/:path`
 
 - `GET /api/coverage` - real coverage, via `computeCoverage()` from `src/coverage.ts`
 

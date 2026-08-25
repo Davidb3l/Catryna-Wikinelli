@@ -7,8 +7,8 @@ relatedFiles: ["src/tokens.ts", "src/tools/docs.ts", "frontend/docs-api.ts"]
 anchors: []
 evidence: []
 refs: []
-verifiedCommit: "e8150dda4b91b8a0a4f2fa51e77d189a0e71fece"
-verifiedAt: "2026-08-05T19:15:35.405Z"
+verifiedCommit: "58fa6e7c7faedf795d44c08561ac16eb0c81f90b"
+verifiedAt: "2026-08-25T19:05:31.306Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 createdAt: 1785928800000
@@ -39,7 +39,7 @@ Globs support `*` (one segment), `**` (recursive), and `?`. A bare directory (`s
 ## Where they render
 
 - **MCP `get_doc`** (`src/tools/docs.ts`) — `renderTokensInBlocks` evaluates tokens against the project root (cwd) before returning blocks to an agent.
-- **The viewer** (`frontend/docs-api.ts`) — evaluates against the project root (the parent of `.docs/`) when serving `/api/docs/:path`, so the human sees live values too.
+- **The viewer** (`frontend/docs-api.ts`) — evaluates against the project root (the parent of `.docs/`) when serving `/api/docs/:path`, so the human sees live values too. The one deliberate exception is `/api/docs/version` (the Version History snapshot endpoint): a historical snapshot keeps its tokens in **source form**, because evaluating them against today's tree would put current numbers into an old document — the exact confidently-wrong pairing this feature exists to eliminate.
 
 ## Graceful degradation — the raw token is the fallback
 

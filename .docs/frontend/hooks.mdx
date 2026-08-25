@@ -7,8 +7,8 @@ relatedFiles: ["frontend/hooks/useDocs.ts"]
 createdAt: 1767321379449
 updatedAt: 1767321661283
 createdBy: "claude-code"
-verifiedCommit: "a6ef1fb380b29499c7c1becab5d252ecd1e3759b"
-verifiedAt: "2026-08-01T22:08:32.205Z"
+verifiedCommit: "58fa6e7c7faedf795d44c08561ac16eb0c81f90b"
+verifiedAt: "2026-08-25T19:05:18.632Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -54,7 +54,35 @@ Each fetch aborts the previous one, and its state writes are gated on still bein
 
 `refetch` is written as `() => path && fetchDoc(path)`, so it returns the falsy `path` rather than a promise when nothing is selected — always guard before awaiting it.
 
-The API response is mapped by `toDocument()`: it normalizes the metadata, splits `path` on `/` into a string array, sets `lastUpdated` to `new Date(updatedAt).toISOString()`, and attaches the doc's drift baseline as `verification`. `history` / `isDraft` are never populated.
+The API response is mapped by `toDocument()`: it normalizes the metadata, splits `path` on `/` into a string array, sets `lastUpdated` to `new Date(updatedAt).toISOString()`, and attaches the doc's drift baseline as `verification`. `isDraft` is never populated. (The old dead `Document.history` field is gone — history is its own pair of hooks below.)
+
+## useDocHistory
+
+The doc's real git history, for the Version History sidebar.
+
+```typescript
+const {
+  history,   // { gitRepo: boolean; commits: DocHistoryCommit[] } | null
+  loading,   // boolean
+  error,     // string | null
+} = useDocHistory(path, enabled);  // path: string | null, enabled: boolean
+```
+
+`enabled` gates the fetch: opening the sidebar is what costs a `git log`, not every doc navigation. When disabled (or the path changes while closed) the stored history is dropped, so reopening never flashes the previous doc's commits. Payloads are run through `normalizeHistory()` — same defense as the trust hooks — and a non-repo project comes back as `gitRepo: false` with an empty list, which the sidebar renders as its own message rather than an error.
+
+## useDocVersion
+
+One historical snapshot of a doc, fetched only while `hash` is set.
+
+```typescript
+const {
+  version,   // DocVersion | null — the commit fields plus parsed blocks
+  loading,   // boolean
+  error,     // string | null
+} = useDocVersion(path, hash);  // both string | null
+```
+
+Passing `hash: null` clears the snapshot (this is how "Back to current" works). The blocks arrive pre-parsed by the server's `parseMdx()`, with computed-fact tokens deliberately left in source form — evaluating them against today's tree would put current numbers into an old document.
 
 ## verificationStatus
 
