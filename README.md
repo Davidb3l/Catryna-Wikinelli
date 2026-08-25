@@ -2,8 +2,7 @@
 
 **Catryna Wikinelli is the Sothis suite's living documentation — a local-first code wiki that your Claude Code AI coding agent writes and your team reads, with docs living as MDX files in a `.docs/` folder, versioned with your code.**
 
-<!-- When github.com/Davidb3l/sothis-suite is published, retarget this link to it. -->
-> **Part of the [Sothis suite](https://github.com/Davidb3l/Sirius-Forester)** — the
+> **Part of the [Sothis suite](https://github.com/Davidb3l/Sothis)** — the
 > local-first fleet for Claude Code agents:
 > [Sirius Forester](https://siriusforester.com) (foreman) ·
 > [Hayvenhurst](https://hayvenhurst.dev) (code graph) ·
