@@ -96,6 +96,80 @@ export function readIndexFile(docsRoot: string): { docs: any[] } {
   return { docs: Array.isArray(parsed.docs) ? parsed.docs : [] };
 }
 
+/** One commit that touched a doc file, as `git log --follow` reports it. */
+export interface DocHistoryCommit {
+  hash: string;
+  /** Author date, ISO 8601 (`%aI`). */
+  date: string;
+  author: string;
+  subject: string;
+  /**
+   * Repo-root-relative path of the doc file AT that commit. `--follow` walks
+   * through renames, so this is not always today's path — and it is what
+   * `git show <hash>:<path>` needs, which is always repo-root-relative
+   * regardless of cwd (unlike the log pathspec, which is cwd-relative).
+   */
+  file: string;
+}
+
+export type DocHistoryResult =
+  | { ok: true; commits: DocHistoryCommit[] }
+  /** `notRepo` separates "there is no git here" from "git is here but failed". */
+  | { ok: false; notRepo: boolean; error: string };
+
+/**
+ * Every commit that touched `pathspec` (cwd-relative, forward slashes), newest
+ * first, following renames.
+ *
+ * Field/record separators are the ASCII unit/record separators rather than
+ * newlines: a commit subject can contain almost anything printable, and
+ * `--name-only` output is newline-framed already. `core.quotePath=false` keeps
+ * non-ASCII filenames literal instead of octal-escaped.
+ *
+ * Two deliberate exclusions:
+ * - Commits whose path AT that commit is outside a `.docs/` directory are
+ *   dropped. `--follow` walks renames, so a doc moved INTO `.docs/` has
+ *   ancestors elsewhere in the repo — and serving those would leak content
+ *   outside the containment boundary every endpoint here enforces.
+ * - Merge commits that only RESOLVE a conflict in the doc do not appear:
+ *   `--follow` forces git's history simplification and silently discards
+ *   `--full-history` (verified empirically). Rename tracking is worth more
+ *   than merge-resolution snapshots; the UI must not claim the list is
+ *   exhaustive.
+ */
+export async function gitDocHistory(projectRoot: string, pathspec: string): Promise<DocHistoryResult> {
+  const { runGit } = await import('../src/drift');
+  const r = await runGit(projectRoot, [
+    '-c', 'core.quotePath=false',
+    'log', '--follow', '--format=%x1e%H%x1f%aI%x1f%an%x1f%s', '--name-only',
+    '--', pathspec,
+  ]);
+  if (!r.ok) {
+    // `git log` also exits non-zero on a real repo with an unborn HEAD
+    // (`git init` and no commit yet). That is an EMPTY history, not a missing
+    // repo — reporting "not a git repository" there was this function's first
+    // reviewed bug.
+    const probe = await runGit(projectRoot, ['rev-parse', '--is-inside-work-tree']);
+    if (probe.ok) return { ok: true, commits: [] };
+    return { ok: false, notRepo: true, error: r.stderr.trim() };
+  }
+
+  const commits: DocHistoryCommit[] = [];
+  for (const record of r.stdout.split('\x1e')) {
+    if (!record.trim()) continue;
+    const lines = record.split('\n');
+    const [hash = '', date = '', author = '', subject = ''] = lines[0].split('\x1f');
+    // After the format line: a blank line, then the path at that commit.
+    const file = lines.slice(1).map(l => l.trim()).filter(Boolean).pop() ?? '';
+    // The hash gate also defuses a subject containing a literal \x1e, which
+    // would otherwise fabricate a phantom record out of the subject's tail.
+    if (!/^[0-9a-f]{40}$/.test(hash)) continue;
+    if (!file || !/(^|\/)\.docs\//.test(file)) continue;
+    commits.push({ hash, date, author, subject, file });
+  }
+  return { ok: true, commits };
+}
+
 export interface DocsApi {
   /** Register these on `server.middlewares`, in order. */
   middlewares: Middleware[];
@@ -228,6 +302,108 @@ export function createDocsApi(opts: {
           .slice(0, 20);
 
         res.end(JSON.stringify({ results, query }));
+        return;
+      }
+
+      // GET /api/docs/history?path=<docPath> — the doc's real git history.
+      //
+      // Matched on the EXACT pathname, not a prefix: a startsWith here made
+      // every doc whose path merely BEGINS with "history" or "version"
+      // unservable ("versioning" 400'd as a malformed hash). Only the two
+      // literal segments are reserved; the doc path arrives as a query param
+      // so the generic :path handler below never sees it. Containment is the
+      // SAME check as the generic handler: the query param is
+      // attacker-controlled exactly like a path segment is.
+      const reqPathname = req.url ? new URL(req.url, 'http://localhost').pathname : '';
+      if (reqPathname === '/api/docs/history' || reqPathname === '/api/docs/version') {
+        const wantVersion = reqPathname === '/api/docs/version';
+        const url = new URL(req.url!, 'http://localhost');
+        const docPath = url.searchParams.get('path') || '';
+
+        // Doc paths never contain git glob metacharacters, but a pathspec
+        // does interpret them — `path=*` was a free full-repo `git log` on an
+        // unauthenticated server. Refuse rather than escape.
+        if (/[*?[\]\\]/.test(docPath)) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: 'Malformed path', path: docPath }));
+          return;
+        }
+
+        const rootResolved = path.resolve(docsRoot);
+        const mdxPath = path.resolve(rootResolved, `${docPath}.mdx`);
+        if (!mdxPath.startsWith(rootResolved + path.sep)) {
+          res.statusCode = 403;
+          res.end(JSON.stringify({ error: 'Path outside docs root', path: docPath }));
+          return;
+        }
+
+        // Git runs from the PROJECT root (parent of .docs/), same as the trust
+        // endpoints. The log pathspec is cwd-relative and git speaks forward
+        // slashes on every platform.
+        const projectRoot = path.dirname(rootResolved);
+        const pathspec = path.relative(projectRoot, mdxPath).split(path.sep).join('/');
+        const result = await gitDocHistory(projectRoot, pathspec);
+
+        if (!wantVersion) {
+          if (!result.ok) {
+            // notRepo renders as the sidebar's own "not a git repository"
+            // message; any OTHER git failure must not wear that message.
+            if (result.notRepo) {
+              res.end(JSON.stringify({ gitRepo: false, commits: [] }));
+            } else {
+              res.statusCode = 500;
+              res.end(JSON.stringify({ error: result.error || 'git failed' }));
+            }
+            return;
+          }
+          // `file` stays server-side: the client never supplies a path for
+          // `git show`, it can only name a hash we then resolve ourselves.
+          res.end(JSON.stringify({
+            gitRepo: true,
+            commits: result.commits.map(({ file, ...c }) => c),
+          }));
+          return;
+        }
+
+        // GET /api/docs/version?path=<docPath>&hash=<sha> — one snapshot.
+        // Lowercase hex, 7..40 chars — what git itself prints. A shorter or
+        // uppercase form never comes from this API's own history responses.
+        const hash = url.searchParams.get('hash') || '';
+        if (!/^[0-9a-f]{7,40}$/.test(hash)) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: 'Malformed hash' }));
+          return;
+        }
+        // Prefix match: an ambiguous abbreviation resolves to the NEWEST
+        // matching commit, which is also what the sidebar would list first.
+        const commit = result.ok ? result.commits.find(c => c.hash.startsWith(hash)) : undefined;
+        if (!commit) {
+          res.statusCode = 404;
+          res.end(JSON.stringify({ error: 'No such version for this doc', hash }));
+          return;
+        }
+
+        const { runGit } = await import('../src/drift');
+        const shown = await runGit(projectRoot, ['show', `${commit.hash}:${commit.file}`]);
+        if (!shown.ok) {
+          res.statusCode = 404;
+          res.end(JSON.stringify({ error: 'Version unreadable', hash: commit.hash }));
+          return;
+        }
+
+        // HISTORICAL HONESTY: computed-fact tokens are deliberately NOT
+        // rendered here. Evaluating `{{count: …}}` against today's tree would
+        // put current numbers into an old document; the snapshot shows its
+        // source form instead.
+        const parsed = parseMdx(shown.stdout);
+        res.end(JSON.stringify({
+          hash: commit.hash,
+          date: commit.date,
+          author: commit.author,
+          subject: commit.subject,
+          blocks: parsed.blocks,
+          raw: shown.stdout,
+        }));
         return;
       }
 

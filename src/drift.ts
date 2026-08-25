@@ -126,7 +126,9 @@ export function selectGitRunner(bunAvailable: boolean): GitRunner {
 
 /** The Bun half of `runGit`. */
 export async function runGitViaBun(cwd: string, args: string[]): Promise<GitResult> {
-  const bun = (globalThis as { Bun?: { spawn?: (...a: any[]) => any } }).Bun!;
+  // `spawn` is typed required in this cast: the function is only selected when
+  // `bunAvailable` was probed true, and a `spawn?:` here trips strict TS.
+  const bun = (globalThis as { Bun?: { spawn: (...a: any[]) => any } }).Bun!;
   const proc = bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),

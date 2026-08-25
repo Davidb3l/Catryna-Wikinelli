@@ -720,3 +720,198 @@ describe('trust endpoints', () => {
     expect(res.body).toBe('no middleware matched');
   });
 });
+
+// --------------------------------------------------------------------------
+// Doc version history — /api/docs/history and /api/docs/version
+// --------------------------------------------------------------------------
+
+describe('doc version history', () => {
+  test('history lists real commits newest-first; version serves each snapshot', async () => {
+    const fx = await makeFixture();
+    await initRepo(fx.alpha);
+
+    // Second commit: change the intro doc so the two versions differ.
+    await writeAt(fx.alpha, '.docs/guides/intro.mdx',
+      '---\ntitle: "Alpha Intro Guide"\n---\n\n# Alpha Intro Guide\n\nRewritten intro body.\n');
+    await git(fx.alpha, ['add', '-A']);
+    await git(fx.alpha, ['commit', '-q', '-m', 'rewrite intro']);
+
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    const hist = JSON.parse((await get('/api/docs/history?path=guides/intro', { timeoutMs: 30_000 })).body);
+    expect(hist.gitRepo).toBe(true);
+    expect(hist.commits.length).toBe(2);
+    expect(hist.commits[0].subject).toBe('rewrite intro');
+    expect(hist.commits[1].subject).toBe('fixture');
+    expect(hist.commits[0].author).toBe('Catryna Test');
+    expect(hist.commits[0].hash).toMatch(/^[0-9a-f]{40}$/);
+    // The server-side `file` field must not leak to the client.
+    expect(hist.commits[0].file).toBeUndefined();
+
+    // Each hash serves the content AS COMMITTED.
+    const v0 = JSON.parse((await get(`/api/docs/version?path=guides/intro&hash=${hist.commits[0].hash}`, { timeoutMs: 30_000 })).body);
+    expect(v0.raw).toContain('Rewritten intro body.');
+    const v1 = JSON.parse((await get(`/api/docs/version?path=guides/intro&hash=${hist.commits[1].hash}`, { timeoutMs: 30_000 })).body);
+    expect(v1.raw).toContain('Intro body.');
+    expect(v1.raw).not.toContain('Rewritten');
+    // Snapshots come back parsed into renderable blocks, not just raw text.
+    expect(v1.blocks.some((b: { type: string; content: string }) => b.type === 'heading-1' && b.content === 'Alpha Intro Guide')).toBe(true);
+  }, 60_000);
+
+  test('follows renames: pre-rename commits stay reachable from the new path', async () => {
+    const fx = await makeFixture();
+    await initRepo(fx.alpha);
+
+    await git(fx.alpha, ['mv', '.docs/guides/intro.mdx', '.docs/guides/getting-started.mdx']);
+    await git(fx.alpha, ['commit', '-q', '-m', 'rename intro']);
+
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    const hist = JSON.parse((await get('/api/docs/history?path=guides/getting-started', { timeoutMs: 30_000 })).body);
+    expect(hist.commits.map((c: { subject: string }) => c.subject)).toEqual(['rename intro', 'fixture']);
+
+    // The pre-rename snapshot lives at the OLD path inside git; the server must
+    // resolve that itself from `--name-only`, not ask the client for a path.
+    const old = await get(`/api/docs/version?path=guides/getting-started&hash=${hist.commits[1].hash}`, { timeoutMs: 30_000 });
+    expect(old.status).toBe(200);
+    expect(JSON.parse(old.body).raw).toContain('Intro body.');
+  }, 60_000);
+
+  test('containment: a traversal path is rejected and leaks nothing', async () => {
+    const fx = await makeFixture();
+    await initRepo(fx.alpha);
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    for (const target of [
+      '/api/docs/history?path=' + encodeURIComponent('../outside-secret'),
+      '/api/docs/version?path=' + encodeURIComponent('../outside-secret') + '&hash=deadbeefdeadbeef',
+    ]) {
+      const res = await get(target, { timeoutMs: 30_000 });
+      expect(res.status).toBe(403);
+      expect(res.body).not.toContain(CANARY);
+    }
+  }, 60_000);
+
+  test('version: malformed hash is 400, unknown hash is 404', async () => {
+    const fx = await makeFixture();
+    await initRepo(fx.alpha);
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    // Anything non-hex must die at the regex, never reach git argv.
+    const bad = await get('/api/docs/version?path=guides/intro&hash=' + encodeURIComponent('HEAD --exec=x'), { timeoutMs: 30_000 });
+    expect(bad.status).toBe(400);
+
+    const unknown = await get('/api/docs/version?path=guides/intro&hash=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef', { timeoutMs: 30_000 });
+    expect(unknown.status).toBe(404);
+  }, 60_000);
+
+  test('a project that is not a git repo reports gitRepo:false, not an error', async () => {
+    const fx = await makeFixture();
+    // alpha deliberately NOT initRepo'd.
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    const res = await get('/api/docs/history?path=guides/intro', { timeoutMs: 30_000 });
+    expect(res.status).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.gitRepo).toBe(false);
+    expect(body.commits).toEqual([]);
+  }, 60_000);
+
+  test('an uncommitted doc in a real repo has an empty history, not a failure', async () => {
+    const fx = await makeFixture();
+    await initRepo(fx.alpha);
+    await writeAt(fx.alpha, '.docs/guides/brand-new.mdx', '---\ntitle: "New"\n---\n\n# New\n\nUncommitted.\n');
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    const res = await get('/api/docs/history?path=guides/brand-new', { timeoutMs: 30_000 });
+    expect(res.status).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.gitRepo).toBe(true);
+    expect(body.commits).toEqual([]);
+  }, 60_000);
+});
+
+describe('doc version history — review hardening', () => {
+  test('reserved segments are exact: docs named versioning/history-notes are not shadowed', async () => {
+    const fx = await makeFixture();
+    // A doc whose path merely BEGINS with a reserved word. The startsWith
+    // routing this pins against 400'd it as a malformed hash.
+    await writeAt(fx.alpha, '.docs/versioning.mdx',
+      '---\ntitle: "Versioning"\n---\n\n# Versioning\n\nSemver policy body.\n');
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    const served = await get('/api/docs/versioning');
+    expect(served.status).toBe(200);
+    expect(JSON.parse(served.body).raw).toContain('Semver policy body.');
+
+    // A missing doc with the other reserved prefix must reach the generic
+    // handler and 404 as a DOC, not return a 200 history body.
+    const missing = await get('/api/docs/history-notes');
+    expect(missing.status).toBe(404);
+    expect(JSON.parse(missing.body).error).toBe('Doc not found');
+  });
+
+  test('commits from before a move into .docs/ are not listed and not servable', async () => {
+    const fx = await makeFixture();
+    // The pre-move life of this file is OUTSIDE the docs containment boundary.
+    await writeAt(fx.alpha, 'notes/private.md', `# Private\n\n${CANARY}\n`);
+    await initRepo(fx.alpha);
+    await git(fx.alpha, ['mv', 'notes/private.md', '.docs/guides/imported.mdx']);
+    await git(fx.alpha, ['commit', '-q', '-m', 'import doc']);
+    await writeAt(fx.alpha, '.docs/guides/imported.mdx', '---\ntitle: "Imported"\n---\n\n# Imported\n\nCleaned body.\n');
+    await git(fx.alpha, ['add', '-A']);
+    await git(fx.alpha, ['commit', '-q', '-m', 'clean imported doc']);
+
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    const hist = JSON.parse((await get('/api/docs/history?path=guides/imported', { timeoutMs: 30_000 })).body);
+    // `--follow` sees three commits; the fixture commit's path lives outside
+    // .docs/ and must be dropped, not offered as a viewable version.
+    expect(hist.commits.map((c: { subject: string }) => c.subject)).toEqual(['clean imported doc', 'import doc']);
+
+    // The listed snapshots must not leak the pre-move content either: at the
+    // move commit the file already lives in .docs/ (with the canary body it
+    // was moved with — that content IS inside the boundary at that commit).
+    const atMove = JSON.parse((await get(`/api/docs/version?path=guides/imported&hash=${hist.commits[1].hash}`, { timeoutMs: 30_000 })).body);
+    expect(atMove.raw).toContain('Private');
+  }, 60_000);
+
+  test('a repo with an unborn HEAD is an empty history, not "not a git repository"', async () => {
+    const fx = await makeFixture();
+    await git(fx.alpha, ['init', '-q']);
+    await git(fx.alpha, ['config', 'user.email', 'test@catryna.local']);
+    await git(fx.alpha, ['config', 'user.name', 'Catryna Test']);
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    const body = JSON.parse((await get('/api/docs/history?path=guides/intro', { timeoutMs: 30_000 })).body);
+    expect(body.gitRepo).toBe(true);
+    expect(body.commits).toEqual([]);
+  }, 60_000);
+
+  test('git glob metacharacters in the path are refused', async () => {
+    const fx = await makeFixture();
+    await initRepo(fx.alpha);
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    for (const p of ['*', 'guides/*', 'guides/intro[a]', 'guides\\intro']) {
+      const res = await get('/api/docs/history?path=' + encodeURIComponent(p), { timeoutMs: 30_000 });
+      expect(res.status).toBe(400);
+    }
+  }, 60_000);
+
+  test('a 7-char lowercase hash prefix resolves; short or uppercase forms are 400', async () => {
+    const fx = await makeFixture();
+    await initRepo(fx.alpha);
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    const hist = JSON.parse((await get('/api/docs/history?path=guides/intro', { timeoutMs: 30_000 })).body);
+    const full = hist.commits[0].hash as string;
+
+    const byPrefix = await get(`/api/docs/version?path=guides/intro&hash=${full.slice(0, 7)}`, { timeoutMs: 30_000 });
+    expect(byPrefix.status).toBe(200);
+    expect(JSON.parse(byPrefix.body).hash).toBe(full);
+
+    expect((await get(`/api/docs/version?path=guides/intro&hash=${full.slice(0, 6)}`, { timeoutMs: 30_000 })).status).toBe(400);
+    expect((await get(`/api/docs/version?path=guides/intro&hash=${full.slice(0, 10).toUpperCase()}`, { timeoutMs: 30_000 })).status).toBe(400);
+  }, 60_000);
+});

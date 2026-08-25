@@ -9,6 +9,8 @@ import type {
   DriftStatus,
   DriftResponse,
   DocDrift,
+  DocHistoryCommit,
+  DocVersion,
   CoverageResponse,
   CoverageTrendResponse,
 } from '../types';
@@ -334,6 +336,121 @@ export function useDoc(path: string | null) {
   }, [path, fetchDoc]);
 
   return { doc, loading, error, refetch: () => path && fetchDoc(path) };
+}
+
+/** /api/docs/history payload, normalized like the trust endpoints are. */
+export interface DocHistoryResponse {
+  gitRepo: boolean;
+  commits: DocHistoryCommit[];
+}
+
+export function normalizeHistory(raw: unknown): DocHistoryResponse | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, any>;
+  if (!Array.isArray(r.commits)) return null;
+  return {
+    gitRepo: r.gitRepo === true,
+    commits: r.commits
+      .filter((c: any) => typeof c?.hash === 'string' && c.hash.length > 0)
+      .map((c: any) => ({ hash: c.hash as string, date: str(c.date), author: str(c.author), subject: str(c.subject) })),
+  };
+}
+
+export function normalizeVersion(raw: unknown): DocVersion | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, any>;
+  if (typeof r.hash !== 'string' || !r.hash || !Array.isArray(r.blocks)) return null;
+  return {
+    hash: r.hash,
+    date: str(r.date),
+    author: str(r.author),
+    subject: str(r.subject),
+    blocks: r.blocks as Block[],
+  };
+}
+
+/**
+ * The doc's real git history. `enabled` gates the fetch so opening the sidebar
+ * is what costs a `git log`, not every doc navigation.
+ */
+export function useDocHistory(path: string | null, enabled: boolean) {
+  const [history, setHistory] = useState<DocHistoryResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !path) {
+      // Drop stale history when the doc changes while closed — reopening must
+      // never flash the previous doc's commits.
+      setHistory(null);
+      return;
+    }
+    inFlight.current?.abort();
+    const ctrl = new AbortController();
+    inFlight.current = ctrl;
+    setLoading(true);
+    setError(null);
+    (async () => {
+      try {
+        const res = await fetch(`/api/docs/history?path=${encodeURIComponent(path)}`, { signal: ctrl.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = normalizeHistory(await res.json());
+        if (inFlight.current !== ctrl) return;
+        if (!data) { setError('Unrecognized history payload'); setHistory(null); return; }
+        setHistory(data);
+      } catch (err) {
+        if ((err as Error)?.name === 'AbortError') return;
+        setError(String(err));
+        setHistory(null);
+      } finally {
+        if (inFlight.current === ctrl) setLoading(false);
+      }
+    })();
+    return () => ctrl.abort();
+  }, [path, enabled]);
+
+  return { history, loading, error };
+}
+
+/** One historical snapshot; fetches only while `hash` is set. */
+export function useDocVersion(path: string | null, hash: string | null) {
+  const [version, setVersion] = useState<DocVersion | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!path || !hash) {
+      setVersion(null);
+      setError(null);
+      return;
+    }
+    inFlight.current?.abort();
+    const ctrl = new AbortController();
+    inFlight.current = ctrl;
+    setLoading(true);
+    setError(null);
+    (async () => {
+      try {
+        const res = await fetch(`/api/docs/version?path=${encodeURIComponent(path)}&hash=${encodeURIComponent(hash)}`, { signal: ctrl.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = normalizeVersion(await res.json());
+        if (inFlight.current !== ctrl) return;
+        if (!data) { setError('Unrecognized version payload'); setVersion(null); return; }
+        setVersion(data);
+      } catch (err) {
+        if ((err as Error)?.name === 'AbortError') return;
+        setError(String(err));
+        setVersion(null);
+      } finally {
+        if (inFlight.current === ctrl) setLoading(false);
+      }
+    })();
+    return () => ctrl.abort();
+  }, [path, hash]);
+
+  return { version, loading, error };
 }
 
 // Hook for search

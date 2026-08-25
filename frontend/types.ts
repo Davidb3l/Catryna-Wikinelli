@@ -16,12 +16,22 @@ export interface Block {
   };
 }
 
-export interface HistoryEntry {
-  id: string;
-  timestamp: string;
+/**
+ * One commit that touched a doc, served by /api/docs/history. Mirrors
+ * `DocHistoryCommit` in docs-api.ts minus the server-side `file` field —
+ * the client names versions by hash only.
+ */
+export interface DocHistoryCommit {
+  hash: string;
+  /** Author date, ISO 8601. */
+  date: string;
   author: string;
+  subject: string;
+}
+
+/** A historical snapshot of a doc, served by /api/docs/version. */
+export interface DocVersion extends DocHistoryCommit {
   blocks: Block[];
-  summary: string;
 }
 
 /** A doc's anchor into code — mirrors `DocAnchor` in src/storage.ts. */
@@ -119,7 +129,6 @@ export interface Document {
   lastUpdated: string;
   path: string[];
   isDraft?: boolean;
-  history?: HistoryEntry[];
   /** Drift baseline for this doc. Absent only if the API omitted it entirely. */
   verification?: DocVerification;
 }

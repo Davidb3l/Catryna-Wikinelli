@@ -5,12 +5,12 @@ import {
   Menu, X, Plus, Clock, Terminal, Activity, Github, Edit3,
   MousePointer2, History, RotateCcw, Check, Monitor, Moon, Sun,
   Type as TypeIcon, Layout, Box, Share2, Layers, Folder, Copy, ExternalLink,
-  Filter, Calendar, Tag, AlertCircle, GripVertical, Trash2, Maximize2,
+  Filter, Calendar, Tag, AlertCircle, Maximize2,
   Table as TableIcon, BarChart3, PieChart, Info, Loader2, FolderOpen, ChevronUp,
-  AlertTriangle
+  AlertTriangle, Eye
 } from 'lucide-react';
-import { NavItem, Document, Block, UserPreferences, HistoryEntry, DriftStatus, DocDrift, CoverageTrendResponse } from './types';
-import { useDocsList, useDoc, useDocsSearch, useDrift, useCoverage, useCoverageTrend, EMPTY_DOC } from './hooks/useDocs';
+import { NavItem, Document, Block, UserPreferences, DocHistoryCommit, DriftStatus, DocDrift, CoverageTrendResponse } from './types';
+import { useDocsList, useDoc, useDocsSearch, useDrift, useCoverage, useCoverageTrend, useDocHistory, useDocVersion, EMPTY_DOC } from './hooks/useDocs';
 import { useSystemPrefersDark } from './hooks/useSystemTheme';
 import { CoverageView, DocTrust, VerifiedBadge } from './components/Trust';
 import { LazyCanvas } from './components/LazyCanvas';
@@ -137,9 +137,20 @@ const CommandPalette: React.FC<{ isOpen: boolean; onClose: () => void; onSelect:
   );
 };
 
+/**
+ * REAL version history, from git. Every entry is a commit that touched this
+ * doc's `.mdx` (renames followed); View renders that snapshot read-only. There
+ * is deliberately no Revert: the docs API has no write path (the lossy
+ * serializer, documented in frontend/overview), and this sidebar's previous
+ * life — a "Revert" button that toasted "Reverted" over an empty `doc.history`
+ * nothing ever populated — is exactly the kind of lie this viewer is done
+ * telling. Restoring a version stays a git operation done outside the viewer.
+ */
 const VersionHistorySidebar: React.FC<{
-  isOpen: boolean; onClose: () => void; history: HistoryEntry[]; currentBlocks: Block[]; onRevert: (b: Block[]) => void
-}> = ({ isOpen, onClose, history, currentBlocks, onRevert }) => {
+  isOpen: boolean; onClose: () => void; docPath: string | null;
+  viewingHash: string | null; onView: (c: DocHistoryCommit | null) => void;
+}> = ({ isOpen, onClose, docPath, viewingHash, onView }) => {
+  const { history, loading, error } = useDocHistory(docPath, isOpen);
   if (!isOpen) return null;
   return (
     <div className="fixed inset-y-0 right-0 w-full sm:w-80 lg:w-[450px] z-[150] bg-white dark:bg-zinc-950 border-l border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
@@ -148,24 +159,55 @@ const VersionHistorySidebar: React.FC<{
         <Button variant="ghost" onClick={onClose} className="p-1"><X size={18} /></Button>
       </div>
       <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 sm:space-y-4">
-        {history.length === 0 && <div className="text-center py-10 text-zinc-400 text-sm">No versions found.</div>}
-        {history.map(entry => (
-          <div key={entry.id} className="p-3 sm:p-4 rounded-lg sm:rounded-xl border border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 transition-colors group">
-            <div className="flex justify-between items-start mb-2 gap-2">
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs sm:text-sm font-bold text-navy dark:text-zinc-50 truncate">{entry.summary}</span>
-                <span className="text-[9px] sm:text-[10px] text-zinc-400 font-mono">{new Date(entry.timestamp).toLocaleString()}</span>
-              </div>
-              <div className="px-2 py-0.5 rounded-sm bg-zinc-100 dark:bg-zinc-800 text-[8px] sm:text-[9px] font-bold text-zinc-500 uppercase shrink-0">{entry.author}</div>
-            </div>
-            <div className="p-2 bg-zinc-50 dark:bg-zinc-900/30 rounded-lg text-[10px] sm:text-[11px] font-mono text-zinc-500 mb-3 sm:mb-4 border border-zinc-100 dark:border-zinc-800">
-              {entry.blocks.length} blocks changed
-            </div>
-            <Button variant="outline" className="w-full text-xs h-8 justify-center" onClick={() => onRevert(entry.blocks)}>
-              <RotateCcw size={14} /> Revert
-            </Button>
+        {!docPath && <div className="text-center py-10 text-zinc-400 text-sm">Open a doc to see its history.</div>}
+        {docPath && loading && (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 size={24} className="animate-spin text-zinc-400" />
           </div>
-        ))}
+        )}
+        {docPath && !loading && error && (
+          <div className="text-center py-10 text-red-400 text-sm">History unavailable: {error}</div>
+        )}
+        {docPath && !loading && !error && history && !history.gitRepo && (
+          <div className="text-center py-10 text-zinc-400 text-sm">This project is not a git repository — no history to show.</div>
+        )}
+        {docPath && !loading && !error && history?.gitRepo && history.commits.length === 0 && (
+          <div className="text-center py-10 text-zinc-400 text-sm">No commits touch this doc yet.</div>
+        )}
+        {docPath && !loading && !error && history?.gitRepo && history.commits.map(commit => {
+          const isViewing = viewingHash === commit.hash;
+          return (
+            <div key={commit.hash} className={`p-3 sm:p-4 rounded-lg sm:rounded-xl border transition-colors ${isViewing ? 'border-accent/50 bg-accent/5 dark:bg-indigo-950/20' : 'border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900/50'}`}>
+              <div className="flex justify-between items-start mb-2 gap-2">
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs sm:text-sm font-bold text-navy dark:text-zinc-50 line-clamp-2">{commit.subject || '(no subject)'}</span>
+                  <span className="text-[9px] sm:text-[10px] text-zinc-400 font-mono">
+                    {commit.hash.slice(0, 8)}{commit.date ? ` · ${new Date(commit.date).toLocaleString()}` : ''}
+                  </span>
+                </div>
+                <div className="px-2 py-0.5 rounded-sm bg-zinc-100 dark:bg-zinc-800 text-[8px] sm:text-[9px] font-bold text-zinc-500 uppercase shrink-0 max-w-[35%] truncate">{commit.author}</div>
+              </div>
+              {/* Every entry is viewable — the first one included. It is NOT
+                  labelled "the current version": `--follow` omits
+                  merge-resolution commits, so the newest LISTED commit is not
+                  guaranteed to be the one that produced today's content. */}
+              {isViewing ? (
+                <Button variant="outline" className="w-full text-xs h-8 justify-center" onClick={() => onView(null)}>
+                  <X size={14} /> Back to current
+                </Button>
+              ) : (
+                <Button variant="outline" className="w-full text-xs h-8 justify-center" onClick={() => onView(commit)}>
+                  <Eye size={14} /> View this version
+                </Button>
+              )}
+            </div>
+          );
+        })}
+        {docPath && !loading && !error && history?.gitRepo && history.commits.length > 0 && (
+          <div className="text-[10px] text-zinc-400 text-center pb-2">
+            Rename-following history; merge-resolution commits may be absent.
+          </div>
+        )}
       </div>
     </div>
   );
@@ -239,6 +281,21 @@ export default function App() {
   // Fetch current document
   const { doc: fetchedDoc, loading: docLoading, error: docError } = useDoc(selectedDocPath);
   const currentDoc = fetchedDoc || EMPTY_DOC;
+
+  // The path of the doc actually RENDERED right now — declared here because
+  // history and snapshots must key off it too, not off `selectedDocPath`:
+  // during an in-flight doc switch those disagree, and mixing them let a
+  // "View this version" click fetch the NEW doc's snapshot at the commit the
+  // user picked from the OLD doc's history.
+  const renderedDocPath = currentDoc.path.length ? currentDoc.path.join('/') : null;
+
+  // The historical snapshot being viewed, or null for the live doc. Holding the
+  // whole commit (not just the hash) lets the banner say what it is showing
+  // without a second lookup. Cleared on every doc/project navigation below.
+  const [viewedCommit, setViewedCommit] = useState<DocHistoryCommit | null>(null);
+  const { version: viewedVersion, loading: versionLoading, error: versionError } = useDocVersion(
+    renderedDocPath, viewedCommit?.hash ?? null,
+  );
 
   // Atelier is dark BY DESIGN (see ThemeStyle in types.ts), so it pins the dark
   // class rather than consulting the light/dark preference. Classic behaves
@@ -317,13 +374,12 @@ export default function App() {
     }
   }, [addToast]);
 
-  // The path of the doc actually rendered right now. EMPTY_DOC has an empty
-  // path array, which correctly yields no badge.
-  const renderedDocPath = currentDoc.path.length ? currentDoc.path.join('/') : null;
-
   const handleDocSelect = (path: string) => {
     setSelectedDocPath(path);
     setIsEditing(false);
+    // A snapshot belongs to ONE doc — carrying it across navigation would
+    // render doc B's history banner over doc C's content.
+    setViewedCommit(null);
     if (window.innerWidth < 1024) setIsSidebarOpen(false);
   };
 
@@ -337,6 +393,7 @@ export default function App() {
       if (res.ok) {
         setCurrentProject(projectPath);
         setSelectedDocPath(null);
+        setViewedCommit(null);
         setIsProjectSelectorOpen(false);
         refetchList();
         // Drift is keyed by doc PATH, and paths collide across projects
@@ -352,16 +409,31 @@ export default function App() {
     }
   };
 
+  // What the reading pane actually shows: the live doc, or the historical
+  // snapshot while one is being viewed. TOC, scroll spy, the block list AND the
+  // hero title all derive from these, so the whole reading surface swaps
+  // together — a TOC built from today's headings over yesterday's content
+  // would scroll nowhere, and old content under today's title would show two
+  // contradictory titles at once.
+  //
+  // While a snapshot is REQUESTED but not loaded (in flight, or failed), the
+  // blocks are EMPTY rather than falling back to the live doc: a "Viewing
+  // version X" banner over current content is a false statement.
+  const displayedBlocks = viewedCommit ? (viewedVersion?.blocks ?? []) : currentDoc.blocks;
+  const displayedTitle = viewedCommit
+    ? (viewedVersion?.blocks.find(b => b.type === 'heading-1')?.content ?? currentDoc.title)
+    : currentDoc.title;
+
   const tableOfContents = useMemo(() => {
-    return currentDoc.blocks
+    return displayedBlocks
       .filter(b => b.type.startsWith('heading'))
-      .filter(b => !(b.type === 'heading-1' && b.content === currentDoc.title))
+      .filter(b => !(b.type === 'heading-1' && b.content === displayedTitle))
       .map(b => ({
         id: b.id,
         text: b.content,
         level: b.type === 'heading-1' ? 1 : b.type === 'heading-2' ? 2 : 3
       }));
-  }, [currentDoc]);
+  }, [displayedBlocks, displayedTitle]);
 
   // Scroll spy - track which section is visible
   useEffect(() => {
@@ -414,7 +486,9 @@ export default function App() {
       {activeEditor === 'coverage' && <CoverageReport onClose={() => setActiveEditor(null)} />}
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} prefs={prefs} setPrefs={setPrefs} />
       <CommandPalette isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} onSelect={handleDocSelect} docs={docs} />
-      <VersionHistorySidebar isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} history={currentDoc.history || []} currentBlocks={currentDoc.blocks} onRevert={(b) => { setIsHistoryOpen(false); addToast('Reverted'); }} />
+      {/* Entering a snapshot also leaves edit-preview mode — the amber "preview
+          only" banner must never sit above a historical version it can't touch. */}
+      <VersionHistorySidebar isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} docPath={renderedDocPath} viewingHash={viewedCommit?.hash ?? null} onView={(c) => { setViewedCommit(c); if (c) setIsEditing(false); }} />
       <ToastContainer toasts={toasts} onRemove={(id) => setToasts(toasts.filter(t => t.id !== id))} />
 
       {/* Mobile sidebar backdrop */}
@@ -530,7 +604,9 @@ export default function App() {
                 DOM nodes and were discarded on the next render. A UI that confirms
                 a write it never performed is the worst thing this product can do.
                 The toggle is now honestly labelled a preview. */}
-            {isEditing
+            {/* Hidden while a historical snapshot is on screen: the blocks are
+                forced read-only there, so the toggle would visibly do nothing. */}
+            {viewedCommit ? null : isEditing
               ? <Button variant="outline" onClick={() => setIsEditing(false)} className="h-8 px-2 sm:px-3"><X size={16} /> <span className="hidden sm:inline">Close preview</span></Button>
               : <Button variant="outline" onClick={() => setIsEditing(true)} className="h-8 px-2 sm:px-3"><Edit3 size={16} /> <span className="hidden sm:inline">Preview edits</span></Button>}
           </div>
@@ -563,22 +639,56 @@ export default function App() {
                   </div>
                 </div>
               )}
-              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black tracking-tight mb-3 sm:mb-4 text-navy dark:text-zinc-50">{currentDoc.title}</h1>
+              {viewedCommit && (
+                <div className="mb-4 p-3 rounded-xl border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/40 text-xs text-indigo-800 dark:text-indigo-300 flex items-start gap-2">
+                  <History size={14} className="shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <span className="font-bold">Viewing version <code className="font-mono">{viewedCommit.hash.slice(0, 8)}</code></span>
+                    {' — '}{viewedCommit.subject}
+                    {viewedCommit.date ? ` (${new Date(viewedCommit.date).toLocaleString()})` : ''}.{' '}
+                    Read-only snapshot from git; computed facts like <code className="font-mono">{'{{count: …}}'}</code> show their source form.
+                    {versionError && <span className="block mt-1 font-bold text-red-500">Could not load this version: {versionError}</span>}
+                  </div>
+                  <button onClick={() => setViewedCommit(null)} className="shrink-0 font-bold underline underline-offset-2 hover:no-underline whitespace-nowrap">Back to current</button>
+                </div>
+              )}
+              <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black tracking-tight mb-3 sm:mb-4 text-navy dark:text-zinc-50">{displayedTitle}</h1>
               {/* Keyed off the doc actually on screen, not the selected path.
                   Previously these disagreed while a fetch was in flight, so a
                   slow response could render one doc's content beneath another
                   doc's verified badge and baseline SHA. */}
-              <DocTrust
-                status={renderedDocPath ? driftStatusFor(renderedDocPath) : null}
-                detail={renderedDocPath ? drift?.docs?.[renderedDocPath] : undefined}
-              />
+              {/* The badge describes the LIVE doc's baseline; over a historical
+                  snapshot it would claim "verified" about content that isn't
+                  what was verified. It returns with the current version. */}
+              {!viewedCommit && (
+                <DocTrust
+                  status={renderedDocPath ? driftStatusFor(renderedDocPath) : null}
+                  detail={renderedDocPath ? drift?.docs?.[renderedDocPath] : undefined}
+                />
+              )}
+              {viewedCommit && versionLoading ? (
+                <div className="flex items-center justify-center py-24">
+                  <Loader2 size={32} className="animate-spin text-zinc-400" />
+                </div>
+              ) : viewedCommit && !viewedVersion ? (
+                /* Requested snapshot failed to load. displayedBlocks is empty
+                   here by construction; this panel says so instead of leaving
+                   a blank page under the banner. */
+                <div className="text-center py-24 text-sm text-zinc-400">
+                  This version could not be loaded{versionError ? ` (${versionError})` : ''}.{' '}
+                  <button onClick={() => setViewedCommit(null)} className="font-bold underline underline-offset-2 hover:no-underline text-accent">Back to current</button>
+                </div>
+              ) : (
               <div className="space-y-1 sm:space-y-2">
-                {currentDoc.blocks
-                  .filter(block => !(block.type === 'heading-1' && block.content === currentDoc.title))
+                {displayedBlocks
+                  .filter(block => !(block.type === 'heading-1' && block.content === displayedTitle))
                   .map(block => (
-                  <BlockRenderer key={block.id} block={block} isEditing={isEditing} showLineNumbers={prefs.editorLineNumbers} whiteboardStyle={prefs.whiteboardStyle} isDark={isDark} onOpenEditor={(type, data) => { setActiveEditor(type); if (data) setEditorDiagramData(data); }} onDelete={id => {}} onCopy={handleCopyCode} />
+                  /* A snapshot is immutable by definition, so edit-preview mode
+                     is forced off while one is displayed. */
+                  <BlockRenderer key={block.id} block={block} isEditing={viewedCommit ? false : isEditing} showLineNumbers={prefs.editorLineNumbers} whiteboardStyle={prefs.whiteboardStyle} isDark={isDark} onOpenEditor={(type, data) => { setActiveEditor(type); if (data) setEditorDiagramData(data); }} onCopy={handleCopyCode} />
                 ))}
               </div>
+              )}
             </div>
 
             {/* Table of Contents - show on larger tablets and desktop */}
@@ -609,8 +719,8 @@ export default function App() {
 }
 
 const BlockRenderer: React.FC<{
-  block: Block; isEditing: boolean; showLineNumbers: boolean; whiteboardStyle: 'clean' | 'sketchy'; isDark: boolean; onOpenEditor: (t: any, data?: any) => void; onDelete: (id: string) => void; onCopy: (content: string) => void
-}> = ({ block, isEditing, showLineNumbers, whiteboardStyle, isDark, onOpenEditor, onDelete, onCopy }) => {
+  block: Block; isEditing: boolean; showLineNumbers: boolean; whiteboardStyle: 'clean' | 'sketchy'; isDark: boolean; onOpenEditor: (t: any, data?: any) => void; onCopy: (content: string) => void
+}> = ({ block, isEditing, showLineNumbers, whiteboardStyle, isDark, onOpenEditor, onCopy }) => {
   // Gates the mermaid Expand button. The zoom modal is a ONE-SHOT DOM clone of
   // the rendered container, so expanding before the lazy chunk has produced an
   // SVG copies the loading spinner into a modal that never resolves — the only
@@ -618,14 +728,12 @@ const BlockRenderer: React.FC<{
   const [mermaidReady, setMermaidReady] = useState(false);
   const markMermaidReady = useCallback((ready: boolean) => setMermaidReady(ready), []);
 
+  // Edit-preview mode used to float a gutter here with a grab handle and a
+  // delete button. Neither did anything — the handle set `cursor-grab` with no
+  // drag logic behind it, and delete was wired to a no-op — and an affordance
+  // that cannot succeed is worse than none. They return with a real editor.
   const wrapper = (children: React.ReactNode) => (
     <div className="group relative">
-      {isEditing && (
-        <div className="absolute -left-12 top-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-sm cursor-grab"><GripVertical size={14} className="text-zinc-300" /></div>
-          <button onClick={() => onDelete(block.id)} className="p-1 hover:bg-red-50 text-red-400 rounded-sm"><Trash2 size={14} /></button>
-        </div>
-      )}
       {children}
     </div>
   );
