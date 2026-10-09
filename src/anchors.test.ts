@@ -695,4 +695,72 @@ describe("cross-language callee edges are ignored (CAT-10)", () => {
     expect(report.drifted.map((d) => d.path)).toEqual(["frontend/work-page"]);
     expect(report.clean.map((d) => d.path)).toEqual(["architecture/database-schema"]);
   });
+
+  test("a node reached by BOTH a bogus .ts change and a real Rust change still drifts", async () => {
+    const dir = await repo();
+    await writeFileAt(dir, "apps/dash/src/WorkPage.tsx", "export function WorkPage() { return close(); }\n");
+    await commitAll(dir, "add the work page");
+    const baseline = await git(dir, ["rev-parse", "HEAD"]);
+    await seedDocs(dir, [
+      { path: "architecture/database-schema", anchors: [{ file: "crates/db/src/lib.rs", symbol: "migrate" }], verifiedCommit: baseline },
+      { path: "frontend/work-page", anchors: [{ file: "apps/dash/src/WorkPage.tsx", symbol: "WorkPage" }], verifiedCommit: baseline },
+    ]);
+    // `close` enters the changed set as WorkPage's real callee and, through the
+    // bogus edge, reaches `migrate` too; the real Rust callee reaches it as well.
+    const hv = fakeHayven({
+      ok: true,
+      ctx: {
+        migrate,
+        WorkPage: {
+          id: "apps/dash/src/WorkPage/WorkPage",
+          file: "apps/dash/src/WorkPage.tsx",
+          startLine: 1,
+          endLine: 1,
+          callees: [{ id: "apps/dash/src/useWorkActions/close", file: "apps/dash/src/useWorkActions.ts", startLine: 1, endLine: 1 }],
+        },
+      },
+      impact: {
+        "apps/dash/src/useWorkActions/close": ["apps/dash/src/WorkPage/WorkPage", "crates/db/src/src/migrate"],
+        "crates/db/src/ledger/check_ledger": ["crates/db/src/src/migrate"],
+      },
+    });
+
+    await writeFileAt(dir, "apps/dash/src/useWorkActions.ts", "export function close() { return 2; }\n");
+    await writeFileAt(dir, "crates/db/src/ledger.rs", "pub fn check_ledger() { /* stricter */ }\n");
+    await commitAll(dir, "change both");
+    const report = await computeDrift(dir, { emit: false, hayven: hv });
+    expect(report.drifted.map((d) => d.path).sort()).toEqual(["architecture/database-schema", "frontend/work-page"]);
+  });
+
+  test("a C-ABI chain keeps drifting: Swift app → C shim → Rust core", async () => {
+    const dir = await initRepo({
+      "app/App.swift": "func start() { shim() }\n",
+      "ffi/shim.c": "void shim(void) { core_impl(); }\n",
+      "core/src/lib.rs": "#[no_mangle] pub extern \"C\" fn core_impl() {}\n",
+    });
+    const baseline = await git(dir, ["rev-parse", "HEAD"]);
+    await seedDocs(dir, [
+      { path: "app/start", anchors: [{ file: "app/App.swift", symbol: "start" }], verifiedCommit: baseline },
+      { path: "core/impl", anchors: [{ file: "core/src/lib.rs", symbol: "core_impl" }], verifiedCommit: baseline },
+    ]);
+    const hv = fakeHayven({
+      ok: true,
+      ctx: {
+        start: {
+          id: "app/App/start",
+          file: "app/App.swift",
+          startLine: 1,
+          endLine: 1,
+          callees: [{ id: "ffi/shim/shim", file: "ffi/shim.c", startLine: 1, endLine: 1 }],
+        },
+        core_impl: { id: "core/src/src/core_impl", file: "core/src/lib.rs", startLine: 1, endLine: 1, callees: [] },
+      },
+      impact: { "core/src/src/core_impl": ["ffi/shim/shim", "app/App/start"] },
+    });
+
+    await writeFileAt(dir, "core/src/lib.rs", "#[no_mangle] pub extern \"C\" fn core_impl() { /* v2 */ }\n");
+    await commitAll(dir, "change the rust core");
+    const report = await computeDrift(dir, { emit: false, hayven: hv });
+    expect(report.drifted.map((d) => d.path).sort()).toEqual(["app/start", "core/impl"]);
+  });
 });

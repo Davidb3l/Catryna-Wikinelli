@@ -29,4 +29,18 @@ describe("language families (CAT-10 cross-language edge guard)", () => {
     expect(compatibleFamilies("js", "c")).toBe(false);
     expect(compatibleFamilies(null, "rust")).toBe(true);
   });
+
+  test("the C-ABI group is one class: Swift↔Rust and Go↔Rust hold without a C hop", () => {
+    expect(compatibleFamilies("swift", "rust")).toBe(true);
+    expect(compatibleFamilies("go", "rust")).toBe(true);
+    expect(compatibleFamilies("go", "swift")).toBe(true);
+    // Bindings outside the group are deliberately dropped until HAYV-18.
+    expect(compatibleFamilies("python", "rust")).toBe(false);
+    expect(compatibleFamilies("js", "rust")).toBe(false);
+  });
+
+  test(".m is ambiguous (Objective-C or MATLAB), so it stays unknown", () => {
+    expect(languageFamily("app/AppDelegate.m")).toBeNull();
+    expect(languageFamily("app/Bridge.mm")).toBe("c");
+  });
 });
