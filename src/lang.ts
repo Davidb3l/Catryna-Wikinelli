@@ -14,7 +14,9 @@
  * directly or via a C shim. Every other pair is treated as unable to call each
  * other, so REAL bindings between them (Python↔Rust via PyO3, JS↔Rust via
  * napi/wasm, Python↔C extensions, JNI, P/Invoke, Dart FFI, …) no longer drift
- * a doc on the Hayvenhurst path. They return once Hayvenhurst resolves call
+ * a doc on the Hayvenhurst path. The group has the opposite cost too: a bogus
+ * same-name edge INSIDE it (a Swift `close()` linked to a Rust `fn close`) is
+ * kept, and still drifts a doc. Both go away once Hayvenhurst resolves call
  * edges properly (HAYV-18) and this guard can go.
  */
 
@@ -25,8 +27,9 @@ const FAMILIES: Record<string, readonly string[]> = {
   go: ["go"],
   jvm: ["java", "kt", "kts", "scala", "groovy"],
   dotnet: ["cs", "fs", "vb"],
-  // Not `.m`: it is Objective-C or MATLAB, so it stays unknown (keeps its edges).
-  c: ["c", "h", "cc", "cpp", "cxx", "hpp", "hh", "hxx", "mm"],
+  // `.m` is read as Objective-C. MATLAB also uses it, but leaving it unknown
+  // would make every ObjC file compatible with everything (TS, Python, …).
+  c: ["c", "h", "cc", "cpp", "cxx", "hpp", "hh", "hxx", "m", "mm"],
   swift: ["swift"],
   ruby: ["rb"],
   php: ["php"],

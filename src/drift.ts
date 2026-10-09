@@ -1036,7 +1036,7 @@ export async function computeDrift(
       // code-graph verdict. NOT gated on the anchored file changing: a change to a
       // DEPENDENCY (even in another file) can drift the doc — that's the whole
       // point of impact — but only through the anchored symbol's own node, and
-      // only from a change in a language that could actually call it (CAT-10).
+      // only from a change in a language family that can reach it (CAT-10).
       const nodeId = anchor.symbol
         ? affected?.idBySymbol.get(symbolAnchorKey(anchor.file, anchor.symbol))
         : undefined;

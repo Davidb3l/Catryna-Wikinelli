@@ -19,7 +19,7 @@ describe("language families (CAT-10 cross-language edge guard)", () => {
     expect(languageFamily("dir.d/noext")).toBeNull();
   });
 
-  test("different families are incompatible; unknown and FFI pairs are kept", () => {
+  test("different families are incompatible; unknown and C-ABI families are kept", () => {
     expect(sameLanguage("crates/db/src/lib.rs", "apps/dash/src/useWorkActions.ts")).toBe(false);
     expect(sameLanguage("a.ts", "b.jsx")).toBe(true);
     expect(sameLanguage("a.py", "b.rs")).toBe(false);
@@ -39,8 +39,9 @@ describe("language families (CAT-10 cross-language edge guard)", () => {
     expect(compatibleFamilies("js", "rust")).toBe(false);
   });
 
-  test(".m is ambiguous (Objective-C or MATLAB), so it stays unknown", () => {
-    expect(languageFamily("app/AppDelegate.m")).toBeNull();
+  test(".m is read as Objective-C, so it doesn't become a wildcard", () => {
+    expect(languageFamily("app/AppDelegate.m")).toBe("c");
     expect(languageFamily("app/Bridge.mm")).toBe("c");
+    expect(sameLanguage("ios/AppDelegate.m", "src/close.ts")).toBe(false);
   });
 });
