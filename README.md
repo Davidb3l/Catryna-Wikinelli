@@ -1,5 +1,6 @@
 # Catryna Wikinelli
 
+[![CI](https://github.com/Davidb3l/Catryna-Wikinelli/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Davidb3l/Catryna-Wikinelli/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **A local-first code wiki that your AI coding agent writes and your team reads — docs live as MDX files in a `.docs/` folder, versioned with your code.**

@@ -47,6 +47,8 @@ bun run check            # frontend typecheck, bun test, catryna lint, catryna d
 
 `bun run typecheck` on its own only checks `frontend/`, so run the root `tsc` as well.
 
+CI runs the same gate on macOS, Ubuntu and Windows for every push and PR.
+
 ## Docs are part of the change
 
 Catryna documents itself in `.docs/`, and `catryna drift` fails the gate when code changes under a doc that hasn't been re-checked. If your change touches code a doc describes:

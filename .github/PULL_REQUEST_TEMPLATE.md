@@ -25,6 +25,7 @@ Closes #<issue-number> (or "n/a" if this is a small drive-by fix).
 - [ ] Docs in `.docs/` updated where behavior changed, and re-verified (`bun run src/cli.ts verify <path>`).
 - [ ] Line added to `CHANGELOG.md` under "Unreleased"; breaking changes called out below.
 - [ ] All commits are signed off (`git commit -s`).
+- [ ] CI is green on this PR.
 
 ## Breaking changes
 
