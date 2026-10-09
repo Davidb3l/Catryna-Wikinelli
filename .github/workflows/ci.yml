@@ -23,7 +23,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # `catryna drift` diffs each doc's anchors from its verifiedCommit to
           # HEAD, so it needs the full history, not a shallow clone.

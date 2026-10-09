@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 /**
  * The entry chunk was 1394 KiB because App.tsx statically imported mermaid,
@@ -121,7 +121,8 @@ const eagerGraph = (entry: string): string[] => {
       if (hit) queue.push(hit);
     }
   }
-  return [...seen].map(f => relative(here, f)).sort();
+  // POSIX separators, so the expected list holds on Windows too.
+  return [...seen].map(f => relative(here, f).split(sep).join('/')).sort();
 };
 
 describe('heavy libraries stay behind the lazy boundary', () => {
