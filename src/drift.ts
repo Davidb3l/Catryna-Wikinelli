@@ -647,7 +647,7 @@ async function buildHayvenAffected(
     idBySymbol.set(key, ctx.id);
     universe.set(ctx.id, { file: ctx.file, startLine: ctx.startLine, endLine: ctx.endLine });
     for (const c of ctx.callees) {
-      // A callee in another language is a bare-name edge Hayvenhurst got wrong
+      // A callee in an incompatible language family is a bare-name edge Hayvenhurst got wrong
       // (CAT-10, upstream HAYV-18): Rust `migrate` cannot call TS `close`.
       if (!sameLanguage(ctx.file, c.file)) continue;
       if (!universe.has(c.id)) {
