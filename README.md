@@ -1,5 +1,7 @@
 # Catryna Wikinelli
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **A local-first code wiki that your AI coding agent writes and your team reads — docs live as MDX files in a `.docs/` folder, versioned with your code.**
 
 Every project accumulates knowledge that lives nowhere: why the auth flow works the way it does, which module owns what, the diagram someone drew once on a whiteboard. Wikis in Notion or Confluence drift out of date because updating them is a separate chore from writing code. Catryna fixes the incentive problem: your coding agent (Claude Code, or anything that speaks MCP) creates and updates the docs *as part of the coding session*, and because the docs are plain files in your repo, the agent also reads them back before touching code — so the knowledge actually gets used, and stale docs get caught in review like any other diff.
