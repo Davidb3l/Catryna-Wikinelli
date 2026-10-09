@@ -65,6 +65,7 @@ import {
   type DocMetadata,
 } from "./storage";
 import { docUri, emitEvent } from "./events";
+import { compatibleFamilies, languageFamily, sameLanguage } from "./lang";
 import { lintDocFile, STRUCTURAL_RULES } from "./lint";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -560,8 +561,11 @@ export const realHayven: HayvenClient = {
 interface HayvenAffected {
   /** Resolved node id per anchor (`symbolAnchorKey`). */
   idBySymbol: Map<string, string>;
-  /** Node ids in the affected (changed ∪ impacted) set. */
-  affected: Set<string>;
+  /**
+   * Node ids in the affected (changed ∪ impacted) set, each with the language
+   * families of the changed nodes that reach it (null = unknown extension).
+   */
+  affected: Map<string, Set<string | null>>;
   /** Anchors (`symbolAnchorKey`) hayven could not resolve IN their file (→ git-diff fallback). */
   unresolved: Set<string>;
 }
@@ -643,6 +647,9 @@ async function buildHayvenAffected(
     idBySymbol.set(key, ctx.id);
     universe.set(ctx.id, { file: ctx.file, startLine: ctx.startLine, endLine: ctx.endLine });
     for (const c of ctx.callees) {
+      // A callee in another language is a bare-name edge Hayvenhurst got wrong
+      // (CAT-10, upstream HAYV-18): Rust `migrate` cannot call TS `close`.
+      if (!sameLanguage(ctx.file, c.file)) continue;
       if (!universe.has(c.id)) {
         universe.set(c.id, { file: c.file, startLine: c.startLine, endLine: c.endLine });
       }
@@ -662,10 +669,21 @@ async function buildHayvenAffected(
     if (anyOverlap(hunks, loc.startLine, loc.endLine)) changed.push(id);
   }
 
-  // Affected = changed ∪ impact(changed).
-  const affected = new Set<string>(changed);
+  // Affected = changed ∪ impact(changed), remembering the language family of
+  // each change that reaches a node. Dropping cross-language callees above is
+  // not enough: the universe is corpus-wide, so a TS `close` that is a real
+  // callee of some OTHER doc's TS symbol still enters `changed`, and its impact
+  // can carry the same bogus edge back to Rust `migrate`.
+  const affected = new Map<string, Set<string | null>>();
+  const reach = (id: string, family: string | null) => {
+    let fams = affected.get(id);
+    if (!fams) affected.set(id, (fams = new Set()));
+    fams.add(family);
+  };
   for (const id of changed) {
-    for (const hitId of await hv.impact(cwd, id)) affected.add(hitId);
+    const family = languageFamily(universe.get(id)!.file);
+    reach(id, family);
+    for (const hitId of await hv.impact(cwd, id)) reach(hitId, family);
   }
 
   return { idBySymbol, affected, unresolved };
@@ -1017,13 +1035,16 @@ export async function computeDrift(
       // Symbol anchor + hayven-precise (symbol resolved IN its file) → the
       // code-graph verdict. NOT gated on the anchored file changing: a change to a
       // DEPENDENCY (even in another file) can drift the doc — that's the whole
-      // point of impact — but only through the anchored symbol's own node.
+      // point of impact — but only through the anchored symbol's own node, and
+      // only from a change in a language that could actually call it (CAT-10).
       const nodeId = anchor.symbol
         ? affected?.idBySymbol.get(symbolAnchorKey(anchor.file, anchor.symbol))
         : undefined;
       if (useHayven && nodeId) {
         usedHayven = true;
-        if (affected!.affected.has(nodeId)) {
+        const family = languageFamily(anchor.file);
+        const from = affected!.affected.get(nodeId);
+        if (from && [...from].some((f) => compatibleFamilies(f, family))) {
           driftedFiles.add(anchor.file);
         }
         continue;

@@ -596,3 +596,103 @@ describe("Hayvenhurst symbol resolution is FILE-QUALIFIED (CAT-5)", () => {
     expect(b?.id).toBe(tenantNode.id);
   });
 });
+
+describe("cross-language callee edges are ignored (CAT-10)", () => {
+  // MainSpanX architecture/database-schema: Hayvenhurst links Rust `migrate` to
+  // a TS `close` by bare name. Only a change in a language that could really
+  // call `migrate` may drift the doc.
+  const LIB = "pub fn migrate() {\n    check_ledger();\n}\n";
+  const LEDGER = "pub fn check_ledger() {}\n";
+  const TS = "export function close() { return 1; }\n";
+  const migrate: HayvenSymbol = {
+    id: "crates/db/src/src/migrate",
+    file: "crates/db/src/lib.rs",
+    startLine: 1,
+    endLine: 3,
+    callees: [
+      { id: "crates/db/src/ledger/check_ledger", file: "crates/db/src/ledger.rs", startLine: 1, endLine: 1 },
+      { id: "apps/dash/src/useWorkActions/close", file: "apps/dash/src/useWorkActions.ts", startLine: 1, endLine: 1 },
+    ],
+  };
+
+  async function repo(): Promise<string> {
+    const dir = await initRepo({
+      "crates/db/src/lib.rs": LIB,
+      "crates/db/src/ledger.rs": LEDGER,
+      "apps/dash/src/useWorkActions.ts": TS,
+    });
+    const baseline = await git(dir, ["rev-parse", "HEAD"]);
+    await seedDocs(dir, [
+      { path: "architecture/database-schema", anchors: [{ file: "crates/db/src/lib.rs", symbol: "migrate" }], verifiedCommit: baseline },
+    ]);
+    return dir;
+  }
+
+  const impact = {
+    // The bogus edge carries `close` back to `migrate`, as `hayven impact` did.
+    "apps/dash/src/useWorkActions/close": ["crates/db/src/src/migrate"],
+    "crates/db/src/ledger/check_ledger": ["crates/db/src/src/migrate"],
+  };
+
+  test("a 'callee' in a changed .ts file does NOT drift the Rust doc; a real Rust callee change DOES", async () => {
+    const dir = await repo();
+    const base = fakeHayven({ ok: true, ctx: { migrate }, impact });
+    const impactCalls: string[] = [];
+    const hv: HayvenClient = {
+      ...base,
+      async impact(cwd, id) {
+        impactCalls.push(id);
+        return base.impact(cwd, id);
+      },
+    };
+
+    await writeFileAt(dir, "apps/dash/src/useWorkActions.ts", "export function close() { return 2; }\n");
+    await commitAll(dir, "change the dashboard close");
+    let report = await computeDrift(dir, { emit: false, hayven: hv });
+    expect(report.clean.map((d) => d.path)).toEqual(["architecture/database-schema"]);
+    expect(report.clean[0].precision).toBe("hayven");
+    // The .ts "callee" never even entered the universe.
+    expect(impactCalls).not.toContain("apps/dash/src/useWorkActions/close");
+
+    await writeFileAt(dir, "crates/db/src/ledger.rs", "pub fn check_ledger() { /* stricter */ }\n");
+    await commitAll(dir, "change the ledger check");
+    report = await computeDrift(dir, { emit: false, hayven: hv });
+    expect(report.drifted.map((d) => d.path)).toEqual(["architecture/database-schema"]);
+    expect(report.drifted[0].precision).toBe("hayven");
+  });
+
+  test("the bogus edge can't arrive through ANOTHER doc's real TS callee either", async () => {
+    const dir = await repo();
+    await writeFileAt(dir, "apps/dash/src/WorkPage.tsx", "export function WorkPage() { return close(); }\n");
+    await commitAll(dir, "add the work page");
+    const baseline = await git(dir, ["rev-parse", "HEAD"]);
+    await seedDocs(dir, [
+      { path: "architecture/database-schema", anchors: [{ file: "crates/db/src/lib.rs", symbol: "migrate" }], verifiedCommit: baseline },
+      { path: "frontend/work-page", anchors: [{ file: "apps/dash/src/WorkPage.tsx", symbol: "WorkPage" }], verifiedCommit: baseline },
+    ]);
+    // The Rust doc's own callee list is clean here; `close` enters the changed
+    // set only as WorkPage's legitimate callee.
+    const hv = fakeHayven({
+      ok: true,
+      ctx: {
+        migrate: { ...migrate, callees: [] },
+        WorkPage: {
+          id: "apps/dash/src/WorkPage/WorkPage",
+          file: "apps/dash/src/WorkPage.tsx",
+          startLine: 1,
+          endLine: 1,
+          callees: [{ id: "apps/dash/src/useWorkActions/close", file: "apps/dash/src/useWorkActions.ts", startLine: 1, endLine: 1 }],
+        },
+      },
+      impact: {
+        "apps/dash/src/useWorkActions/close": ["apps/dash/src/WorkPage/WorkPage", "crates/db/src/src/migrate"],
+      },
+    });
+
+    await writeFileAt(dir, "apps/dash/src/useWorkActions.ts", "export function close() { return 2; }\n");
+    await commitAll(dir, "change the dashboard close");
+    const report = await computeDrift(dir, { emit: false, hayven: hv });
+    expect(report.drifted.map((d) => d.path)).toEqual(["frontend/work-page"]);
+    expect(report.clean.map((d) => d.path)).toEqual(["architecture/database-schema"]);
+  });
+});
