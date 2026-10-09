@@ -339,6 +339,10 @@ async function findDocFiles(docsRoot: string): Promise<string[]> {
 
 /** Lint the body of one doc. Exported so a single-doc check can reuse it. */
 export function lintContent(path: string, raw: string): LintIssue[] {
+  // A Windows checkout (core.autocrlf) has CRLF line endings. Every check below
+  // is written against "\n", so normalize once here, as storage does on read.
+  // Line numbers are unaffected: each "\r\n" becomes one "\n".
+  raw = raw.replace(/\r\n/g, "\n");
   const issues: LintIssue[] = [];
   const { frontmatter, body } = splitFrontmatter(raw);
 

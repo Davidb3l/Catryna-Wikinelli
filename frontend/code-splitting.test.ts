@@ -26,7 +26,9 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
  */
 
 const here = import.meta.dir;
-const read = (p: string) => readFileSync(p, 'utf-8');
+// LF-normalized: the regexes below anchor on `$` and \n, which a CRLF
+// (Windows) checkout would otherwise defeat.
+const read = (p: string) => readFileSync(p, 'utf-8').replace(/\r\n/g, '\n');
 
 /** The libraries that must never be reachable from the entry chunk. */
 const HEAVY = ['mermaid', 'reactflow', '@excalidraw/excalidraw'] as const;
