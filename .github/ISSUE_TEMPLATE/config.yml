@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Davidb3l/Catryna-Wikinelli/blob/main/SECURITY.md
+    about: Please do not file security problems as public issues. Email dev@hayvenhurst.dev instead.
+  - name: Documentation and quickstart
+    url: https://github.com/Davidb3l/Catryna-Wikinelli#quickstart
+    about: Install, connect the MCP server, and run your first drift check.
+  - name: The Sothis suite
+    url: https://github.com/Davidb3l/Sothis
+    about: Sirius Forester, Hayvenhurst, Ametrite and PingMyBell, the tools Catryna works with.
