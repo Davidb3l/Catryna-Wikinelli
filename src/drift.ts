@@ -605,7 +605,10 @@ export async function resolveAnchoredSymbol(
   );
   for (let i = 0; i < ids.length; i += CANDIDATE_BATCH) {
     const batch = ids.slice(i, i + CANDIDATE_BATCH);
-    const replies = await Promise.all(batch.map((id) => hv.context(cwd, id)));
+    // A failed lookup is just a non-match; it must not discard a match beside it.
+    const replies = await Promise.all(
+      batch.map((id) => hv.context(cwd, id).catch(() => null)),
+    );
     // First match in candidate order, so the result doesn't depend on timing.
     for (let j = 0; j < batch.length; j++) {
       const ctx = replies[j];

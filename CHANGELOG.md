@@ -2,4 +2,4 @@
 
 ## Unreleased
 
-- Fixed: drift no longer flags a doc when another file's same-named symbol changes. Hayvenhurst symbol anchors now resolve to the node in the anchored file, and fall back to git-diff when there's no such node. Every exact-name candidate is checked (CAT-5).
+- Fixed: drift no longer flags a doc when another file's same-named symbol changes. Hayvenhurst symbol anchors now resolve to the node in the anchored file, and fall back to git-diff when there's no such node. Every exact-name match among the top 200 `hayven query` hits is checked (CAT-5).

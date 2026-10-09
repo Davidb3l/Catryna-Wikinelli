@@ -556,6 +556,38 @@ describe("Hayvenhurst symbol resolution is FILE-QUALIFIED (CAT-5)", () => {
     expect(report.drifted[0].precision).toBe("hayven");
   });
 
+  test("batching keeps candidate order: no index skipped, first match wins, a throwing lookup is a non-match", async () => {
+    // Matches at index 8 (first of the second batch) and 9; everything before
+    // index 8 is elsewhere, and index 7 throws.
+    const at = (i: number, file: string): HayvenSymbol => ({
+      id: `n${String(i).padStart(2, "0")}`,
+      file,
+      startLine: 1,
+      endLine: 1,
+      callees: [],
+    });
+    const nodes = Array.from({ length: 12 }, (_, i) =>
+      at(i, i === 8 || i === 9 ? "src/tenant/lib.ts" : `src/other${i}.ts`),
+    );
+    const hv: HayvenClient = {
+      async doctorOk() {
+        return true;
+      },
+      async candidates() {
+        return nodes.map((n) => n.id);
+      },
+      async context(_cwd, id) {
+        if (id === "n07") throw new Error("boom");
+        return nodes.find((n) => n.id === id) ?? null;
+      },
+      async impact() {
+        return [];
+      },
+    };
+    const r = await resolveAnchoredSymbol(".", "src/tenant/lib.ts", "router", hv);
+    expect(r?.id).toBe("n08");
+  });
+
   test("resolution compares normalized paths (backslashes, leading ./)", async () => {
     const hv = fakeHayven({ ok: true, ctx: { router: [fieldNode, tenantNode] } });
     const a = await resolveAnchoredSymbol(".", "src\\tenant\\lib.ts", "router", hv);
