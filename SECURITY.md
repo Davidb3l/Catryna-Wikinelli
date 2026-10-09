@@ -39,11 +39,11 @@ What Catryna is designed around, and how far each defense goes today:
 - **Doc content is data, not instructions.** Docs are written by agents and humans and read back by agents, so a doc can carry a prompt-injection attempt like any other file in your repo. Review doc changes in PRs the same way you review code.
 - **Computed-fact tokens never run a shell.** Tokens (`{{count: …}}`, `{{loc: …}}`, `{{version: …}}`) are evaluated from a read-only allowlist, confined to the project root on resolved real paths so a symlink can't walk out.
 - **The docs viewer isn't access-controlled.** It's a development server with no authentication, and it **currently listens on all network interfaces (`0.0.0.0`)**, not only on localhost. Anyone who can reach its port (1307 by default) can:
-  - see the absolute paths of the projects it discovers (under your home directory, beside the Catryna checkout, or under `PROJECTS_ROOT`), and switch which one it serves;
+  - see the absolute paths of the projects it discovers (in common project folders under your home directory, beside the Catryna checkout, or under `PROJECTS_ROOT`), and switch which one it serves;
   - read those projects' docs and doc history, including commit authors and titles;
   - read coverage and drift data: source file names and modification times, commit SHAs and dates, and changed file names.
 
-  The viewer doesn't edit docs or source files, but a drift request runs `git status` (and Hayvenhurst, if installed) in the served project. Until the viewer binds to localhost by default, run it only on networks you trust.
+  The viewer doesn't edit docs or source files, but a drift request runs `git status` in the served project, and Hayvenhurst too when it's installed and the docs have symbol anchors. Until the viewer binds to localhost by default, run it only on networks you trust.
 - **Suite URIs are stored opaquely.** `evidence` and `refs` values in doc frontmatter are never resolved or fetched.
 
 Out of scope:
