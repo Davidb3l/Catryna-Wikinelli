@@ -40,15 +40,16 @@
         "src/doctor.ts",
         "src/lint.ts",
         "src/tokens.ts",
-        "src/lang.ts"
+        "src/lang.ts",
+        ".github/workflows/ci.yml"
       ],
       "createdAt": 1767321236003,
       "updatedAt": 1767336003658,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "536242f4b586959e48f6fce022abdb4b5ca6453a",
-      "verifiedAt": "2026-10-09T21:29:28.235Z",
+      "verifiedCommit": "b3e0c65239fcf7a5247a4344a65c83bc88e03247",
+      "verifiedAt": "2026-10-09T22:18:15.074Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -161,8 +162,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "58fa6e7c7faedf795d44c08561ac16eb0c81f90b",
-      "verifiedAt": "2026-08-25T19:05:18.617Z",
+      "verifiedCommit": "b3e0c65239fcf7a5247a4344a65c83bc88e03247",
+      "verifiedAt": "2026-10-09T22:18:15.131Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -388,8 +389,8 @@
       "anchors": [],
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "b42b1713e8bb374208b9e7ee4273a6f2ef2fa845",
-      "verifiedAt": "2026-08-05T18:15:12.721Z",
+      "verifiedCommit": "b3e0c65239fcf7a5247a4344a65c83bc88e03247",
+      "verifiedAt": "2026-10-09T22:18:15.103Z",
       "driftSuspectSince": "",
       "driftSuspectReason": "",
       "createdAt": 1785627863145,
@@ -424,5 +425,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1791581368249
+  "lastUpdated": 1791584295132
 }

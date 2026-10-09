@@ -3,12 +3,12 @@ id: d37e0497-e75d-47d9-9d08-5ef7067ab81d
 title: "Architecture Overview"
 path: "architecture/overview"
 tags: ["architecture", "overview", "core"]
-relatedFiles: ["src/index.ts", "src/cli.ts", "src/storage.ts", "src/drift.ts", "src/events.ts", "src/consume.ts", "src/doctor.ts", "src/lint.ts", "src/tokens.ts", "src/lang.ts"]
+relatedFiles: ["src/index.ts", "src/cli.ts", "src/storage.ts", "src/drift.ts", "src/events.ts", "src/consume.ts", "src/doctor.ts", "src/lint.ts", "src/tokens.ts", "src/lang.ts", ".github/workflows/ci.yml"]
 createdAt: 1767321236003
 updatedAt: 1767321656661
 createdBy: "claude-code"
-verifiedCommit: "536242f4b586959e48f6fce022abdb4b5ca6453a"
-verifiedAt: "2026-10-09T21:29:28.235Z"
+verifiedCommit: "b3e0c65239fcf7a5247a4344a65c83bc88e03247"
+verifiedAt: "2026-10-09T22:18:15.074Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -45,7 +45,7 @@ Two shared, root-parameterized modules sit between the engine and every consumer
 
 ### Enforcement
 
-The gates are only worth having if something runs them. `bun run check` is typecheck + tests + lint + drift behind one exit code (~14s), `scripts/install-hooks.sh` installs a **pre-push** hook that runs it, and the Stop hook reports drift *and* lint advisorily without ever blocking a session. All local — no CI service, nothing over the network.
+The gates are only worth having if something runs them. `bun run check` is typecheck + tests + lint + drift behind one exit code (~14s), `scripts/install-hooks.sh` installs a **pre-push** hook that runs it, and the Stop hook reports drift *and* lint advisorily without ever blocking a session. CI (`.github/workflows/ci.yml`) runs the same gate, plus the backend `tsc` that `bun run typecheck` skips, on macOS, Ubuntu and Windows for every push and PR.
 - **`src/trend.ts`** — coverage over time, computed from git history (each commit's file tree + its `.docs/_index.json`) rather than a persisted series. No new state, no write side-effect, and full retroactive history. Shares path classification with `src/coverage.ts` so the newest sample always equals live coverage at HEAD.
 
 Discovery across the suite goes through `src/doctor.ts`: `catryna doctor --json` emits the SUITE_CONTRACTS §3 handshake envelope (`{tool, version, schemaVersion, ok, capabilities, ui, checks, report}`), advertising the capabilities that exist today — `mcp`, `events.emit`, `events.consume`, `drift`, `verify`, `ui`.

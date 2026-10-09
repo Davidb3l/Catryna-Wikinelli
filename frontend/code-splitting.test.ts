@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 /**
  * The entry chunk was 1394 KiB because App.tsx statically imported mermaid,
@@ -26,7 +26,9 @@ import { dirname, join, relative, resolve } from 'node:path';
  */
 
 const here = import.meta.dir;
-const read = (p: string) => readFileSync(p, 'utf-8');
+// LF-normalized: the regexes below anchor on `$` and \n, which a CRLF
+// (Windows) checkout would otherwise defeat.
+const read = (p: string) => readFileSync(p, 'utf-8').replace(/\r\n/g, '\n');
 
 /** The libraries that must never be reachable from the entry chunk. */
 const HEAVY = ['mermaid', 'reactflow', '@excalidraw/excalidraw'] as const;
@@ -121,7 +123,8 @@ const eagerGraph = (entry: string): string[] => {
       if (hit) queue.push(hit);
     }
   }
-  return [...seen].map(f => relative(here, f)).sort();
+  // POSIX separators, so the expected list holds on Windows too.
+  return [...seen].map(f => relative(here, f).split(sep).join('/')).sort();
 };
 
 describe('heavy libraries stay behind the lazy boundary', () => {

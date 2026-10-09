@@ -7,8 +7,8 @@ relatedFiles: ["src/lint.ts", "src/tools/lint.ts", "src/cli.ts"]
 anchors: []
 evidence: []
 refs: []
-verifiedCommit: "b42b1713e8bb374208b9e7ee4273a6f2ef2fa845"
-verifiedAt: "2026-08-05T18:15:12.721Z"
+verifiedCommit: "b3e0c65239fcf7a5247a4344a65c83bc88e03247"
+verifiedAt: "2026-10-09T22:18:15.103Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 createdAt: 1785627863145
@@ -58,7 +58,7 @@ Three deliberate choices in the `empty-fence` rule itself:
 - **One issue per doc, not per fence.** The failure is a hollow document; a dozen blank blocks should read as one dozen-block problem, not flood the report. The message lists the first five lines and counts the rest.
 - **A fence still open at EOF is not reported.** That is `unclosed-fence`'s finding, and naming one defect twice trains people to ignore the report.
 
-Line numbers are file-relative (the frontmatter block is counted back in), so they can be jumped to directly.
+Line numbers are file-relative (the frontmatter block is counted back in), so they can be jumped to directly. Content is LF-normalized first, so a CRLF (Windows `core.autocrlf`) checkout lints identically, at the same line numbers.
 
 ## The unpoliceable-claim rule (`volatile-fact`)
 

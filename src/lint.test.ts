@@ -489,3 +489,34 @@ describe("the verify guard scope", () => {
     expect(STRUCTURAL_RULES.has("orphan-file" as any)).toBe(false);
   });
 });
+
+describe("CRLF checkouts (Windows core.autocrlf)", () => {
+  const crlf = (s: string) => s.replace(/\r?\n/g, "\r\n");
+
+  test("every doc in this repo lints the same with CRLF line endings as with LF", async () => {
+    const { readdir, readFile } = await import("node:fs/promises");
+    const root = join(import.meta.dir, "..", ".docs");
+    const files: string[] = [];
+    const walk = async (dir: string): Promise<void> => {
+      for (const e of await readdir(dir, { withFileTypes: true })) {
+        const full = join(dir, e.name);
+        if (e.isDirectory()) await walk(full);
+        else if (e.name.endsWith(".mdx")) files.push(full);
+      }
+    };
+    await walk(root);
+    expect(files.length).toBeGreaterThan(0);
+    for (const f of files) {
+      const lf = (await readFile(f, "utf-8")).replace(/\r\n/g, "\n");
+      expect({ f, issues: lintContent("d", crlf(lf)) }).toEqual({ f, issues: lintContent("d", lf) });
+    }
+  });
+
+  test("a real error is still caught under CRLF, at the same line", () => {
+    const raw = `---\na: 1\n---\n\nText\n\n\`\`\`ts\nconst a = 1;\n`;
+    const lf = lintContent("d", raw);
+    expect(lf.map((i) => i.rule)).toContain("unclosed-fence");
+    expect(lintContent("d", crlf(raw))).toEqual(lf);
+  });
+});
+
