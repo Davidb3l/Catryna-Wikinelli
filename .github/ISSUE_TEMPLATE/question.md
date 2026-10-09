@@ -16,6 +16,6 @@ Security problems: please do NOT ask here. Email dev@hayvenhurst.dev (see SECURI
 
 ## Environment
 
-- Catryna version (first line of `catryna doctor`):
+- Catryna version (the `version:` line of `catryna doctor`):
 - OS / arch:
 - How you run it (Claude Code plugin, `.mcp.json`, CLI, viewer):

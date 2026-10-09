@@ -55,7 +55,7 @@ Catryna documents itself in `.docs/`, and `catryna drift` fails the gate when co
 2. Run `bun run src/cli.ts drift` and read each flagged doc against the new code.
 3. Fix any prose that's now wrong, then re-baseline with `bun run src/cli.ts verify <path>`.
 
-`verify` only records the commit. It doesn't read the doc, so judge each doc before you verify it.
+`verify` checks that the doc is well-formed and records the commit, but it doesn't read the prose, so judge each doc before you verify it.
 
 ## Pull request process
 

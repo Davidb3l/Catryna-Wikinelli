@@ -4,7 +4,7 @@ Catryna reads and writes documentation in your repository, runs git in it, and s
 
 ## Supported versions
 
-Catryna doesn't publish release artifacts yet. You install it from source or through the Claude Code plugin marketplace, both of which track `main`. Security fixes land on `main`; please update to the latest commit before reporting.
+Catryna doesn't publish release artifacts yet. You install it from source or through the Claude Code plugin marketplace, both of which come from `main`. Security fixes land on `main`. Before reporting, update: `git pull` a source checkout, or update the plugin from its marketplace.
 
 ## Reporting a vulnerability
 
@@ -37,8 +37,11 @@ What Catryna is designed around, and how far each defense goes today:
 
 - **The MCP server has no network listener.** It talks to the agent over stdio only.
 - **Doc content is data, not instructions.** Docs are written by agents and humans and read back by agents, so a doc can carry a prompt-injection attempt like any other file in your repo. Review doc changes in PRs the same way you review code.
-- **Catryna writes only to the project it runs in.** Both `.docs/` and the suite event log `.suite/` are resolved from the working directory. Computed-fact tokens (`{{count: …}}`, `{{loc: …}}`) are evaluated from a read-only allowlist, confined to the project root on resolved real paths so a symlink can't walk out, and never through a shell.
-- **The docs viewer isn't access-controlled.** It's a development server with no authentication, and it **currently listens on all network interfaces (`0.0.0.0`)**, not only on localhost. Anyone who can reach port 1307 can list the projects it finds and read their docs and doc history. Until it binds to localhost by default, run it only on networks you trust.
+- **Docs and events live in the project's working directory.** `.docs/` and the suite event log `.suite/` are resolved from the directory Catryna runs in. Computed-fact tokens (`{{count: …}}`, `{{loc: …}}`, `{{version: …}}`) are evaluated from a read-only allowlist, confined to the project root on resolved real paths so a symlink can't walk out, and never through a shell.
+- **The docs viewer isn't access-controlled.** It's a development server with no authentication, and it **currently listens on all network interfaces (`0.0.0.0`)**, not only on localhost. Anyone who can reach port 1307 can read, without changing anything:
+  - the absolute paths of the projects it finds under your home directory, and switch which one is served;
+  - their docs and doc history;
+  - coverage and drift data: source file names and modification times, HEAD and baseline commits, and changed file names. Until it binds to localhost by default, run it only on networks you trust.
 - **Suite URIs are stored opaquely.** `evidence` and `refs` values in doc frontmatter are never resolved or fetched.
 
 Out of scope:

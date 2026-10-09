@@ -14,7 +14,7 @@ for a doc, use the "Drift got it wrong" template instead.
 
 ## Environment
 
-- **Catryna version** (first line of `catryna doctor`):
+- **Catryna version** (the `version:` line of `catryna doctor`):
 - **Bun version** (`bun --version`):
 - **OS + architecture** (`uname -a` on Unix, `systeminfo` on Windows):
 - **How you run it** (Claude Code plugin / `.mcp.json` / CLI / viewer):

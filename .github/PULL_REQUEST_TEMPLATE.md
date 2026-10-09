@@ -22,7 +22,7 @@ Closes #<issue-number> (or "n/a" if this is a small drive-by fix).
 
 - [ ] Tests added or updated (`bun test`); a bug fix includes a test that fails without it.
 - [ ] Gate passes locally: `bunx tsc --noEmit -p .` and `bun run check`.
-- [ ] Docs in `.docs/` updated where behavior changed, and re-verified (`catryna verify <path>`).
+- [ ] Docs in `.docs/` updated where behavior changed, and re-verified (`bun run src/cli.ts verify <path>`).
 - [ ] Line added to `CHANGELOG.md` under "Unreleased"; breaking changes called out below.
 - [ ] All commits are signed off (`git commit -s`).
 

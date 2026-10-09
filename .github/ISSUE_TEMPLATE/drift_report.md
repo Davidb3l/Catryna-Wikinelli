@@ -26,8 +26,9 @@ before reporting.
 
 ## What drift said
 
-The doc's entry from `catryna drift --json`, including `status`, `precision`
-and `changedFiles`.
+From `catryna drift --json`: the doc's entry, which array it's in (`drifted`,
+`broken`, `clean` or `unverified`), and the top-level `hayven` field (whether
+Hayvenhurst symbol precision ran).
 
 ```json
 <paste here>
@@ -43,6 +44,6 @@ For each anchored file, `git diff --stat <verifiedCommit> HEAD -- <file>`.
 
 ## Environment
 
-- **Catryna version** (first line of `catryna doctor`):
-- **Hayvenhurst installed?** (`hayven --version`, or "no"). With `precision: "hayven"`, symbol anchors are judged through its code graph.
+- **Catryna version** (the `version:` line of `catryna doctor`):
+- **Hayvenhurst installed?** (`hayven --version`, or "no"). When it's healthy, symbol anchors are judged through its code graph.
 - **OS**:
