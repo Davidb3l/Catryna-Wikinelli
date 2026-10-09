@@ -47,8 +47,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "4ebb317cc976b5114ccc4a661689dfe9de545fa9",
-      "verifiedAt": "2026-10-09T21:10:14.384Z",
+      "verifiedCommit": "ff723fe018c9d27c9175af57ccc25fcbacd38353",
+      "verifiedAt": "2026-10-09T21:21:03.235Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -424,5 +424,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1791580214398
+  "lastUpdated": 1791580863236
 }
