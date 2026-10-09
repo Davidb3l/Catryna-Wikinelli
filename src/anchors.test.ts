@@ -521,6 +521,41 @@ describe("Hayvenhurst symbol resolution is FILE-QUALIFIED (CAT-5)", () => {
     expect(await resolveAnchoredSymbol(dir, "src/tenant/lib.ts", "router", hv)).toBeNull();
   });
 
+  test("every candidate is checked: the right node sorted LAST still resolves (dependency drift kept)", async () => {
+    const dir = await initRepo({
+      "src/a.ts": "export function foo() { return 1; }\n",
+      "src/b.ts": "import { foo } from './a';\nexport function useFoo() { return foo(); }\n",
+    });
+    const baseline = await git(dir, ["rev-parse", "HEAD"]);
+    await seedDocs(dir, [
+      { path: "m/useFoo", anchors: [{ file: "src/b.ts", symbol: "useFoo" }], verifiedCommit: baseline },
+    ]);
+    // 30 same-named decoys elsewhere; the real node's id is NOT under src/, so
+    // the directory-first sort puts it after every decoy.
+    const decoys: HayvenSymbol[] = Array.from({ length: 30 }, (_, i) => ({
+      id: `src/x${i}/useFoo`,
+      file: `src/x${i}/index.ts`,
+      startLine: 1,
+      endLine: 1,
+      callees: [],
+    }));
+    const real: HayvenSymbol = {
+      id: "lib/b/useFoo",
+      file: "src/b.ts",
+      startLine: 2,
+      endLine: 2,
+      callees: [{ id: "a/foo", file: "src/a.ts", startLine: 1, endLine: 1 }],
+    };
+    const hv = fakeHayven({ ok: true, ctx: { useFoo: [...decoys, real] }, impact: { "a/foo": ["lib/b/useFoo"] } });
+
+    // Only the dependency (src/a.ts) changes: just the hayven path can see this.
+    await writeFileAt(dir, "src/a.ts", "export function foo() { return 42; }\n");
+    await commitAll(dir, "change foo");
+    const report = await computeDrift(dir, { emit: false, hayven: hv });
+    expect(report.drifted.map((d) => d.path)).toEqual(["m/useFoo"]);
+    expect(report.drifted[0].precision).toBe("hayven");
+  });
+
   test("resolution compares normalized paths (backslashes, leading ./)", async () => {
     const hv = fakeHayven({ ok: true, ctx: { router: [fieldNode, tenantNode] } });
     const a = await resolveAnchoredSymbol(".", "src\\tenant\\lib.ts", "router", hv);

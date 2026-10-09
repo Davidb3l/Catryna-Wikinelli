@@ -568,11 +568,16 @@ interface HayvenAffected {
 
 /** Map key for a symbol anchor: the symbol name alone is ambiguous across files. */
 export function symbolAnchorKey(file: string, symbol: string): string {
-  return `${normalizeAnchorPath(file)}#${symbol}`;
+  // JSON, not `file#symbol`: either part may itself contain `#`.
+  return JSON.stringify([normalizeAnchorPath(file), symbol]);
 }
 
-/** Upper bound on `context` lookups per anchor, so a very common name can't stall drift. */
-const MAX_SYMBOL_CANDIDATES = 25;
+/**
+ * `context` lookups run this many at a time. Every candidate is still checked:
+ * a cap that skipped the right node would silently downgrade the anchor to the
+ * git fallback, which cannot see a change to a dependency in another file.
+ */
+const CANDIDATE_BATCH = 8;
 
 /**
  * Resolve a symbol anchor to the graph node defined IN `file`, or null.
@@ -595,12 +600,17 @@ export async function resolveAnchoredSymbol(
   const want = normalizeAnchorPath(file);
   const dir = want.includes("/") ? want.slice(0, want.lastIndexOf("/") + 1) : "";
   // Ids under the anchored file's directory are the likeliest match: try them first.
-  const ids = [...new Set(await hv.candidates(cwd, symbol))]
-    .sort((a, b) => Number(!a.startsWith(dir)) - Number(!b.startsWith(dir)))
-    .slice(0, MAX_SYMBOL_CANDIDATES);
-  for (const id of ids) {
-    const ctx = await hv.context(cwd, id);
-    if (ctx && ctx.id === id && normalizeAnchorPath(ctx.file) === want) return ctx;
+  const ids = [...new Set(await hv.candidates(cwd, symbol))].sort(
+    (a, b) => Number(!a.startsWith(dir)) - Number(!b.startsWith(dir)),
+  );
+  for (let i = 0; i < ids.length; i += CANDIDATE_BATCH) {
+    const batch = ids.slice(i, i + CANDIDATE_BATCH);
+    const replies = await Promise.all(batch.map((id) => hv.context(cwd, id)));
+    // First match in candidate order, so the result doesn't depend on timing.
+    for (let j = 0; j < batch.length; j++) {
+      const ctx = replies[j];
+      if (ctx && ctx.id === batch[j] && normalizeAnchorPath(ctx.file) === want) return ctx;
+    }
   }
   return null;
 }
