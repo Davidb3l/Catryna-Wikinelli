@@ -39,15 +39,16 @@
         "src/consume.ts",
         "src/doctor.ts",
         "src/lint.ts",
-        "src/tokens.ts"
+        "src/tokens.ts",
+        "src/lang.ts"
       ],
       "createdAt": 1767321236003,
       "updatedAt": 1767336003658,
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "b8cb5eac6461d3c531690e43e74f0c8b07d70bb4",
-      "verifiedAt": "2026-10-09T20:37:02.610Z",
+      "verifiedCommit": "4ebb317cc976b5114ccc4a661689dfe9de545fa9",
+      "verifiedAt": "2026-10-09T21:10:14.384Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -286,8 +287,8 @@
       "anchors": [],
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "b8cb5eac6461d3c531690e43e74f0c8b07d70bb4",
-      "verifiedAt": "2026-10-09T20:37:02.625Z",
+      "verifiedCommit": "4ebb317cc976b5114ccc4a661689dfe9de545fa9",
+      "verifiedAt": "2026-10-09T21:10:14.398Z",
       "driftSuspectSince": "",
       "driftSuspectReason": "",
       "createdAt": 1785609420180,
@@ -423,5 +424,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1791578222625
+  "lastUpdated": 1791580214398
 }
