@@ -58,6 +58,7 @@
  */
 import {
   effectiveAnchors,
+  normalizeAnchorPath,
   readIndexAt,
   recordVerification,
   type DocAnchor,
@@ -379,8 +380,14 @@ export interface HayvenSymbol {
 export interface HayvenClient {
   /** §3 handshake: `hayven doctor --json` present AND `ok:true`. */
   doctorOk(cwd: string): Promise<boolean>;
-  /** Resolve a symbol name to its graph node (id + span + callees), or null. */
-  context(cwd: string, symbol: string): Promise<HayvenSymbol | null>;
+  /**
+   * Graph node ids whose name is EXACTLY `name` (bare or qualified), across
+   * every file. Several files can define the same name; `resolveAnchoredSymbol`
+   * picks the one in the anchored file.
+   */
+  candidates(cwd: string, name: string): Promise<string[]>;
+  /** Resolve a node id to its graph node (id + span + callees), or null. */
+  context(cwd: string, id: string): Promise<HayvenSymbol | null>;
   /** Forward blast radius: the node ids `hayven impact <id>` reports as affected. */
   impact(cwd: string, id: string): Promise<string[]>;
 }
@@ -459,8 +466,25 @@ export const realHayven: HayvenClient = {
     return ok;
   },
 
-  async context(cwd: string, symbol: string): Promise<HayvenSymbol | null> {
-    const r = await runHayven(cwd, ["context", symbol, "--json"]);
+  async candidates(cwd: string, name: string): Promise<string[]> {
+    const r = await runHayven(cwd, ["query", name, "--limit", "200", "--json"]);
+    if (!r.ok) return [];
+    try {
+      const parsed = JSON.parse(r.stdout.trim());
+      const hits: any[] = Array.isArray(parsed?.hits) ? parsed.hits : [];
+      // `query` is full-text and ranked, so it also returns near-misses: keep
+      // only exact name matches.
+      return hits
+        .filter((h) => h?.name === name || h?.qualified_name === name)
+        .map((h) => h?.id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
+    } catch {
+      return [];
+    }
+  },
+
+  async context(cwd: string, id: string): Promise<HayvenSymbol | null> {
+    const r = await runHayven(cwd, ["context", id, "--json"]);
     if (!r.ok) return null;
     try {
       const parsed = JSON.parse(r.stdout.trim());
@@ -527,34 +551,83 @@ export const realHayven: HayvenClient = {
  * node is already in the universe — deeper undocumented-only chains fall through
  * to git-diff. A symbol that fails to resolve is reported in `unresolved` so its
  * anchor falls back to git-diff.
+ *
+ * Anchors are resolved FILE-QUALIFIED (`resolveAnchoredSymbol`) and keyed by
+ * `symbolAnchorKey(file, symbol)`, never by bare name: `router` in
+ * `crates/msx-tenant/src/lib.rs` and `router` in `apps/field/src/router.tsx` are
+ * different nodes, and a change to one must not drift a doc anchored to the other.
  */
 interface HayvenAffected {
-  /** Resolved node id per anchored symbol name. */
+  /** Resolved node id per anchor (`symbolAnchorKey`). */
   idBySymbol: Map<string, string>;
   /** Node ids in the affected (changed ∪ impacted) set. */
   affected: Set<string>;
-  /** Anchored symbol names hayven could not resolve (→ git-diff fallback). */
+  /** Anchors (`symbolAnchorKey`) hayven could not resolve IN their file (→ git-diff fallback). */
   unresolved: Set<string>;
+}
+
+/** Map key for a symbol anchor: the symbol name alone is ambiguous across files. */
+export function symbolAnchorKey(file: string, symbol: string): string {
+  return `${normalizeAnchorPath(file)}#${symbol}`;
+}
+
+/** Upper bound on `context` lookups per anchor, so a very common name can't stall drift. */
+const MAX_SYMBOL_CANDIDATES = 25;
+
+/**
+ * Resolve a symbol anchor to the graph node defined IN `file`, or null.
+ *
+ * `hayven context <name>` resolves a bare name to whichever node ranks first,
+ * falling back to the top fuzzy search hit when nothing matches exactly. In a
+ * repo with two `router`s that can pick the wrong file (CAT-5). So: list every
+ * node with that exact name, resolve each by id, and accept only one whose
+ * `context` reply is that same id (no fuzzy substitution) and whose file is the
+ * anchored file. Node ids are NOT parsed for the file; they embed module paths
+ * that need not match the file path (e.g. `crates/x/src/src/router` for
+ * `crates/x/src/lib.rs`). Null sends the anchor to the git-diff fallback.
+ */
+export async function resolveAnchoredSymbol(
+  cwd: string,
+  file: string,
+  symbol: string,
+  hv: HayvenClient,
+): Promise<HayvenSymbol | null> {
+  const want = normalizeAnchorPath(file);
+  const dir = want.includes("/") ? want.slice(0, want.lastIndexOf("/") + 1) : "";
+  // Ids under the anchored file's directory are the likeliest match: try them first.
+  const ids = [...new Set(await hv.candidates(cwd, symbol))]
+    .sort((a, b) => Number(!a.startsWith(dir)) - Number(!b.startsWith(dir)))
+    .slice(0, MAX_SYMBOL_CANDIDATES);
+  for (const id of ids) {
+    const ctx = await hv.context(cwd, id);
+    if (ctx && ctx.id === id && normalizeAnchorPath(ctx.file) === want) return ctx;
+  }
+  return null;
 }
 
 async function buildHayvenAffected(
   cwd: string,
   baseline: string,
-  symbols: string[],
+  anchors: Array<{ file: string; symbol: string }>,
   hv: HayvenClient,
+  resolved: Map<string, Promise<HayvenSymbol | null>> = new Map(),
 ): Promise<HayvenAffected> {
   const idBySymbol = new Map<string, string>();
   const unresolved = new Set<string>();
   // Universe: node id → its HEAD location. Seeded with anchored symbols + callees.
   const universe = new Map<string, { file: string; startLine: number; endLine: number }>();
 
-  for (const symbol of new Set(symbols)) {
-    const ctx = await hv.context(cwd, symbol);
+  for (const { file, symbol } of anchors) {
+    const key = symbolAnchorKey(file, symbol);
+    if (idBySymbol.has(key) || unresolved.has(key)) continue;
+    let pending = resolved.get(key);
+    if (!pending) resolved.set(key, (pending = resolveAnchoredSymbol(cwd, file, symbol, hv)));
+    const ctx = await pending;
     if (!ctx) {
-      unresolved.add(symbol);
+      unresolved.add(key);
       continue;
     }
-    idBySymbol.set(symbol, ctx.id);
+    idBySymbol.set(key, ctx.id);
     universe.set(ctx.id, { file: ctx.file, startLine: ctx.startLine, endLine: ctx.endLine });
     for (const c of ctx.callees) {
       if (!universe.has(c.id)) {
@@ -806,14 +879,19 @@ export async function computeDrift(
   // verified at different commits); the changed-symbol scan is baseline-relative.
   const affectedByBaseline = new Map<string, HayvenAffected>();
   if (useHayven) {
-    const symsByBaseline = new Map<string, Set<string>>();
+    const symsByBaseline = new Map<string, Map<string, { file: string; symbol: string }>>();
     for (const { doc, a } of symbolAnchorsWithBaseline) {
-      const set = symsByBaseline.get(baselineFor(doc)) ?? new Set<string>();
-      set.add(a.symbol!);
+      const set = symsByBaseline.get(baselineFor(doc)) ?? new Map();
+      set.set(symbolAnchorKey(a.file, a.symbol!), { file: a.file, symbol: a.symbol! });
       symsByBaseline.set(baselineFor(doc), set);
     }
+    // Resolution is against HEAD, not the baseline: share it across baselines.
+    const resolved = new Map<string, Promise<HayvenSymbol | null>>();
     for (const [baseline, syms] of symsByBaseline) {
-      affectedByBaseline.set(baseline, await buildHayvenAffected(cwd, baseline, [...syms], hv));
+      affectedByBaseline.set(
+        baseline,
+        await buildHayvenAffected(cwd, baseline, [...syms.values()], hv, resolved),
+      );
     }
   }
 
@@ -923,18 +1001,16 @@ export async function computeDrift(
     const driftedFiles = new Set<string>();
     let usedHayven = false;
     for (const anchor of anchors) {
-      // Symbol anchor + hayven-precise (symbol resolved) → the code-graph verdict.
-      // NOT gated on the anchored file changing: a change to a DEPENDENCY (even in
-      // another file) can drift the doc — that's the whole point of impact.
-      if (
-        anchor.symbol &&
-        useHayven &&
-        affected &&
-        !affected.unresolved.has(anchor.symbol) &&
-        affected.idBySymbol.has(anchor.symbol)
-      ) {
+      // Symbol anchor + hayven-precise (symbol resolved IN its file) → the
+      // code-graph verdict. NOT gated on the anchored file changing: a change to a
+      // DEPENDENCY (even in another file) can drift the doc — that's the whole
+      // point of impact — but only through the anchored symbol's own node.
+      const nodeId = anchor.symbol
+        ? affected?.idBySymbol.get(symbolAnchorKey(anchor.file, anchor.symbol))
+        : undefined;
+      if (useHayven && nodeId) {
         usedHayven = true;
-        if (affected.affected.has(affected.idBySymbol.get(anchor.symbol)!)) {
+        if (affected!.affected.has(nodeId)) {
           driftedFiles.add(anchor.file);
         }
         continue;

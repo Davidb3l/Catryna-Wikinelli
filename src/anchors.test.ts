@@ -16,6 +16,7 @@ import { dirname, join } from "node:path";
 
 import {
   computeDrift,
+  resolveAnchoredSymbol,
   type HayvenClient,
   type HayvenSymbol,
 } from "./drift";
@@ -100,18 +101,31 @@ async function seedDocs(dir: string, docs: SeedDoc[]): Promise<void> {
   );
 }
 
-/** A fake Hayvenhurst client: canned `context`/`impact`, real git supplies hunks. */
+/**
+ * A fake Hayvenhurst client: canned `context`/`impact`, real git supplies hunks.
+ * `ctx` maps a symbol NAME to the node(s) with that name, in any file. Like the
+ * real `hayven context`, a bare name passed to `context` resolves to the FIRST
+ * node with that name (the top hit), whatever its file.
+ */
 function fakeHayven(cfg: {
   ok?: boolean;
-  ctx?: Record<string, HayvenSymbol>;
+  ctx?: Record<string, HayvenSymbol | HayvenSymbol[]>;
   impact?: Record<string, string[]>;
 }): HayvenClient {
+  const nodes = (name: string): HayvenSymbol[] => {
+    const v = cfg.ctx?.[name];
+    return v === undefined ? [] : Array.isArray(v) ? v : [v];
+  };
+  const all = Object.keys(cfg.ctx ?? {}).flatMap(nodes);
   return {
     async doctorOk() {
       return cfg.ok ?? true;
     },
-    async context(_cwd, symbol) {
-      return cfg.ctx?.[symbol] ?? null;
+    async candidates(_cwd, name) {
+      return nodes(name).map((n) => n.id);
+    },
+    async context(_cwd, idOrName) {
+      return all.find((n) => n.id === idOrName) ?? nodes(idOrName)[0] ?? null;
     },
     async impact(_cwd, id) {
       return cfg.impact?.[id] ?? [];
@@ -123,6 +137,9 @@ function fakeHayven(cfg: {
 const HAYVEN_OFF: HayvenClient = {
   async doctorOk() {
     return false;
+  },
+  async candidates() {
+    return [];
   },
   async context() {
     return null;
@@ -411,5 +428,104 @@ describe("Hayvenhurst symbol-precision (injected client)", () => {
     expect(report.clean.map((d) => d.path)).toEqual(["m/foo"]);
     // Fell back to git for this anchor (symbol never resolved).
     expect(report.clean[0].precision).toBe("git");
+  });
+});
+
+describe("Hayvenhurst symbol resolution is FILE-QUALIFIED (CAT-5)", () => {
+  // Two files, each defining a `router` on line 1. A bare-name lookup can only
+  // return one of them, so it must never decide which file a doc is anchored to.
+  const TENANT = "export function router() { return 't'; }\nexport const other = 1;\n";
+  const FIELD = "export function router() { return 'f'; }\nexport const other = 2;\n";
+  const tenantNode: HayvenSymbol = {
+    id: "src/tenant/src/router", // ids embed module paths, not the file path
+    file: "src/tenant/lib.ts",
+    startLine: 1,
+    endLine: 1,
+    callees: [],
+  };
+  const fieldNode: HayvenSymbol = {
+    id: "src/field/router",
+    file: "src/field/router.ts",
+    startLine: 1,
+    endLine: 1,
+    callees: [],
+  };
+
+  async function twoRouterRepo(): Promise<string> {
+    const dir = await initRepo({ "src/tenant/lib.ts": TENANT, "src/field/router.ts": FIELD });
+    const baseline = await git(dir, ["rev-parse", "HEAD"]);
+    await seedDocs(dir, [
+      { path: "m/tenant", anchors: [{ file: "src/tenant/lib.ts", symbol: "router" }], verifiedCommit: baseline },
+      { path: "m/field", anchors: [{ file: "src/field/router.ts", symbol: "router" }], verifiedCommit: baseline },
+    ]);
+    return dir;
+  }
+
+  test("a change to the OTHER file's same-named symbol does not drift the doc; its own does", async () => {
+    const dir = await twoRouterRepo();
+    // The field router ranks first, as `hayven context router` resolved it on MainSpanX.
+    const hv = fakeHayven({ ok: true, ctx: { router: [fieldNode, tenantNode] } });
+
+    await writeFileAt(dir, "src/field/router.ts", "export function router() { return 'F2'; }\nexport const other = 2;\n");
+    await commitAll(dir, "change the field router");
+    let report = await computeDrift(dir, { emit: false, hayven: hv });
+    expect(report.clean.map((d) => d.path)).toEqual(["m/tenant"]);
+    expect(report.clean[0].precision).toBe("hayven");
+    expect(report.drifted.map((d) => d.path)).toEqual(["m/field"]);
+
+    await writeFileAt(dir, "src/tenant/lib.ts", "export function router() { return 'T2'; }\nexport const other = 1;\n");
+    await commitAll(dir, "change the tenant router");
+    report = await computeDrift(dir, { emit: false, hayven: hv });
+    expect(report.drifted.map((d) => d.path).sort()).toEqual(["m/field", "m/tenant"]);
+    const tenant = report.drifted.find((d) => d.path === "m/tenant")!;
+    expect(tenant.precision).toBe("hayven");
+    expect(tenant.changedFiles).toEqual(["src/tenant/lib.ts"]);
+  });
+
+  test("no node with that name in the anchored file → git-diff fallback, not drifted", async () => {
+    const dir = await twoRouterRepo();
+    // Hayven only knows the field router (e.g. the tenant crate isn't indexed).
+    const hv = fakeHayven({ ok: true, ctx: { router: [fieldNode] } });
+
+    await writeFileAt(dir, "src/field/router.ts", "export function router() { return 'F2'; }\nexport const other = 2;\n");
+    await commitAll(dir, "change the field router");
+    let report = await computeDrift(dir, { emit: false, hayven: hv });
+    const tenant = report.clean.find((d) => d.path === "m/tenant");
+    expect(tenant?.precision).toBe("git");
+
+    // The fallback still catches a real edit to the anchored symbol.
+    await writeFileAt(dir, "src/tenant/lib.ts", "export function router() { return 'T2'; }\nexport const other = 1;\n");
+    await commitAll(dir, "change the tenant router");
+    report = await computeDrift(dir, { emit: false, hayven: hv });
+    const drifted = report.drifted.find((d) => d.path === "m/tenant");
+    expect(drifted?.precision).toBe("git");
+  });
+
+  test("a context reply for a DIFFERENT id (fuzzy substitution) is rejected", async () => {
+    const dir = await twoRouterRepo();
+    // Claims the tenant id exists, but `context` substitutes the field node.
+    const hv: HayvenClient = {
+      async doctorOk() {
+        return true;
+      },
+      async candidates() {
+        return [tenantNode.id];
+      },
+      async context() {
+        return { ...fieldNode, file: "src/tenant/lib.ts" };
+      },
+      async impact() {
+        return [];
+      },
+    };
+    expect(await resolveAnchoredSymbol(dir, "src/tenant/lib.ts", "router", hv)).toBeNull();
+  });
+
+  test("resolution compares normalized paths (backslashes, leading ./)", async () => {
+    const hv = fakeHayven({ ok: true, ctx: { router: [fieldNode, tenantNode] } });
+    const a = await resolveAnchoredSymbol(".", "src\\tenant\\lib.ts", "router", hv);
+    const b = await resolveAnchoredSymbol(".", "./src/tenant/lib.ts", "router", hv);
+    expect(a?.id).toBe(tenantNode.id);
+    expect(b?.id).toBe(tenantNode.id);
   });
 });

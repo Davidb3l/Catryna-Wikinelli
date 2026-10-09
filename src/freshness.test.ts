@@ -332,6 +332,7 @@ describe("the `only` filter must not change a verdict — symbol anchors", () =>
 
     const hayven = {
       doctorOk: async () => true,
+      candidates: async (_c: string, s: string) => [s], // node id = symbol name here
       context: async (_c: string, s: string) => ({
         id: s, name: s, file: s === "foo" ? "src/f1.ts" : "src/f2.ts",
         startLine: 1, endLine: 1, callees: [],
