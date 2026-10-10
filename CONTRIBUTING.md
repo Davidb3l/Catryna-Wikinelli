@@ -72,7 +72,7 @@ The maintainer aims to respond within a few days. If the PR isn't the right fit,
 
 ## Questions
 
-Open an issue with the **Question** template.
+Ask in [GitHub Discussions](https://github.com/Davidb3l/Catryna-Wikinelli/discussions). If you'd rather file an issue, use the **Question** template.
 
 ## Reporting bugs
 

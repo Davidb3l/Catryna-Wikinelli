@@ -5,6 +5,8 @@
 
 **A local-first code wiki that your AI coding agent writes and your team reads — docs live as MDX files in a `.docs/` folder, versioned with your code.**
 
+Part of **[Sothis](https://getsothis.com)**, the local-first suite for running a fleet of AI coding agents on one repo ([suite repo](https://github.com/Davidb3l/Sothis)). Catryna is its documentation layer.
+
 Every project accumulates knowledge that lives nowhere: why the auth flow works the way it does, which module owns what, the diagram someone drew once on a whiteboard. Wikis in Notion or Confluence drift out of date because updating them is a separate chore from writing code. Catryna fixes the incentive problem: your coding agent (Claude Code, or anything that speaks MCP) creates and updates the docs *as part of the coding session*, and because the docs are plain files in your repo, the agent also reads them back before touching code — so the knowledge actually gets used, and stale docs get caught in review like any other diff.
 
 ## How it works

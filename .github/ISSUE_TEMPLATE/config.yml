@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Questions and ideas
+    url: https://github.com/Davidb3l/Catryna-Wikinelli/discussions
+    about: Ask how something works, or float an idea, in GitHub Discussions.
   - name: Report a security vulnerability
     url: https://github.com/Davidb3l/Catryna-Wikinelli/blob/main/SECURITY.md
     about: Please do not file security problems as public issues. Email dev@hayvenhurst.dev instead.
