@@ -88,12 +88,74 @@ export function findProjects(scanRoots: string[]): Project[] {
   return projects;
 }
 
+/**
+ * The interface the viewer's dev server binds: IPv4 loopback by default.
+ *
+ * The API below is unauthenticated: it serves project paths, docs, history and
+ * coverage/drift data, so exposing it to the network is an explicit opt-in:
+ * set `CATRYNA_VIEWER_HOST` (e.g. `0.0.0.0`) when you mean to. Setting it to
+ * `localhost` brings back the IPv6-only bind described below.
+ *
+ * `127.0.0.1`, not `localhost`: Node resolves `localhost` per the OS, and on
+ * Windows Vite then bound `[::1]` only — so a client dialling 127.0.0.1 (as
+ * the old `0.0.0.0` IPv4 bind allowed) was refused. Browsers and curl resolve
+ * the `http://localhost:<port>` URL that `catryna doctor` advertises to
+ * 127.0.0.1 as well, so that URL keeps working.
+ */
+export function viewerHost(env: Record<string, string | undefined> = process.env): string {
+  const host = env.CATRYNA_VIEWER_HOST?.trim();
+  return host ? host : '127.0.0.1';
+}
+
+/**
+ * The real path of `file` when it is a single-link file inside `root` on
+ * RESOLVED real paths; null when it is missing, dangling, or anywhere else.
+ *
+ * A textual check (`path.resolve` + `startsWith`) can't see a symlink or
+ * junction, so this resolves both sides before comparing. Mirrors
+ * `containedResolve` in src/tokens.ts and `resolveDocFile` in src/storage.ts.
+ * A file with a second hard link is refused too: realpath can't tell which of
+ * its names is the real one.
+ */
+export function realFileInside(root: string, file: string): string | null {
+  let rootReal: string;
+  let real: string;
+  try {
+    rootReal = fs.realpathSync.native(root);
+    real = fs.realpathSync.native(file);
+  } catch {
+    return null;
+  }
+  if (real !== rootReal && !real.startsWith(rootReal + path.sep)) return null;
+  try {
+    const st = fs.statSync(real);
+    if (!st.isFile() || st.nlink > 1) return null;
+  } catch {
+    return null;
+  }
+  return real;
+}
+
+/**
+ * Parse `_index.json` from a docs root: null when absent, or when it resolves
+ * outside the docs root (it is then never read — `GET /api/docs` returns the
+ * parsed index whole, and a parse error message can quote the file).
+ */
+export function loadIndexJson(docsRoot: string): any | null {
+  const indexPath = path.join(docsRoot, '_index.json');
+  if (!fs.existsSync(indexPath)) return null;
+  const real = realFileInside(docsRoot, indexPath);
+  if (real === null) {
+    console.warn(`[catryna viewer] ignoring ${indexPath}: it is linked (symlink, junction or hard link) to a file outside the docs root`);
+    return null;
+  }
+  return JSON.parse(fs.readFileSync(real, 'utf-8'));
+}
+
 /** Read `_index.json` from a docs root, tolerating absence. */
 export function readIndexFile(docsRoot: string): { docs: any[] } {
-  const indexPath = path.join(docsRoot, '_index.json');
-  if (!fs.existsSync(indexPath)) return { docs: [] };
-  const parsed = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
-  return { docs: Array.isArray(parsed.docs) ? parsed.docs : [] };
+  const parsed = loadIndexJson(docsRoot);
+  return { docs: Array.isArray(parsed?.docs) ? parsed.docs : [] };
 }
 
 /** One commit that touched a doc file, as `git log --follow` reports it. */
@@ -271,13 +333,8 @@ export function createDocsApi(opts: {
     try {
       // GET /api/docs - List all docs
       if (req.url === '/api/docs' || req.url === '/api/docs/') {
-        const indexPath = path.join(docsRoot, '_index.json');
-        if (fs.existsSync(indexPath)) {
-          const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
-          res.end(JSON.stringify(index));
-        } else {
-          res.end(JSON.stringify({ version: 1, docs: [], lastUpdated: null }));
-        }
+        const index = loadIndexJson(docsRoot);
+        res.end(JSON.stringify(index ?? { version: 1, docs: [], lastUpdated: null }));
         return;
       }
 
@@ -286,13 +343,7 @@ export function createDocsApi(opts: {
         const url = new URL(req.url, 'http://localhost');
         const query = url.searchParams.get('q')?.toLowerCase() || '';
 
-        const indexPath = path.join(docsRoot, '_index.json');
-        if (!fs.existsSync(indexPath)) {
-          res.end(JSON.stringify({ results: [] }));
-          return;
-        }
-
-        const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+        const index = readIndexFile(docsRoot);
         const results = index.docs
           .filter((doc: any) => {
             // Search in title, tags, path
@@ -413,8 +464,8 @@ export function createDocsApi(opts: {
       // served ANY .mdx file on the machine — verified exploitable with
       // `curl --path-as-is '/api/docs/../../../../etc/whatever'`, which
       // returned the file body in `raw`. It is not a localhost-only concern
-      // either: `server.host` is '0.0.0.0', so every device on the same
-      // network could read the developer's disk unauthenticated.
+      // either: CATRYNA_VIEWER_HOST can expose the server (see viewerHost),
+      // and then every device on the network could read the developer's disk.
       //
       // Strip the query string (otherwise `foo?x=1` becomes a literal path
       // segment), decode percent-escapes so `%2e%2e` cannot smuggle a
@@ -438,8 +489,14 @@ export function createDocsApi(opts: {
         return;
       }
 
-      if (fs.existsSync(filePath)) {
-        const content = fs.readFileSync(filePath, 'utf-8');
+      // The text check above can't see links: require the RESOLVED file to be
+      // inside the docs root too, and read that, never the link. A link that
+      // leads elsewhere is answered exactly like a missing doc (404), so the
+      // response can't tell whether its target exists.
+      const realFile = realFileInside(rootResolved, filePath);
+
+      if (realFile !== null) {
+        const content = fs.readFileSync(realFile, 'utf-8');
 
         // CAT-2: evaluate computed-fact tokens against the PROJECT root (parent
         // of `.docs/`, where `{{count: src/*.rs}}` means the project's src) so
@@ -457,13 +514,7 @@ export function createDocsApi(opts: {
         const parsed = parseMdx(rendered);
 
         // Get metadata from index
-        const indexPath = path.join(docsRoot, '_index.json');
-        let metadata = {};
-        if (fs.existsSync(indexPath)) {
-          const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
-          const docMeta = index.docs.find((d: any) => d.path === docPath);
-          if (docMeta) metadata = docMeta;
-        }
+        const metadata = readIndexFile(docsRoot).docs.find((d: any) => d.path === docPath) ?? {};
 
         res.end(JSON.stringify({
           ...metadata,
@@ -519,7 +570,9 @@ export function createDocsApi(opts: {
         // /api/drift — per-doc status keyed by path, for the verified badge.
         const { computeDrift } = await import('../src/drift');
         // emit:false — rendering a badge must not write to the suite spine.
-        const report = await computeDrift(projectRoot, { emit: false });
+        // The index the viewer already read through loadIndexJson's real-path
+        // check, not a second unchecked read inside computeDrift.
+        const report = await computeDrift(projectRoot, { emit: false, docs });
         const byPath: Record<string, unknown> = {};
         for (const r of [...report.broken, ...report.drifted, ...report.unverified, ...report.clean]) {
           byPath[r.path] = {

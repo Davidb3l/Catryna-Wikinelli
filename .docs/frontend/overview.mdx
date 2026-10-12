@@ -7,8 +7,8 @@ relatedFiles: ["frontend/docs-api.ts", "frontend/App.tsx", "frontend/index.tsx",
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
-verifiedCommit: "5c1db2df417d9151740e04836806235bbb53d1fc"
-verifiedAt: "2026-10-12T01:02:45.696Z"
+verifiedCommit: "d822aedbbb1ef3b0611d6121b58b2ee7014f83a2"
+verifiedAt: "2026-10-12T03:00:55.167Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -382,7 +382,7 @@ than a font-plumbing fix.
 
 ## Dev Server Port
 
-The port is **not** hardcoded. `vite.config.ts` reads **`CATRYNA_VIEWER_PORT`** and falls back to **1307** when it is unset, non-numeric, or outside 1..65535 — the same rule as `viewerPort()` in `src/doctor.ts`.
+The port is **not** hardcoded. `vite.config.ts` reads **`CATRYNA_VIEWER_PORT`** and falls back to **1307** when it is unset, non-numeric, or outside 1..65535 — the same rule as `viewerPort()` in `src/doctor.ts`. It binds **`127.0.0.1`** unless **`CATRYNA_VIEWER_HOST`** says otherwise (`viewerHost()` in `docs-api.ts`): the API is unauthenticated, so exposing it to the network is an explicit opt-in. IPv4 loopback rather than `localhost`, because on Windows `localhost` made Vite bind `[::1]` only, refusing clients that dial 127.0.0.1; the advertised `http://localhost:<port>` still resolves to it. Vite's own `server.allowedHosts` check still rejects requests whose `Host` header names an unknown domain, which blocks DNS rebinding even when exposed.
 
 It also sets **`strictPort: true`**, so a taken port is a hard startup failure instead of a silent bump to 1308. That is deliberate: `catryna doctor` advertises `http://localhost:<that port>` as the suite hub's `ui` URL, so a viewer that drifted to another port would make the advertised URL a lie. Keep the two parsers in lockstep.
 
@@ -672,7 +672,7 @@ Nothing is proxied. The request handling lives in **`frontend/docs-api.ts`** (`c
 
 The endpoints read the `.docs/` folder off disk:
 
-- `GET /api/docs` - returns `_index.json` verbatim
+- `GET /api/docs` - returns `_index.json` verbatim, provided it resolves inside the docs root (`loadIndexJson()`). `/api/drift` checks that same loaded index rather than reading it again, and a doc that resolves elsewhere answers 404, like a missing one
 
 - `GET /api/docs/search?q=` - substring match over title, tags, and path; capped at 20 results
 
@@ -693,7 +693,7 @@ The endpoints read the `.docs/` folder off disk:
 Any other `/api/projects/*` URL returns 404. Falling through without `next()` or `res.end()` previously left the socket open forever — a `GET` to `/api/projects/select` hung until timeout, and a handful exhausted the browser's per-origin connection pool.
 
 <Callout type="warning">
-**Security, both found in adversarial review and verified exploitable against a running dev server.** These matter more than "it's only a dev server" suggests, because `server.host` is `0.0.0.0` — every device on the same network can reach it unauthenticated.
+**Security, both found in adversarial review and verified exploitable against a running dev server.** These matter more than "it's only a dev server" suggests: the viewer listened on `0.0.0.0` at the time, and `CATRYNA_VIEWER_HOST` can still expose it, at which point every device on the network reaches it unauthenticated. It binds `127.0.0.1` by default (`viewerHost()`), and doc and index reads check containment on **resolved real paths** (`realFileInside()`).
 
 - `GET /api/docs/:path` joined the request path onto `docsRoot` with no containment check, serving **any `.mdx` file on the machine** with its body in `raw`. It now strips query/fragment, decodes percent-escapes *before* checking (so `%2e%2e` cannot smuggle a traversal), resolves, and requires the result to stay inside `docsRoot`.
 - `POST /api/projects/select` accepted **any path on disk**, and because the handler `JSON.parse`s regardless of `Content-Type` it is a CORS *simple* request with no preflight — any page the developer visited could silently repoint the viewer with a `no-cors` fetch. `docsRoot` also becomes the cwd for git subprocesses. Selection is now restricted to the set `findProjects()` discovered.
