@@ -35,7 +35,7 @@ import http from 'node:http';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 
-import { createDocsApi, findProjects, type Project } from './docs-api';
+import { createDocsApi, findProjects, parseMdx, type Project } from './docs-api';
 
 const dirs: string[] = [];
 const servers: http.Server[] = [];
@@ -432,6 +432,36 @@ describe('GET /api/docs/:path containment', () => {
     const res = await get('/api/docs/backend/nonexistent');
     expect(res.status).toBe(404);
     expect(JSON.parse(res.body).error).toBe('Doc not found');
+  });
+});
+
+describe('CRLF checkouts', () => {
+  test('a CRLF doc renders its body, not its frontmatter', async () => {
+    // A Windows checkout (core.autocrlf=true) stores `.docs/*.mdx` with CRLF.
+    // The frontmatter regex anchored on a bare LF, so a CRLF `---` line never
+    // matched and every `key: value` line rendered as the doc's opening text.
+    const fx = await makeFixture();
+    const crlf = '---\ntitle: "Windows Doc"\nverifiedCommit: "abc123"\n---\n\n# Windows Doc\n\nBody text.\n'
+      .replace(/\n/g, '\r\n');
+    await writeAt(fx.alpha, '.docs/guides/windows.mdx', crlf);
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    const res = await get('/api/docs/guides/windows');
+    expect(res.status).toBe(200);
+    const blocks: { type: string; content?: string }[] = JSON.parse(res.body).blocks;
+    const text = blocks.map((b) => b.content ?? '').join('\n');
+    expect(text).not.toContain('verifiedCommit');
+    expect(text).not.toContain('---');
+    expect(text).not.toContain('\r');
+    expect(blocks[0]).toMatchObject({ type: 'heading-1', content: 'Windows Doc' });
+    expect(text).toContain('Body text.');
+  });
+
+  test('parseMdx reads CRLF frontmatter as metadata (the version-history path uses it too)', () => {
+    const crlf = '---\ntitle: "Windows Doc"\ntags: ["a", "b"]\n---\n\n# Windows Doc\n'.replace(/\n/g, '\r\n');
+    const parsed = parseMdx(crlf);
+    expect(parsed.metadata).toMatchObject({ title: 'Windows Doc', tags: ['a', 'b'] });
+    expect(parsed.blocks).toEqual([expect.objectContaining({ type: 'heading-1', content: 'Windows Doc' })]);
   });
 });
 
