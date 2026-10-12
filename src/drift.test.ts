@@ -349,6 +349,25 @@ describe("catryna verify (end-to-end through the CLI)", () => {
     expect(mismatch[0].message).toContain("verifiedCommit");
   });
 
+  test("lint also warns when the frontmatter has NO verifiedCommit key but the index does", async () => {
+    // An older doc whose key a skipped CRLF write could never add. A doc that's
+    // unverified on both sides must stay quiet.
+    const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
+    await seedDocs(dir, [
+      { path: "modules/a", relatedFiles: ["src/a.ts"] },
+      { path: "modules/never", relatedFiles: ["src/a.ts"] },
+    ]);
+    expect((await runCli(dir, ["verify", "modules/a"])).code).toBe(0);
+    for (const p of ["modules/a", "modules/never"]) {
+      const f = join(dir, ".docs", `${p}.mdx`);
+      await writeFile(f, (await readFile(f, "utf-8")).replace(/^verifiedCommit:.*\n/m, ""));
+    }
+
+    const mismatch = (await lintDocs(dir)).issues.filter((i) => i.rule === "index-mismatch");
+    expect(mismatch.map((i) => i.path)).toEqual(["modules/a"]);
+    expect(mismatch[0].severity).toBe("warning");
+  });
+
   test("verify then drift: a freshly verified doc is clean until its code changes", async () => {
     const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
     await seedDocs(dir, [{ path: "modules/a", relatedFiles: ["src/a.ts"] }]);

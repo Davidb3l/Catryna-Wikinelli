@@ -725,14 +725,16 @@ export function effectiveAnchors(
  * Line endings follow the FILE: a Windows checkout (core.autocrlf) is CRLF, and
  * a pattern anchored on "\n" alone never matched it, so verify and consume
  * silently skipped the .mdx write while still updating `_index.json` — the
- * record and the cache diverged with no error. The frontmatter is rewritten in
- * the ending its opening `---` line uses; the body is never touched.
+ * record and the cache diverged with no error. Each delimiter may end in CRLF
+ * or LF independently — exactly the files parseMdx (which normalizes CRLF
+ * first) can read, so the writer never skips a file the reader accepts. The
+ * delimiters are kept as they are, the rewritten lines use the opening line's
+ * ending, and the body is never touched.
  */
 export function setFrontmatterScalars(content: string, fields: Record<string, string>): string {
-  const eol = content.startsWith("---\r\n") ? "\r\n" : "\n";
-  const fmMatch = content.match(eol === "\r\n" ? /^(---\r\n)([\s\S]*?)(\r\n---\r\n)/ : /^(---\n)([\s\S]*?)(\n---\n)/);
+  const fmMatch = content.match(/^(---(\r?\n))([\s\S]*?)(\r?\n---\r?\n)/);
   if (!fmMatch) return content;
-  const [, open, body, close] = fmMatch;
+  const [, open, eol, body, close] = fmMatch;
   // Split on either ending, so a stray LF line in a CRLF block still matches its key.
   const lines = body.split(/\r?\n/);
   for (const [key, value] of Object.entries(fields)) {

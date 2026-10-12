@@ -566,12 +566,17 @@ export async function lintDocs(cwd: string): Promise<LintReport> {
           hint: "Search and the sidebar read the index; the page reads the file. They will disagree.",
         });
       }
-      // The drift baseline. The index is authoritative here (drift reads it),
-      // so a stale frontmatter copy misleads a human reading the file rather
-      // than drift itself: a warning. verify writes both; they diverged when
-      // its .mdx write was silently skipped on CRLF checkouts.
-      const fmCommit = parsed.metadata?.verifiedCommit;
-      if (typeof fmCommit === "string" && fmCommit !== (doc.verifiedCommit ?? "")) {
+      // The drift baseline. "The .mdx is the record" holds for what an author
+      // writes (anchors, prose); a baseline is written by `verify`, and drift
+      // reads it from the index — so here a stale frontmatter copy misleads a
+      // human reading the file rather than drift: a warning. verify writes both;
+      // they diverged when its .mdx write was silently skipped on CRLF checkouts.
+      // A MISSING key reads as "never verified", so an older doc whose key a
+      // skipped write could never add is caught too, while a doc unverified on
+      // both sides stays quiet.
+      const fmRaw = parsed.metadata?.verifiedCommit;
+      const fmCommit = typeof fmRaw === "string" ? fmRaw : "";
+      if (fmCommit !== (doc.verifiedCommit ?? "")) {
         const short = (c: string) => (c ? c.slice(0, 7) : "(none)");
         issues.push({
           path: doc.path,
