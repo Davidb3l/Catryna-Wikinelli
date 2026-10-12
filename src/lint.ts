@@ -573,10 +573,13 @@ export async function lintDocs(cwd: string): Promise<LintReport> {
       // they diverged when its .mdx write was silently skipped on CRLF checkouts.
       // A MISSING key reads as "never verified", so an older doc whose key a
       // skipped write could never add is caught too, while a doc unverified on
-      // both sides stays quiet. Only when a frontmatter block parsed at all: a
-      // doc without one already has a `frontmatter` error, and verify refuses
-      // it, so "run verify" would point at a command that fails.
-      const hasFrontmatter = splitFrontmatter(raw.replace(/\r\n/g, "\n")).frontmatter !== null;
+      // both sides stays quiet. Only when parseMdx itself (what verify writes
+      // through) reads a block, using ITS rule: lint's own splitter also takes
+      // a closing `---` at EOF with no newline, which parseMdx and
+      // setFrontmatterScalars don't, and there "run verify" would succeed
+      // without changing the file. A doc with no block at all already has a
+      // `frontmatter` error, and verify refuses it.
+      const hasFrontmatter = /^---\n[\s\S]*?\n---\n/.test(raw.replace(/\r\n/g, "\n"));
       const fmRaw = parsed.metadata?.verifiedCommit;
       const fmCommit = typeof fmRaw === "string" ? fmRaw : "";
       if (hasFrontmatter && fmCommit !== (doc.verifiedCommit ?? "")) {

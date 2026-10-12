@@ -382,6 +382,22 @@ describe("catryna verify (end-to-end through the CLI)", () => {
     expect(rules).not.toContain("index-mismatch");
   });
 
+  test("a frontmatter-only doc closed at EOF (no newline) gets no baseline warning verify can't act on", async () => {
+    // lint's own splitter accepts this shape; parseMdx and the frontmatter
+    // writer don't, so verify would "succeed" without changing the file and a
+    // warning telling you to run it could never clear.
+    const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
+    await seedDocs(dir, [{ path: "modules/a", relatedFiles: ["src/a.ts"] }]);
+    expect((await runCli(dir, ["verify", "modules/a"])).code).toBe(0);
+    const f = join(dir, ".docs", "modules", "a.mdx");
+    const raw = await readFile(f, "utf-8");
+    const close = raw.indexOf("\n---\n", 4);
+    await writeFile(f, raw.slice(0, close + 4)); // frontmatter only, ends at "---"
+
+    const rules = (await lintDocs(dir)).issues.filter((i) => i.path === "modules/a").map((i) => i.rule);
+    expect(rules).not.toContain("index-mismatch");
+  });
+
   test("verify then drift: a freshly verified doc is clean until its code changes", async () => {
     const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
     await seedDocs(dir, [{ path: "modules/a", relatedFiles: ["src/a.ts"] }]);
