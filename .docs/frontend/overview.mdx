@@ -3,12 +3,12 @@ id: 8ba895db-7586-4187-92fb-7da033094537
 title: "Frontend Application"
 path: "frontend/overview"
 tags: ["frontend", "react", "vite"]
-relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts", "frontend/hooks/useSystemTheme.ts", "frontend/index.css", "frontend/styles/vendor-reactflow.css", "frontend/styles/vendor-excalidraw.css", "frontend/styles/fonts.css"]
+relatedFiles: ["frontend/docs-api.ts", "frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts", "frontend/hooks/useSystemTheme.ts", "frontend/index.css", "frontend/styles/vendor-reactflow.css", "frontend/styles/vendor-excalidraw.css", "frontend/styles/fonts.css"]
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
-verifiedCommit: "b3e0c65239fcf7a5247a4344a65c83bc88e03247"
-verifiedAt: "2026-10-09T22:18:15.131Z"
+verifiedCommit: "5c1db2df417d9151740e04836806235bbb53d1fc"
+verifiedAt: "2026-10-12T01:02:45.696Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -699,7 +699,7 @@ Any other `/api/projects/*` URL returns 404. Falling through without `next()` or
 - `POST /api/projects/select` accepted **any path on disk**, and because the handler `JSON.parse`s regardless of `Content-Type` it is a CORS *simple* request with no preflight — any page the developer visited could silently repoint the viewer with a `no-cors` fetch. `docsRoot` also becomes the cwd for git subprocesses. Selection is now restricted to the set `findProjects()` discovered.
 </Callout>
 
-The last two compute against the **project root** (the parent of the docs root), not the dev server's cwd — which is `frontend/`. They read `docsRoot` per request rather than capturing it, because `POST /api/projects/select` switches it at runtime. `/api/drift` passes `emit: false`: rendering a badge must not write to the suite event spine.
+The last three (coverage, drift, trend) compute against the **project root** (the parent of the docs root), not the dev server's cwd — which is `frontend/`. They read `docsRoot` per request rather than capturing it, because `POST /api/projects/select` switches it at runtime. `/api/drift` passes `emit: false`: rendering a badge must not write to the suite event spine.
 
 <Callout type="warning">
 Because the Vite plugin imports the drift engine, `src/drift.ts` runs in a module context with **no `Bun` global**. `runGit` originally called `Bun.spawn` unconditionally; since every git failure in that engine degrades quietly by design, it did not throw — it reported a real git repository as "not a git repository" and would have rendered every doc unverified. Both `runGit` and `runHayven` now feature-detect through `globalThis` and fall back to `node:child_process`.
@@ -708,5 +708,5 @@ Because the Vite plugin imports the drift engine, `src/drift.ts` runs in a modul
 Because it hangs off `configureServer`, the API exists **only in `vite dev`** — a `vite build` bundle has no backend. The docs root defaults to `../.docs` and can be overridden with `DOCS_ROOT`; project scanning honours `PROJECTS_ROOT` before falling back to sibling and common dev directories.
 
 <Callout type="info">
-`parseMdx()` here is a second, independent parser — separate from `src/storage.ts`. It keeps only the `blocks` it produces; the frontmatter it parses is discarded, and the metadata the viewer shows comes from `_index.json`. Frontmatter arrays are written as JSON (so values containing commas or quotes round-trip), and this parser `JSON.parse`s any value starting with `[` — after a legacy `'` → `"` substitution that can corrupt an apostrophe inside an otherwise valid JSON string.
+`parseMdx()` here is a second, independent parser — separate from `src/storage.ts`. Like storage's, it normalizes CRLF to LF before anything else: on a Windows checkout (`core.autocrlf=true`) every `.docs/*.mdx` is CRLF, and a frontmatter regex anchored on a bare LF once rendered each doc's whole YAML block as its opening paragraphs. It keeps only the `blocks` it produces; the frontmatter it parses is discarded, and the metadata the viewer shows comes from `_index.json`. Frontmatter arrays are written as JSON (so values containing commas or quotes round-trip), and this parser `JSON.parse`s any value starting with `[` — after a legacy `'` → `"` substitution that can corrupt an apostrophe inside an otherwise valid JSON string.
 </Callout>
