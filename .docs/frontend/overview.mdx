@@ -699,7 +699,7 @@ Any other `/api/projects/*` URL returns 404. Falling through without `next()` or
 - `POST /api/projects/select` accepted **any path on disk**, and because the handler `JSON.parse`s regardless of `Content-Type` it is a CORS *simple* request with no preflight — any page the developer visited could silently repoint the viewer with a `no-cors` fetch. `docsRoot` also becomes the cwd for git subprocesses. Selection is now restricted to the set `findProjects()` discovered.
 </Callout>
 
-The last two compute against the **project root** (the parent of the docs root), not the dev server's cwd — which is `frontend/`. They read `docsRoot` per request rather than capturing it, because `POST /api/projects/select` switches it at runtime. `/api/drift` passes `emit: false`: rendering a badge must not write to the suite event spine.
+The last three (coverage, drift, trend) compute against the **project root** (the parent of the docs root), not the dev server's cwd — which is `frontend/`. They read `docsRoot` per request rather than capturing it, because `POST /api/projects/select` switches it at runtime. `/api/drift` passes `emit: false`: rendering a badge must not write to the suite event spine.
 
 <Callout type="warning">
 Because the Vite plugin imports the drift engine, `src/drift.ts` runs in a module context with **no `Bun` global**. `runGit` originally called `Bun.spawn` unconditionally; since every git failure in that engine degrades quietly by design, it did not throw — it reported a real git repository as "not a git repository" and would have rendered every doc unverified. Both `runGit` and `runHayven` now feature-detect through `globalThis` and fall back to `node:child_process`.
