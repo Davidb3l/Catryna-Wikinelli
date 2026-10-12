@@ -71,7 +71,7 @@ A doc is **data**, authored by anyone, and `.docs/` is git-shared between machin
 <Callout type="warning">
 Two containment defects were found by adversarial review **after** the first implementation, and both are worth knowing because the naive version looks correct:
 
-**Symlinks defeated a textual check.** `path.resolve` does not resolve symlinks, so `{{version: vendor/etc/anything}}` with a committed `vendor -> /` symlink walked straight out of the root and leaked **file content** — over the network, since the viewer binds `0.0.0.0`. Containment is now enforced on **realpaths** (of the nearest existing ancestor, for paths that don't exist yet), and `walkFiles` never descends a symlinked directory.
+**Symlinks defeated a textual check.** `path.resolve` does not resolve symlinks, so `{{version: vendor/etc/anything}}` with a committed `vendor -> /` symlink walked straight out of the root and leaked **file content** — over the network, since the viewer then bound `0.0.0.0` (it binds `127.0.0.1` by default now; `CATRYNA_VIEWER_HOST` can still expose it). Containment is now enforced on **realpaths** (of the nearest existing ancestor, for paths that don't exist yet), and `walkFiles` never descends a symlinked directory.
 
 **A glob could wedge the server.** Each `**/` compiled to a nested optional greedy `(?:.*/)?`, which backtracks exponentially: 14 of them took ~6s and 24 never finished, blocking the event loop for every other request. Runs of `**/` are now collapsed and the argument is bounded in length and wildcard count. Note the file/byte caps bound the *walk*, never the *match* — this guard is the only thing standing between one doc and a hung server.
 </Callout>

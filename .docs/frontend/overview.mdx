@@ -672,7 +672,7 @@ Nothing is proxied. The request handling lives in **`frontend/docs-api.ts`** (`c
 
 The endpoints read the `.docs/` folder off disk:
 
-- `GET /api/docs` - returns `_index.json` verbatim
+- `GET /api/docs` - returns `_index.json` verbatim, provided it resolves inside the docs root (`loadIndexJson()`; a linked index elsewhere is ignored and never read)
 
 - `GET /api/docs/search?q=` - substring match over title, tags, and path; capped at 20 results
 
