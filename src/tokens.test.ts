@@ -18,6 +18,7 @@ import {
   retokenizeBlocks,
   COMPUTED_TOKEN_RE,
 } from "./tokens";
+import { canSymlinkFiles, symlinkDir, symlinkFile } from "./test-symlink";
 
 const dirs: string[] = [];
 afterAll(async () => {
@@ -126,8 +127,7 @@ describe("evaluateToken — review regressions", () => {
     // file CONTENT from outside the root, over the network.
     const root = await project({ "src/a.ts": "x\n" });
     const outside = await project({ "secret.toml": 'version = "9.9.9-LEAKED"\n', "s.txt": "a\nb\n" });
-    const { symlink } = await import("node:fs/promises");
-    await symlink(outside, join(root, "escape"));
+    await symlinkDir(outside, join(root, "escape"));
 
     expect((await evaluateToken("count", "escape", root)).ok).toBe(false);
     expect((await evaluateToken("loc", "escape", root)).ok).toBe(false);
@@ -136,11 +136,10 @@ describe("evaluateToken — review regressions", () => {
     expect(v.value).toBeUndefined();
   });
 
-  test("a symlinked FILE at the top level is refused too", async () => {
+  test.skipIf(!canSymlinkFiles)("a symlinked FILE at the top level is refused too", async () => {
     const root = await project({ "src/a.ts": "x\n" });
     const outside = await project({ "secret.json": JSON.stringify({ version: "LEAKED" }) });
-    const { symlink } = await import("node:fs/promises");
-    await symlink(join(outside, "secret.json"), join(root, "sneak.json"));
+    await symlinkFile(join(outside, "secret.json"), join(root, "sneak.json"));
     expect((await evaluateToken("version", "sneak.json", root)).ok).toBe(false);
   });
 
