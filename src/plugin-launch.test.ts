@@ -1,0 +1,226 @@
+/**
+ * The plugin's MCP launch command, run exactly as Claude Code runs it.
+ *
+ * Claude Code spawns an MCP server's `command` WITHOUT a shell. plugin.json used
+ * `bash scripts/run-server.sh`, and on Windows a bare `bash` resolves to
+ * C:\Windows\System32\bash.exe — the WSL launcher — which fails with
+ * "execvpe(/bin/bash) failed", so the plugin's server never started there
+ * (Claude Code showed it as CONNECTION_CLOSED). The contract pinned here:
+ *
+ *   - the command is `bun` itself, never a shell;
+ *   - spawned with the user's project as cwd, it speaks MCP on stdout (nothing
+ *     else may write there) and writes docs into THAT project's `.docs/`;
+ *   - a partial first install (node_modules/ present, packages missing) heals.
+ */
+import { afterAll, describe, expect, test } from "bun:test";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
+
+const dirs: string[] = [];
+afterAll(async () => {
+  // Retries: on Windows a just-killed server can hold its cwd for a moment.
+  for (const d of dirs) await rm(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+});
+
+async function tempDir(prefix: string): Promise<string> {
+  const d = await mkdtemp(join(tmpdir(), prefix));
+  dirs.push(d);
+  return d;
+}
+
+interface McpServerConfig {
+  command: string;
+  args: string[];
+}
+
+function pluginServer(): McpServerConfig {
+  const plugin = JSON.parse(readFileSync(join(ROOT, ".claude-plugin", "plugin.json"), "utf8"));
+  return plugin.mcpServers.catryna;
+}
+
+/** plugin.json's args with `${CLAUDE_PLUGIN_ROOT}` substituted, as Claude Code does. */
+function substituted(cfg: McpServerConfig, pluginRoot = ROOT): string[] {
+  return cfg.args.map((a) => a.replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginRoot));
+}
+
+/**
+ * Spawn the server, send `messages`, and collect replies until every id in
+ * `awaitIds` has answered (or the deadline passes). The server is always
+ * stopped, even when an assertion inside the read loop throws.
+ */
+async function mcpSession(
+  argv: string[],
+  cwd: string,
+  messages: object[],
+  awaitIds: number[],
+  timeoutMs = 20_000,
+): Promise<{ replies: Map<number, any>; stderr: string }> {
+  const proc = Bun.spawn(argv, { cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const replies = new Map<number, any>();
+  try {
+    for (const m of messages) proc.stdin.write(JSON.stringify(m) + "\n");
+    const reader = proc.stdout.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    const deadline = Date.now() + timeoutMs;
+    while (!awaitIds.every((id) => replies.has(id)) && Date.now() < deadline) {
+      const { value, done } = await Promise.race([
+        reader.read(),
+        Bun.sleep(deadline - Date.now()).then(() => ({ value: undefined, done: true })),
+      ]);
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        // Every stdout line must be JSON-RPC — a stray log line breaks the client.
+        const msg = JSON.parse(line);
+        expect(msg.jsonrpc).toBe("2.0");
+        if (typeof msg.id === "number") replies.set(msg.id, msg);
+      }
+    }
+  } finally {
+    proc.stdin.end();
+    proc.kill();
+    await proc.exited;
+  }
+  return { replies, stderr: await new Response(proc.stderr).text() };
+}
+
+const INITIALIZE = [
+  {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "plugin-launch-test", version: "0" },
+    },
+  },
+  { jsonrpc: "2.0", method: "notifications/initialized" },
+];
+
+describe("plugin MCP launch", () => {
+  test("the server command is bun itself, not a shell", () => {
+    const cfg = pluginServer();
+    // A shell here is resolved on PATH without Git Bash's help — on Windows,
+    // `bash` is the WSL launcher and `sh` usually doesn't exist at all.
+    expect(cfg.command).toBe("bun");
+    for (const arg of substituted(cfg)) {
+      if (arg.includes("/") || arg.includes("\\")) expect(existsSync(arg)).toBe(true);
+    }
+  });
+
+  test("spawned from the user's project, it speaks MCP on stdout and writes docs there", async () => {
+    const project = await tempDir("catryna-plugin-launch-");
+    const cfg = pluginServer();
+    const { replies, stderr } = await mcpSession(
+      [cfg.command, ...substituted(cfg)],
+      project,
+      [
+        ...INITIALIZE,
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: {
+            name: "create_doc",
+            arguments: {
+              path: "launch/probe",
+              title: "Probe",
+              content: [{ type: "text", data: { content: "hello" } }],
+            },
+          },
+        },
+      ],
+      [1, 2],
+    );
+
+    expect(replies.get(1)?.result?.serverInfo).toBeDefined();
+    expect(replies.get(2)?.result?.isError).not.toBe(true);
+    expect(stderr).toContain("[Catryna] MCP server started on stdio");
+    // cwd contract: the doc lands in the USER's project, not the plugin root.
+    expect(existsSync(join(project, ".docs", "launch", "probe.mdx"))).toBe(true);
+    expect(existsSync(join(ROOT, ".docs", "launch", "probe.mdx"))).toBe(false);
+  }, 30_000);
+
+  // A first install killed partway (e.g. by the client's startup timeout)
+  // leaves a node_modules/ that looks installed. Checking only for the folder —
+  // or only for the direct dependencies — skipped the install forever after,
+  // and every launch then died importing a missing package.
+  const PARTIAL_INSTALLS: Record<string, (nodeModules: string) => void> = {
+    "an empty node_modules/": () => {},
+    "direct dependencies present, transitive ones missing": (nodeModules) => {
+      const deps = Object.keys(JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).dependencies);
+      for (const d of deps) {
+        mkdirSync(join(nodeModules, d), { recursive: true });
+        writeFileSync(join(nodeModules, d, "package.json"), JSON.stringify({ name: d, version: "0.0.0" }));
+      }
+    },
+  };
+
+  for (const [name, arrange] of Object.entries(PARTIAL_INSTALLS)) {
+    test(`an interrupted first install heals: ${name}`, async () => {
+      const pluginRoot = join(await tempDir("catryna-plugin-root-"), "plugin root");
+      for (const entry of ["package.json", "bun.lock", "src", "scripts"]) {
+        cpSync(join(ROOT, entry), join(pluginRoot, entry), { recursive: true });
+      }
+      mkdirSync(join(pluginRoot, "node_modules"));
+      arrange(join(pluginRoot, "node_modules"));
+      const project = await tempDir("catryna-plugin-launch-");
+      const cfg = pluginServer();
+
+      const { replies, stderr } = await mcpSession(
+        [cfg.command, ...substituted(cfg, pluginRoot)],
+        project,
+        INITIALIZE,
+        [1],
+        90_000,
+      );
+
+      expect(stderr).toContain("installing server dependencies");
+      expect(replies.get(1)?.result?.serverInfo).toBeDefined();
+      expect(existsSync(join(pluginRoot, "node_modules", ".catryna-install-ok"))).toBe(true);
+    }, 120_000);
+  }
+
+  test("a failed reinstall leaves no stale 'installed' marker behind", async () => {
+    // A reinstall (here: a dependency the marker's install predates) that dies
+    // partway must not leave the OLD marker vouching for a half-written tree.
+    // A `file:` dependency that doesn't exist fails `bun install` with no network.
+    const pluginRoot = join(await tempDir("catryna-plugin-root-"), "plugin root");
+    for (const entry of ["package.json", "bun.lock", "src", "scripts"]) {
+      cpSync(join(ROOT, entry), join(pluginRoot, entry), { recursive: true });
+    }
+    const pkg = JSON.parse(readFileSync(join(pluginRoot, "package.json"), "utf8"));
+    pkg.dependencies["catryna-missing-dep"] = "file:./does-not-exist";
+    writeFileSync(join(pluginRoot, "package.json"), JSON.stringify(pkg));
+    mkdirSync(join(pluginRoot, "node_modules"));
+    writeFileSync(join(pluginRoot, "node_modules", ".catryna-install-ok"), "");
+    const cfg = pluginServer();
+
+    const proc = Bun.spawn([cfg.command, ...substituted(cfg, pluginRoot)], {
+      cwd: await tempDir("catryna-plugin-launch-"),
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+
+    expect(code).not.toBe(0);
+    expect(stderr).toContain("bun install failed");
+    expect(stdout).toBe(""); // the MCP channel stays clean even on failure
+    expect(existsSync(join(pluginRoot, "node_modules", ".catryna-install-ok"))).toBe(false);
+  }, 120_000);
+});
