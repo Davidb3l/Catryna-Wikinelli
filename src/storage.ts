@@ -395,7 +395,13 @@ async function acquireIndexFileLock(): Promise<() => Promise<void>> {
       //   - with NO lock file, nobody holds it: allow LOCK_UNHELD_GRACE_MS for
       //     a transient, then fall back (the Windows ACL-deny case).
       // The lock is an optimization, never a new way for a write to fail.
-      if (code !== "EEXIST") {
+      //
+      // The grace measures one UNBROKEN run of "no lock file" failures. Any
+      // sign of a real holder (EEXIST, or a present lock file) resets it;
+      // otherwise a stray release race early on, then a long legitimate wait,
+      // then one more race would fall back unlocked after a real contention.
+      if (code === "EEXIST") unheldSince = null;
+      else {
         if (!LOCK_CONTENTION_CODES.has(code) || !(await docsDirWritable())) return noop;
         if (await lockFilePresent()) {
           unheldSince = null;

@@ -85,19 +85,64 @@ describe("index lock under Windows contention errors", () => {
     const r = await scenario(`
       await createDoc("m/seed", "Seed", [{ type: "text", data: { content: "x" } }]);
       await writeFile(LOCK, "someone else");
+      let acquired = false;
       __setIndexLockFsForTesting({
         create: async (path, token) => {
           if (existsSync(path)) throw fail("EPERM");
           await writeFile(path, token, { flag: "wx" });
+          acquired = true;
         },
       });
-      setTimeout(() => unlink(LOCK), 400);
+      // Held for longer than the 1s no-lock-file grace: a present lock file
+      // must keep it "held" however long that takes.
+      setTimeout(() => unlink(LOCK), 1500);
       const t0 = Date.now();
       await createDoc("m/a", "A", [{ type: "text", data: { content: "x" } }]);
-      console.log(JSON.stringify({ waitedMs: Date.now() - t0 }));
+      console.log(JSON.stringify({ waitedMs: Date.now() - t0, acquired }));
     `);
     // Unfixed: returned at once and wrote while "someone else" held the lock.
-    expect(r.waitedMs).toBeGreaterThanOrEqual(350);
+    expect(r.waitedMs).toBeGreaterThanOrEqual(1400);
+    expect(r.acquired).toBe(true);
+  }, 30_000);
+
+  test("a long real wait (EEXIST) resets the no-lock-file grace", async () => {
+    // One stray EPERM with no lock file, then a real holder for 1.3s, then one
+    // more EPERM-with-no-file race on its release. Without the reset, that last
+    // race fell back to an UNLOCKED write after a genuine contention.
+    const r = await scenario(`
+      await createDoc("m/seed", "Seed", [{ type: "text", data: { content: "x" } }]);
+      let calls = 0;
+      let acquired = false;
+      let released = false;
+      let raced = false;
+      __setIndexLockFsForTesting({
+        create: async (path, token) => {
+          calls++;
+          // 1: a stray race with no lock file anywhere — starts the grace clock.
+          if (calls === 1) throw fail("EPERM");
+          // 2: a real holder takes the lock and keeps it for 1.3s.
+          if (calls === 2) {
+            await writeFile(LOCK, "someone else");
+            setTimeout(async () => {
+              await unlink(LOCK);
+              released = true;
+            }, 1300);
+            throw fail("EEXIST");
+          }
+          if (existsSync(path)) throw fail("EEXIST");
+          // The first attempt after the release: one more no-lock-file race.
+          if (released && !raced) {
+            raced = true;
+            throw fail("EPERM");
+          }
+          await writeFile(path, token, { flag: "wx" });
+          acquired = true;
+        },
+      });
+      await createDoc("m/a", "A", [{ type: "text", data: { content: "x" } }]);
+      console.log(JSON.stringify({ calls, acquired }));
+    `);
+    expect(r.acquired).toBe(true);
   }, 30_000);
 
   test("EPERM with NO lock file present (e.g. a Windows ACL deny) falls back after a short grace, not 30s", async () => {
