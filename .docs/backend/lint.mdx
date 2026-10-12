@@ -40,7 +40,7 @@ Every rule was earned by a real failure in this repo, not invented.
 | `volatile-fact` | warning | A repo-wide number/version/date in prose has no anchor, so drift can never flag it when it rots. Nudges toward a computed token (CAT-2) |
 | `missing-anchor` | error | An anchor to a path not on disk documents nothing. Drift calls this `broken` **only once a baseline exists**; lint catches it immediately |
 | `windows-anchor` | error | A backslash path matches nothing off Windows, so the doc silently stops being drift-checked at all |
-| `index-mismatch` | error (path) / warning (title) | `_index.json` and the frontmatter disagreeing means one of them is lying to whoever read it first |
+| `index-mismatch` | error (path) / warning (title, `verifiedCommit`) | `_index.json` and the frontmatter disagreeing means one of them is lying to whoever read it first. A `verifiedCommit` mismatch is a warning because drift reads the index; `catryna verify` rewrites both |
 | `orphan-file` | warning | A `.mdx` no index entry names is invisible to search, drift and coverage |
 | `missing-file` | error | An index entry with no file behind it 404s in the viewer |
 | `invalid-path` | error | An index entry whose path isn't a valid doc path (`..`, absolute, a link out of `.docs/`, a Windows device name). Every tool refuses it, so lint never reads through it; it reports why |
