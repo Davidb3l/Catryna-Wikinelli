@@ -2,8 +2,8 @@
 /**
  * `catryna` — the CLI companion to the Catryna MCP server.
  *
- * This is a SEPARATE entry from the MCP server (`src/index.ts`, still run by
- * scripts/run-server.sh). Subcommands:
+ * This is a SEPARATE entry from the MCP server (`src/index.ts`, launched by
+ * scripts/run-server.ts). Subcommands:
  *   - `doctor` — the suite discovery handshake (SUITE_CONTRACTS §3).
  *   - `verify` — record HEAD as a doc's drift baseline (`verifiedCommit`).
  *   - `drift`  — report docs whose anchored code changed since verification
@@ -54,7 +54,7 @@ Usage:
   catryna consume [--json]         Consume code.changed → mark docs drift-suspect (spine tail)
   catryna --help                   Show this help
 
-The MCP server is a separate entry (catryna-mcp / scripts/run-server.sh).`;
+The MCP server is a separate entry (catryna-mcp / scripts/run-server.ts).`;
 
 /** Resolve the version from package.json (never hardcoded). */
 async function readVersion(): Promise<string> {

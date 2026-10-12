@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Launch the Catryna MCP server from wherever the plugin is installed.
+# Launch the Catryna MCP server from a POSIX shell (manual / legacy configs).
+#
+# The plugin itself does NOT use this: plugin.json runs scripts/run-server.ts
+# with `bun` directly, because on Windows a bare `bash` can resolve to the WSL
+# launcher and never start the server. This shim delegates to the same launcher
+# so the self-heal and cwd contract live in one place.
 #
 # Key contract: the server's cwd MUST stay the user's project directory —
-# storage resolves .docs/ from process.cwd(). So we install deps into the
-# plugin root if missing, but never cd before exec.
+# storage resolves .docs/ from process.cwd(). Never cd before exec.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -13,10 +17,4 @@ if ! command -v bun >/dev/null 2>&1; then
   exit 1
 fi
 
-# Self-heal: first run after plugin install has no node_modules yet.
-if [ ! -d "$ROOT/node_modules" ]; then
-  echo "[catryna] installing server dependencies (first run)..." >&2
-  (cd "$ROOT" && bun install --silent) >&2
-fi
-
-exec bun run "$ROOT/src/index.ts"
+exec bun run "$ROOT/scripts/run-server.ts"

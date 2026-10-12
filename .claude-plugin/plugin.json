@@ -22,8 +22,8 @@
   ],
   "mcpServers": {
     "catryna": {
-      "command": "bash",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/run-server.sh"]
+      "command": "bun",
+      "args": ["run", "${CLAUDE_PLUGIN_ROOT}/scripts/run-server.ts"]
     }
   }
 }

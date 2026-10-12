@@ -7,8 +7,8 @@ relatedFiles: ["src/lint.ts", "src/tools/lint.ts", "src/cli.ts"]
 anchors: []
 evidence: []
 refs: []
-verifiedCommit: "b3e0c65239fcf7a5247a4344a65c83bc88e03247"
-verifiedAt: "2026-10-09T22:18:15.103Z"
+verifiedCommit: "7767c0284274299a2fe26f7017e05944c27a7101"
+verifiedAt: "2026-10-12T01:47:49.254Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 createdAt: 1785627863145
@@ -43,6 +43,7 @@ Every rule was earned by a real failure in this repo, not invented.
 | `index-mismatch` | error (path) / warning (title) | `_index.json` and the frontmatter disagreeing means one of them is lying to whoever read it first |
 | `orphan-file` | warning | A `.mdx` no index entry names is invisible to search, drift and coverage |
 | `missing-file` | error | An index entry with no file behind it 404s in the viewer |
+| `invalid-path` | error | An index entry whose path isn't a valid doc path (`..`, absolute, a link out of `.docs/`, a Windows device name). Every tool refuses it, so lint never reads through it; it reports why |
 
 ## The hollow-doc rule
 
@@ -109,7 +110,7 @@ Under `--json` there is exactly one object on stdout and stderr stays clean, per
 `catryna verify` refuses to record a baseline on a structurally malformed doc, checked **before** the write so a rejection leaves the previous baseline intact. `verify` is the chokepoint every doc passes through, so nothing structurally broken can ever claim to be verified.
 
 <Callout type="warning">
-The guard is scoped to `STRUCTURAL_RULES` — `frontmatter`, `unclosed-callout`, `unclosed-fence` — and deliberately **excludes anchor resolution**. A vanished anchor means the *code* moved, which is drift's question; `verifyDoc` already reports it as a `brokenAnchors` warning while still recording the baseline. Blocking there would overrule that decision and make re-verifying a doc after a rename impossible.
+The guard is scoped to `STRUCTURAL_RULES` — `frontmatter`, `unclosed-callout`, `unclosed-fence`, `invalid-path` — and deliberately **excludes anchor resolution**. `invalid-path` is in the set because such a doc has no file verify may read or write, so verify refuses with a message rather than throwing mid-batch. A vanished anchor means the *code* moved, which is drift's question; `verifyDoc` already reports it as a `brokenAnchors` warning while still recording the baseline. Blocking there would overrule that decision and make re-verifying a doc after a rename impossible.
 </Callout>
 
 ## Surfaces

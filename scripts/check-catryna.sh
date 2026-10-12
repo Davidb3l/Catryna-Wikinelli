@@ -1,7 +1,7 @@
 #!/bin/sh
 # check-catryna.sh — SessionStart status check for the Catryna plugin.
 #
-# Catryna ships as a Bun-run MCP server (scripts/run-server.sh), not a compiled
+# Catryna ships as a Bun-run MCP server (scripts/run-server.ts), not a compiled
 # binary, so unlike its suite siblings there is nothing to download: the only
 # hard requirement is Bun itself. This check reports that requirement, and — in
 # repos that already use the suite — nudges toward the missing companion tools.
