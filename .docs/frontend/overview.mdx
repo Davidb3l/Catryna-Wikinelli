@@ -672,7 +672,7 @@ Nothing is proxied. The request handling lives in **`frontend/docs-api.ts`** (`c
 
 The endpoints read the `.docs/` folder off disk:
 
-- `GET /api/docs` - returns `_index.json` verbatim, provided it resolves inside the docs root (`loadIndexJson()`; a linked index elsewhere is ignored and never read)
+- `GET /api/docs` - returns `_index.json` verbatim, provided it resolves inside the docs root (`loadIndexJson()`). `/api/drift` checks that same loaded index rather than reading it again, and a doc that resolves elsewhere answers 404, like a missing one
 
 - `GET /api/docs/search?q=` - substring match over title, tags, and path; capped at 20 results
 
@@ -693,7 +693,7 @@ The endpoints read the `.docs/` folder off disk:
 Any other `/api/projects/*` URL returns 404. Falling through without `next()` or `res.end()` previously left the socket open forever — a `GET` to `/api/projects/select` hung until timeout, and a handful exhausted the browser's per-origin connection pool.
 
 <Callout type="warning">
-**Security, both found in adversarial review and verified exploitable against a running dev server.** These matter more than "it's only a dev server" suggests: the viewer listened on `0.0.0.0` at the time, and `CATRYNA_VIEWER_HOST` can still expose it, at which point every device on the network reaches it unauthenticated. It binds `127.0.0.1` by default (`viewerHost()`), and `GET /api/docs/:path` and every `_index.json` read also check containment on **resolved real paths** (`realFileInside()`), so a committed `.docs/` symlink or junction can't serve a file from elsewhere.
+**Security, both found in adversarial review and verified exploitable against a running dev server.** These matter more than "it's only a dev server" suggests: the viewer listened on `0.0.0.0` at the time, and `CATRYNA_VIEWER_HOST` can still expose it, at which point every device on the network reaches it unauthenticated. It binds `127.0.0.1` by default (`viewerHost()`), and doc and index reads check containment on **resolved real paths** (`realFileInside()`).
 
 - `GET /api/docs/:path` joined the request path onto `docsRoot` with no containment check, serving **any `.mdx` file on the machine** with its body in `raw`. It now strips query/fragment, decodes percent-escapes *before* checking (so `%2e%2e` cannot smuggle a traversal), resolves, and requires the result to stay inside `docsRoot`.
 - `POST /api/projects/select` accepted **any path on disk**, and because the handler `JSON.parse`s regardless of `Content-Type` it is a CORS *simple* request with no preflight — any page the developer visited could silently repoint the viewer with a `no-cors` fetch. `docsRoot` also becomes the cwd for git subprocesses. Selection is now restricted to the set `findProjects()` discovered.

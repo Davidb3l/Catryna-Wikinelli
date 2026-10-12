@@ -446,7 +446,7 @@ describe('links under the docs root cannot serve files from elsewhere', () => {
     const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
 
     const res = await get('/api/docs/linked/outside-secret');
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404); // like a missing doc: no existence oracle
     expect(res.body).not.toContain(CANARY);
   });
 
@@ -456,13 +456,13 @@ describe('links under the docs root cannot serve files from elsewhere', () => {
     const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
 
     const res = await get('/api/docs/leak');
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404); // like a missing doc: no existence oracle
     expect(res.body).not.toContain(CANARY);
   });
 
   test.skipIf(!canSymlinkFiles)('a symlinked _index.json is never read or served', async () => {
-    // GET /api/docs returns the parsed index whole, so a linked index served
-    // any JSON file the process could read.
+    // GET /api/docs returns the parsed index whole, so it must only ever be
+    // read from inside the docs root.
     const fx = await makeFixture();
     const outsideJson = join(fx.alpha, 'outside.json');
     await writeFile(outsideJson, JSON.stringify({ docs: [{ path: 'x', title: CANARY }] }));
@@ -482,9 +482,31 @@ describe('links under the docs root cannot serve files from elsewhere', () => {
     const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
 
     const res = await get('/api/docs/hl');
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404); // like a missing doc: no existence oracle
     expect(res.body).not.toContain(CANARY);
   });
+
+  test('a hard-linked _index.json is never read, including by the drift endpoint', async () => {
+    // Hard links need no privilege, so this runs on every host. /api/drift
+    // used to read the index a second way (inside computeDrift), unchecked.
+    const fx = await makeFixture();
+    await initRepo(fx.alpha);
+    const head = (await Bun.$`git -C ${fx.alpha} rev-parse HEAD`.text()).trim();
+    const outsideJson = join(fx.alpha, 'outside.json');
+    await writeFile(
+      outsideJson,
+      // Anchored to a real file: drift omits docs with no anchors.
+      JSON.stringify({ docs: [{ path: CANARY, title: CANARY, relatedFiles: ['outside-secret.mdx'], verifiedCommit: head }] }),
+    );
+    const index = join(fx.alpha, '.docs', '_index.json');
+    await rm(index);
+    linkSync(outsideJson, index);
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    for (const url of ['/api/docs', `/api/docs/search?q=${CANARY.slice(0, 6)}`, '/api/docs/guides/intro', '/api/drift']) {
+      expect((await get(url, { timeoutMs: 30_000 })).body).not.toContain(CANARY);
+    }
+  }, 60_000);
 
   test('an ordinary doc still serves (the guard rejects by location, not by kind)', async () => {
     const fx = await makeFixture();
@@ -504,7 +526,7 @@ describe('the dev server binds loopback unless told otherwise', () => {
 
   test('vite.config.ts binds through viewerHost(), not a hard-coded interface', () => {
     const config = readFileSync(join(import.meta.dir, 'vite.config.ts'), 'utf-8');
-    expect(config).toMatch(/host:\s*viewerHost\(\)/);
+    expect(config).toMatch(/host:\s*viewerHost\(\),/); // the call alone, no fallback
     expect(config).not.toMatch(/host:\s*['"]0\.0\.0\.0['"]/);
   });
 });

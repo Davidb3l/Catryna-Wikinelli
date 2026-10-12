@@ -818,7 +818,18 @@ async function readDocs(cwd: string): Promise<DocMetadata[]> {
  */
 export async function computeDrift(
   cwd: string,
-  opts: { emit?: boolean; hayven?: HayvenClient; since?: string; only?: string[] } = {},
+  opts: {
+    emit?: boolean;
+    hayven?: HayvenClient;
+    since?: string;
+    only?: string[];
+    /**
+     * The docs to check, already loaded by the caller. The viewer passes the
+     * index it read through its own containment check, so drift never reads
+     * `.docs/_index.json` a second, unchecked way. Default: read it from `cwd`.
+     */
+    docs?: DocMetadata[];
+  } = {},
 ): Promise<DriftReport> {
   const emit = opts.emit ?? true;
   const hv = opts.hayven ?? realHayven;
@@ -866,7 +877,7 @@ export async function computeDrift(
   const baselineFor = (doc: DocMetadata): string =>
     baselineOverride ?? (typeof doc.verifiedCommit === "string" ? doc.verifiedCommit : "");
 
-  const allDocs = await readDocs(cwd);
+  const allDocs = opts.docs ?? (await readDocs(cwd));
   const only = opts.only ? new Set(opts.only) : null;
   const docs = only ? allDocs.filter((d) => only.has(d.path)) : allDocs;
 

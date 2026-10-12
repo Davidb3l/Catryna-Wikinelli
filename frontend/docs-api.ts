@@ -92,9 +92,9 @@ export function findProjects(scanRoots: string[]): Project[] {
  * The interface the viewer's dev server binds: IPv4 loopback by default.
  *
  * The API below is unauthenticated: it serves project paths, docs, history and
- * coverage/drift data. Bound to `0.0.0.0` it did that for anyone on the same
- * network. Exposing it is now an explicit opt-in: set `CATRYNA_VIEWER_HOST`
- * (e.g. `0.0.0.0`) when you mean to.
+ * coverage/drift data, so exposing it to the network is an explicit opt-in:
+ * set `CATRYNA_VIEWER_HOST` (e.g. `0.0.0.0`) when you mean to. Setting it to
+ * `localhost` brings back the IPv6-only bind described below.
  *
  * `127.0.0.1`, not `localhost`: Node resolves `localhost` per the OS, and on
  * Windows Vite then bound `[::1]` only — so a client dialling 127.0.0.1 (as
@@ -112,11 +112,10 @@ export function viewerHost(env: Record<string, string | undefined> = process.env
  * RESOLVED real paths; null when it is missing, dangling, or anywhere else.
  *
  * A textual check (`path.resolve` + `startsWith`) can't see a symlink or
- * junction: a `.docs/x.mdx` link committed to the repo passed it, and
- * `readFileSync` then followed the link and served any file the process can
- * read. Mirrors `containedResolve` in src/tokens.ts and `resolveDocFile` in
- * src/storage.ts. A file with a second hard link is refused too: realpath
- * can't tell which of its names is the real one.
+ * junction, so this resolves both sides before comparing. Mirrors
+ * `containedResolve` in src/tokens.ts and `resolveDocFile` in src/storage.ts.
+ * A file with a second hard link is refused too: realpath can't tell which of
+ * its names is the real one.
  */
 export function realFileInside(root: string, file: string): string | null {
   let rootReal: string;
@@ -147,7 +146,7 @@ export function loadIndexJson(docsRoot: string): any | null {
   if (!fs.existsSync(indexPath)) return null;
   const real = realFileInside(docsRoot, indexPath);
   if (real === null) {
-    console.warn(`[catryna viewer] ignoring ${indexPath}: it resolves outside the docs root`);
+    console.warn(`[catryna viewer] ignoring ${indexPath}: it is linked (symlink, junction or hard link) to a file outside the docs root`);
     return null;
   }
   return JSON.parse(fs.readFileSync(real, 'utf-8'));
@@ -491,13 +490,10 @@ export function createDocsApi(opts: {
       }
 
       // The text check above can't see links: require the RESOLVED file to be
-      // inside the docs root too, and read that, never the link.
-      const realFile = fs.existsSync(filePath) ? realFileInside(rootResolved, filePath) : null;
-      if (fs.existsSync(filePath) && realFile === null) {
-        res.statusCode = 403;
-        res.end(JSON.stringify({ error: 'Path outside docs root', path: docPath }));
-        return;
-      }
+      // inside the docs root too, and read that, never the link. A link that
+      // leads elsewhere is answered exactly like a missing doc (404), so the
+      // response can't tell whether its target exists.
+      const realFile = realFileInside(rootResolved, filePath);
 
       if (realFile !== null) {
         const content = fs.readFileSync(realFile, 'utf-8');
@@ -574,7 +570,9 @@ export function createDocsApi(opts: {
         // /api/drift — per-doc status keyed by path, for the verified badge.
         const { computeDrift } = await import('../src/drift');
         // emit:false — rendering a badge must not write to the suite spine.
-        const report = await computeDrift(projectRoot, { emit: false });
+        // The index the viewer already read through loadIndexJson's real-path
+        // check, not a second unchecked read inside computeDrift.
+        const report = await computeDrift(projectRoot, { emit: false, docs });
         const byPath: Record<string, unknown> = {};
         for (const r of [...report.broken, ...report.drifted, ...report.unverified, ...report.clean]) {
           byPath[r.path] = {
