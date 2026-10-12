@@ -368,6 +368,20 @@ describe("catryna verify (end-to-end through the CLI)", () => {
     expect(mismatch[0].severity).toBe("warning");
   });
 
+  test("a doc with NO parseable frontmatter gets the frontmatter error, not a baseline warning", async () => {
+    // verify refuses a malformed doc, so a hint to "run verify" would point at
+    // a command that fails; the frontmatter error is the actionable one.
+    const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
+    await seedDocs(dir, [{ path: "modules/a", relatedFiles: ["src/a.ts"] }]);
+    expect((await runCli(dir, ["verify", "modules/a"])).code).toBe(0);
+    const f = join(dir, ".docs", "modules", "a.mdx");
+    await writeFile(f, "﻿" + (await readFile(f, "utf-8"))); // a BOM hides the block
+
+    const rules = (await lintDocs(dir)).issues.filter((i) => i.path === "modules/a").map((i) => i.rule);
+    expect(rules).toContain("frontmatter");
+    expect(rules).not.toContain("index-mismatch");
+  });
+
   test("verify then drift: a freshly verified doc is clean until its code changes", async () => {
     const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
     await seedDocs(dir, [{ path: "modules/a", relatedFiles: ["src/a.ts"] }]);
