@@ -64,7 +64,7 @@ The plugin command is `bun` itself, never a shell. Claude Code spawns an MCP ser
 </Callout>
 
 <Callout type="warning">
-The launcher deliberately never `cd`s before exec: storage resolves `.docs/` from `process.cwd()`, so the server's working directory MUST stay the user's project. An MCP config that pins `cwd` to the Catryna install writes docs into the wrong repo.
+The launcher deliberately never changes directory before loading the server: storage resolves `.docs/` from `process.cwd()`, so the server's working directory MUST stay the user's project. An MCP config that pins `cwd` to the Catryna install writes docs into the wrong repo.
 </Callout>
 
 ## Transport
