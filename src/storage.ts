@@ -721,19 +721,27 @@ export function effectiveAnchors(
  * A key already present is replaced in place; a missing key is appended to the
  * frontmatter block. If the file has no frontmatter block at all, the content is
  * returned unchanged (the index stays the queryable source of truth).
+ *
+ * Line endings follow the FILE: a Windows checkout (core.autocrlf) is CRLF, and
+ * a pattern anchored on "\n" alone never matched it, so verify and consume
+ * silently skipped the .mdx write while still updating `_index.json` — the
+ * record and the cache diverged with no error. The frontmatter is rewritten in
+ * the ending its opening `---` line uses; the body is never touched.
  */
 export function setFrontmatterScalars(content: string, fields: Record<string, string>): string {
-  const fmMatch = content.match(/^(---\n)([\s\S]*?)(\n---\n)/);
+  const eol = content.startsWith("---\r\n") ? "\r\n" : "\n";
+  const fmMatch = content.match(eol === "\r\n" ? /^(---\r\n)([\s\S]*?)(\r\n---\r\n)/ : /^(---\n)([\s\S]*?)(\n---\n)/);
   if (!fmMatch) return content;
   const [, open, body, close] = fmMatch;
-  const lines = body.split("\n");
+  // Split on either ending, so a stray LF line in a CRLF block still matches its key.
+  const lines = body.split(/\r?\n/);
   for (const [key, value] of Object.entries(fields)) {
     const encoded = `${key}: ${serializeFmScalar(value)}`;
     const idx = lines.findIndex((l) => l === `${key}:` || l.startsWith(`${key}: `));
     if (idx === -1) lines.push(encoded);
     else lines[idx] = encoded;
   }
-  return open + lines.join("\n") + close + content.slice(fmMatch[0].length);
+  return open + lines.join(eol) + close + content.slice(fmMatch[0].length);
 }
 
 /**

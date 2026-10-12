@@ -566,6 +566,21 @@ export async function lintDocs(cwd: string): Promise<LintReport> {
           hint: "Search and the sidebar read the index; the page reads the file. They will disagree.",
         });
       }
+      // The drift baseline. The index is authoritative here (drift reads it),
+      // so a stale frontmatter copy misleads a human reading the file rather
+      // than drift itself: a warning. verify writes both; they diverged when
+      // its .mdx write was silently skipped on CRLF checkouts.
+      const fmCommit = parsed.metadata?.verifiedCommit;
+      if (typeof fmCommit === "string" && fmCommit !== (doc.verifiedCommit ?? "")) {
+        const short = (c: string) => (c ? c.slice(0, 7) : "(none)");
+        issues.push({
+          path: doc.path,
+          rule: "index-mismatch",
+          severity: "warning",
+          message: `frontmatter verifiedCommit ${short(fmCommit)} does not match index verifiedCommit ${short(doc.verifiedCommit ?? "")}`,
+          hint: `Drift reads the index. Once the doc is accurate, \`catryna verify ${doc.path}\` writes the baseline to both.`,
+        });
+      }
     }
 
     issues.push(...(await lintAnchors(cwd, doc)));

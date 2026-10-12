@@ -20,6 +20,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { computeDrift, isGitRepo } from "./drift";
+import { lintDocs } from "./lint";
 
 const CLI_PATH = fileURLToPath(new URL("./cli.ts", import.meta.url));
 
@@ -305,6 +306,47 @@ describe("catryna verify (end-to-end through the CLI)", () => {
     expect(verified[0].data.path).toBe("modules/a");
     expect(verified[0].data.trust).toBe("verified");
     expect(verified[0].data.verifiedAt).toBe(parsed.verifiedAt);
+  });
+
+  test("on a CRLF checkout, verify writes the .mdx baseline too: CRLF kept, body byte-identical", async () => {
+    // core.autocrlf=true checks .docs/*.mdx out as CRLF. The frontmatter rewrite
+    // only matched "\n", so verify updated _index.json and silently left the
+    // .mdx on its old baseline: the record and the cache diverged, no error.
+    const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
+    await seedDocs(dir, [{ path: "modules/a", relatedFiles: ["src/a.ts"] }]);
+    const lf = await readMdx(dir, "modules/a");
+    await writeFile(join(dir, ".docs", "modules", "a.mdx"), lf.replace(/\n/g, "\r\n"));
+    const before = await readMdx(dir, "modules/a");
+    const bodyBefore = before.slice(before.indexOf("\r\n---\r\n") + 7);
+    const head = await git(dir, ["rev-parse", "HEAD"]);
+
+    const { code, stderr } = await runCli(dir, ["verify", "modules/a"]);
+    expect(code, stderr).toBe(0);
+
+    const after = await readMdx(dir, "modules/a");
+    expect(after).toContain(`verifiedCommit: "${head}"\r\n`);
+    expect(after.replace(/\r\n/g, "")).not.toContain("\n"); // no LF-only line crept in
+    expect(after.slice(after.indexOf("\r\n---\r\n") + 7)).toBe(bodyBefore);
+    expect((await readIndex(dir)).docs[0].verifiedCommit).toBe(head);
+    // ...and lint agrees the record and the cache match.
+    const lint = await lintDocs(dir);
+    expect(lint.issues.filter((i) => i.rule === "index-mismatch")).toEqual([]);
+  });
+
+  test("lint warns when the frontmatter baseline disagrees with the index", async () => {
+    const dir = await initRepo({ "src/a.ts": "export const a = 1;\n" });
+    await seedDocs(dir, [{ path: "modules/a", relatedFiles: ["src/a.ts"] }]);
+    expect((await runCli(dir, ["verify", "modules/a"])).code).toBe(0);
+    // The index moves on; the .mdx doesn't (what the CRLF bug left behind).
+    const idx = await readIndex(dir);
+    idx.docs[0].verifiedCommit = "f".repeat(40);
+    await writeFile(join(dir, ".docs", "_index.json"), JSON.stringify(idx, null, 2));
+
+    const lint = await lintDocs(dir);
+    const mismatch = lint.issues.filter((i) => i.rule === "index-mismatch");
+    expect(mismatch).toHaveLength(1);
+    expect(mismatch[0]).toMatchObject({ severity: "warning", path: "modules/a" });
+    expect(mismatch[0].message).toContain("verifiedCommit");
   });
 
   test("verify then drift: a freshly verified doc is clean until its code changes", async () => {
