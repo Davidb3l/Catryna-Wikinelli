@@ -435,6 +435,29 @@ describe('GET /api/docs/:path containment', () => {
   });
 });
 
+describe('CRLF checkouts', () => {
+  test('a CRLF doc renders its body, not its frontmatter', async () => {
+    // A Windows checkout (core.autocrlf=true) stores `.docs/*.mdx` with CRLF.
+    // The frontmatter regex anchored on a bare LF, so a CRLF `---` line never
+    // matched and every `key: value` line rendered as the doc's opening text.
+    const fx = await makeFixture();
+    const crlf = '---\ntitle: "Windows Doc"\nverifiedCommit: "abc123"\n---\n\n# Windows Doc\n\nBody text.\n'
+      .replace(/\n/g, '\r\n');
+    await writeAt(fx.alpha, '.docs/guides/windows.mdx', crlf);
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    const res = await get('/api/docs/guides/windows');
+    expect(res.status).toBe(200);
+    const blocks: { type: string; content?: string }[] = JSON.parse(res.body).blocks;
+    const text = blocks.map((b) => b.content ?? '').join('\n');
+    expect(text).not.toContain('verifiedCommit');
+    expect(text).not.toContain('---');
+    expect(text).not.toContain('\r');
+    expect(blocks[0]).toMatchObject({ type: 'heading-1', content: 'Windows Doc' });
+    expect(text).toContain('Body text.');
+  });
+});
+
 // --------------------------------------------------------------------------
 // Priority 2 — POST /api/projects/select allowlist
 // --------------------------------------------------------------------------

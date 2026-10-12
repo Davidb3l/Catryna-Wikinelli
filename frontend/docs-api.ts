@@ -555,9 +555,15 @@ export function createDocsApi(opts: {
 }
 
 // Parse MDX file into blocks
-export function parseMdx(content: string): { metadata: Record<string, any>; blocks: any[] } {
+export function parseMdx(rawContent: string): { metadata: Record<string, any>; blocks: any[] } {
   const blocks: any[] = [];
   let metadata: Record<string, any> = {};
+
+  // A Windows checkout (core.autocrlf) has CRLF line endings, and every regex
+  // below anchors on "\n": `---\r\n` never matched, so the whole frontmatter
+  // rendered as the doc's opening paragraphs. Normalize once, as
+  // src/storage.ts's parseMdx does.
+  const content = rawContent.replace(/\r\n/g, '\n');
 
   // Extract frontmatter
   const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
