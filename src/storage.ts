@@ -388,9 +388,9 @@ export class InvalidDocPathError extends Error {
   }
 }
 
-// Windows device names: `CON`, `nul.txt`, `COM1.mdx` … open the device, not a
-// file, whatever the extension. Superscript digits count too.
-const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|conout\$)(\.|$)/i;
+// Windows device names: `CON`, `nul.txt`, `COM1.mdx`, `CON .txt` … open the
+// device, not a file, whatever the extension. Superscript digits count too.
+const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|conout\$)\s*(\.|$)/i;
 
 /**
  * Reject a doc path by its TEXT: the forms that can name something outside
@@ -434,6 +434,15 @@ async function realpathOrNull(p: string): Promise<string | null> {
   }
 }
 
+/** How many hard links name the file at `p` (1 for an ordinary file; 0 if it vanished). */
+async function hardLinkCount(p: string): Promise<number> {
+  try {
+    return (await stat(p)).nlink;
+  } catch {
+    return 0;
+  }
+}
+
 /** What sits at `p` without following it: a link (junctions count), something else, or nothing. */
 async function entryKind(p: string): Promise<"link" | "other" | "none"> {
   try {
@@ -451,16 +460,26 @@ async function entryKind(p: string): Promise<"link" | "other" | "none"> {
  * containment is enforced: every read, write and unlink of a doc goes through
  * here (storage via `docPathToFilePath`; lint, consume and repair, which take
  * an explicit cwd, call it directly). Doc paths reach it from MCP tool
- * arguments AND from `_index.json`, which is a git-shared cache. Throws `InvalidDocPathError` unless the result is inside `.docs/` both
+ * arguments AND from `_index.json`, which is a git-shared cache.
+ *
+ * Throws `InvalidDocPathError` unless the result is inside `.docs/` both
  * textually (`validateDocPath`) and on RESOLVED real paths — a symlink or
  * junction under `.docs/` that points elsewhere is refused, as is a dangling
- * link, which realpath can't see through but `writeFile` would follow.
+ * link, which realpath can't see through but `writeFile` would follow. An
+ * existing doc file with more than one hard link is refused too: realpath
+ * can't tell which name is the "real" one, so a write could land elsewhere.
+ *
+ * The check and the caller's file operation are two steps, so a process that
+ * can already write inside `.docs/` could swap a folder for a link between
+ * them. Callers narrow that window by resolving again immediately before each
+ * write or unlink; closing it fully would need `openat`-style APIs Node lacks.
  */
 export async function resolveDocFile(docsRoot: string, docPath: string): Promise<string> {
   validateDocPath(docPath);
   const filePath = join(docsRoot, `${docPath}.mdx`);
   const rel = relative(docsRoot, filePath);
-  if (rel.startsWith("..") || isAbsolute(rel)) {
+  // `..` as a whole leading segment, not a prefix: `..notes` is a legal name.
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
     throw new InvalidDocPathError(docPath, "it resolves outside .docs/");
   }
 
@@ -484,6 +503,9 @@ export async function resolveDocFile(docsRoot: string, docPath: string): Promise
       if (real !== null) {
         if (real !== rootReal && !real.startsWith(rootReal + sep)) {
           throw new InvalidDocPathError(docPath, "it resolves outside .docs/ through a link");
+        }
+        if (probe === filePath && (await hardLinkCount(real)) > 1) {
+          throw new InvalidDocPathError(docPath, "the doc file has more than one hard link");
         }
         return filePath;
       }
@@ -1187,9 +1209,10 @@ export async function createDoc(
   const filePath = await docPathToFilePath(path);
   await mkdir(dirname(filePath), { recursive: true });
 
-  // Write MDX file
+  // Write MDX file. Resolve again right before writing: it narrows the
+  // check-to-write window (see resolveDocFile) to the minimum.
   const mdxContent = blocksToMdx(metadata, blocks);
-  await writeFile(filePath, mdxContent);
+  await writeFile(await docPathToFilePath(path), mdxContent);
 
   // Update index under the serialization lock so a concurrent write can't
   // clobber this entry (the .mdx write above is per-path, so it stays outside).
@@ -1338,8 +1361,10 @@ export async function updateDoc(
       }
     }
 
-    // Write updated file, then the index entry, then persist the index.
-    await writeFile(filePath, blocksToMdx(m, blocks));
+    // Write updated file, then the index entry, then persist the index. The
+    // path is resolved again here, inside the lock and right before the write,
+    // to narrow the check-to-write window (see resolveDocFile).
+    await writeFile(await docPathToFilePath(path), blocksToMdx(m, blocks));
     index.docs[metaIndex] = m;
     await saveIndex(index);
 
@@ -1456,9 +1481,11 @@ export async function recordVerification(
     // the file: the index is the source of truth for these fields, so a
     // missing/unreadable .mdx still records the baseline in the index.
     if (raw !== null) {
+      // Resolved again, outside the best-effort try: see resolveDocFile.
+      const target = await docPathToFilePath(path);
       try {
         await writeFile(
-          filePath,
+          target,
           setFrontmatterScalars(raw, {
             verifiedCommit: commit,
             verifiedAt,
@@ -1504,9 +1531,11 @@ export async function deleteDoc(path: string): Promise<boolean> {
       return false;
     }
 
-    // Delete file
+    // Delete file. Resolved again, inside the lock and outside the try, right
+    // before the unlink (see resolveDocFile).
+    const target = await docPathToFilePath(path);
     try {
-      await unlink(filePath);
+      await unlink(target);
     } catch {
       // File might not exist
     }

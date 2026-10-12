@@ -254,7 +254,7 @@ async function applyMarks(cwd: string, marks: SuspectMark[], since: string): Pro
       const mdxPath = await resolveDocFile(docsDir, doc.path);
       const raw = await readFile(mdxPath, "utf-8");
       await writeFile(
-        mdxPath,
+        await resolveDocFile(docsDir, doc.path), // again, right before the write
         setFrontmatterScalars(raw, { driftSuspectSince: since, driftSuspectReason: reason }),
       );
     } catch {

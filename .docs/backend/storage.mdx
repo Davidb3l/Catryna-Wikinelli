@@ -34,9 +34,10 @@ A doc path such as `modules/auth` becomes a file only through `resolveDocFile(do
 - the path is relative and `/`-separated, with no empty, `.` or `..` segment;
 - it has no backslash, `:`, control character, or any of `<>"|?*`;
 - no segment ends in a dot or a space, or is a Windows device name (`CON`, `nul.txt`, `COM1`, …);
-- the file sits inside `.docs/` on **resolved real paths**, so a symlink or junction under `.docs/` that points elsewhere is refused, and so is a dangling one (realpath can't follow it, but `writeFile` would).
+- the file sits inside `.docs/` on **resolved real paths**, so a symlink or junction under `.docs/` that points elsewhere is refused, and so is a dangling one (realpath can't follow it, but `writeFile` would);
+- an existing doc file has a single hard link (realpath can't tell which of two hard-linked names is the "real" one).
 
-The text rules apply on every OS, not just the one that interprets a form, because `.docs/` is shared through git: a name only Linux can write would still break a Windows checkout. `getDoc`, `updateDoc`, `deleteDoc` and `recordVerification` resolve the path up front, outside their best-effort `try` blocks, so an invalid path fails loudly instead of degrading to "not found".
+`..` is refused only as a whole segment, so a name like `..notes` is fine. The text rules apply on every OS, not just the one that interprets a form, because `.docs/` is shared through git: a name only Linux can write would still break a Windows checkout. `getDoc`, `updateDoc`, `deleteDoc` and `recordVerification` resolve the path up front, outside their best-effort `try` blocks, so an invalid path fails loudly instead of degrading to "not found". Every write and unlink also resolves the path again immediately before acting (inside the index lock where there is one), which keeps the gap between check and use as small as Node allows.
 
 ## MDX File Format
 

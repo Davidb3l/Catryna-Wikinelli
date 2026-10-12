@@ -15,7 +15,7 @@
  *     <base>/outside/      a sibling holding canary files that must survive
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, linkSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,6 +23,8 @@ import { fileURLToPath } from "node:url";
 
 import { InvalidDocPathError, resolveDocFile, validateDocPath } from "./storage";
 import { lintDocFile, lintDocs } from "./lint";
+import { runConsume } from "./consume";
+import { buildRepairContext } from "./tools/drift";
 import { canSymlinkFiles, symlinkDir, symlinkFile } from "./test-symlink";
 
 const STORAGE_PATH = fileURLToPath(new URL("./storage.ts", import.meta.url));
@@ -73,6 +75,7 @@ const INVALID: Record<string, string> = {
   "pipe": "modules/a|b",
   "angle bracket": "modules/<a>",
   "double quote": 'modules/"a"',
+  "reserved, space before the extension": "CON .txt",
 };
 
 // The counterweight: plain paths that must keep working, including names that
@@ -90,6 +93,9 @@ const LEGIT = [
   "auxiliary/x",
   ".hidden/doc",
   "über/ñandú",
+  "..notes",
+  "guides/..notes",
+  "...x",
 ];
 
 describe("validateDocPath (text)", () => {
@@ -126,7 +132,7 @@ async function layout(): Promise<Layout> {
 }
 
 /** Seed `_index.json` with one entry per path, bypassing every validator. */
-async function seedIndex(l: Layout, paths: string[]): Promise<void> {
+async function seedIndex(l: Layout, paths: string[], extra: Record<string, unknown> = {}): Promise<void> {
   const docs = paths.map((p, i) => ({
     id: `seeded-${i}`,
     path: p,
@@ -143,6 +149,7 @@ async function seedIndex(l: Layout, paths: string[]): Promise<void> {
     createdAt: 1,
     updatedAt: 1,
     createdBy: "test",
+    ...extra,
   }));
   await writeFile(join(l.docs, "_index.json"), JSON.stringify({ version: 1, docs, lastUpdated: 1 }));
 }
@@ -341,6 +348,69 @@ describe("the explicit-cwd callers (lint, consume, repair) share the guard", () 
     expect(report.issues.filter((i) => i.path === "../canary").map((i) => i.rule)).toEqual(["invalid-path"]);
     expect(await lintDocFile(l.proj, "../../outside/canary")).toMatchObject([{ rule: "invalid-path" }]);
   });
+
+  test("consume marks a bad index entry in the index only, never writing through its path", async () => {
+    // consume rewrites the frontmatter of every doc a code.changed event
+    // touches; each path below would reach a canary if consume joined it raw.
+    const l = await layout();
+    await symlinkDir(l.outside, join(l.docs, "out"));
+    await seedIndex(l, ["../canary", "out/canary"], { relatedFiles: ["src/a.ts"] });
+    await mkdir(join(l.proj, ".suite", "events"), { recursive: true });
+    const event = {
+      v: 1,
+      id: crypto.randomUUID(),
+      ts: "2026-07-11T18:42:11.000Z",
+      source: "hayven",
+      type: "code.changed",
+      refs: ["hayven:node/src/a.ts"],
+      data: { files: ["src/a.ts"], symbols: [] },
+    };
+    await writeFile(join(l.proj, ".suite", "events", "2026-07-11.jsonl"), JSON.stringify(event) + "\n");
+    // Canaries WITH a frontmatter block: a write-through would visibly add the
+    // driftSuspect fields (a frontmatter-less file round-trips unchanged).
+    const fmCanary = `---\ntitle: "canary"\n---\n\n${CANARY}\n`;
+    await writeFile(join(l.proj, "canary.mdx"), fmCanary);
+    await writeFile(join(l.outside, "canary.mdx"), fmCanary);
+
+    const report = await runConsume({ cwd: l.proj, now: () => "2026-07-11T19:00:00.000Z" });
+    expect(report.marked.map((m) => m.path).sort()).toEqual(["../canary", "out/canary"]);
+    expect(await readFile(join(l.proj, "canary.mdx"), "utf8")).toBe(fmCanary);
+    expect(await readFile(join(l.outside, "canary.mdx"), "utf8")).toBe(fmCanary);
+  });
+
+  test("repair never reads a bad index entry's path into its bundle", async () => {
+    // A broken doc's bundle carries its current .mdx content; for these paths
+    // that content would be a canary from beside .docs/.
+    const l = await layout();
+    await symlinkDir(l.outside, join(l.docs, "out"));
+    const git = (...args: string[]) => {
+      const r = Bun.spawnSync(["git", ...args], { cwd: l.proj });
+      if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
+      return r.stdout.toString().trim();
+    };
+    git("init", "-q");
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
+    const head = git("rev-parse", "HEAD");
+    // Anchored to a file that doesn't exist, so drift reports both docs broken.
+    await seedIndex(l, ["../canary", "out/canary"], { relatedFiles: ["src/gone.ts"], verifiedCommit: head });
+
+    const r = await buildRepairContext(l.proj, "all");
+    expect(r.repairs.map((x) => x.path).sort()).toEqual(["../canary", "out/canary"]);
+    for (const x of r.repairs) expect(x.currentContent).toBe("");
+  });
+});
+
+describe("hard links", () => {
+  test("a doc file with a second hard link outside .docs/ is refused", async () => {
+    // realpath can't see through a hard link: both names are equally "real".
+    // Hard links need no privilege on NTFS, ext4 or APFS.
+    const l = await layout();
+    linkSync(join(l.outside, "canary.mdx"), join(l.docs, "hl.mdx"));
+    await seedIndex(l, ["hl"]);
+    const r = await runOps(l, ["hl"]);
+    expect(r.hl).toMatchObject({ get: REFUSED, update: REFUSED, delete: REFUSED, verify: REFUSED, create: REFUSED });
+    expect(await readFile(join(l.outside, "canary.mdx"), "utf8")).toBe(CANARY);
+  }, 60_000);
 });
 
 describe("over MCP", () => {
