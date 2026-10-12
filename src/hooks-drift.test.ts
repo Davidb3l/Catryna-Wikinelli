@@ -12,11 +12,18 @@
  * The hook shells out to the real `catryna drift --json` (bun) with
  * CLAUDE_PLUGIN_ROOT pointed at the repo root, cwd = a temp git fixture.
  */
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+// Each test runs the hook through `sh`, which spawns `bun` three times
+// (consume, drift, lint) plus git. That's ~0.5s locally, but a loaded
+// windows-latest runner pushed single tests past Bun's 5s default, and the
+// killed hook (exit 143) failed CI on unrelated PRs. The other subprocess-heavy
+// suites here already set explicit budgets; this one now does too.
+setDefaultTimeout(30_000);
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const HOOK = join(ROOT, "hooks", "drift-check.sh");

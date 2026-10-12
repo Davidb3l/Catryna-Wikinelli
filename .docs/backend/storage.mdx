@@ -7,8 +7,8 @@ relatedFiles: ["src/storage.ts"]
 createdAt: 1767321315890
 updatedAt: 1767321660905
 createdBy: "claude-code"
-verifiedCommit: "02d948a60990b7ea5f4c99db234ea52c52f37ba4"
-verifiedAt: "2026-10-12T02:04:30.074Z"
+verifiedCommit: "a1edb51159f8dc500d48fd7dcbab79b6c4951581"
+verifiedAt: "2026-10-12T02:27:51.032Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -147,7 +147,9 @@ Three properties keep the lock from ever wedging or corrupting the store:
 - **Ownership-checked release** *(defensive, untested)*. The lock file holds a token unique to each acquisition, and release unlinks only if that token is still there. Without it, a holder whose lock was broken as stale would delete its *successor's* live lock on the way out — and that cascades into no mutual exclusion at all until the queue drains, far worse than the single lost update the stale-break was trading for. Reaching the mismatch branch requires our own lock to be broken while we still hold it, against a millisecond-long critical section and a 15s stale threshold; removing the check leaves the whole suite green. Same standing as the atomic write below: kept for cost-versus-consequence, not claimed as verified.
 - **Bounded wait.** After 30s of contention a waiter gives up and proceeds **unlocked**, rather than looping. Never `continue` past the sleep and the deadline: an earlier version swallowed a failed `unlink` with a bare `continue`, and a lock that could not be removed (a directory at the path, an immutable flag, a Windows `EPERM`) then busy-looped forever at 100% CPU — hanging the CLI *and* the MCP server, since `withIndexLock` wraps every doc mutation.
 
-If the lock file cannot be created at all (read-only `.docs/`), the mutation proceeds unlocked. The lock is an optimization, never a new way for a write to fail or hang.
+**On Windows, contention isn't always `EEXIST`.** A lock file that another process is in the middle of deleting (or has open) makes the create fail with `EPERM`, `EACCES` or `EBUSY`. While a lock file is present, those count as "held" and are retried like `EEXIST`. An earlier version treated every non-`EEXIST` error as "can't lock here" and wrote unlocked, so parallel `catryna verify` runs on Windows lost each other's baselines. With **no** lock file present, nobody holds the lock, so a lasting `EPERM` means the directory refuses the create (a Windows ACL deny, which `access(W_OK)` can't see there). That gets a 1s grace for transients, then falls back to unlocked. Releasing the lock also retries its unlink a few times on those codes, so a briefly-held file doesn't stall every waiter until the stale-break. `src/index-lock.test.ts` injects each code through `__setIndexLockFsForTesting`, so all of this is pinned without depending on Windows timing.
+
+If the lock file cannot be created at all (a read-only `.docs/`, which raises the same `EACCES`/`EPERM` on POSIX, or `EROFS`, `ENOSPC`, …), the mutation proceeds unlocked. The lock is an optimization, never a new way for a write to fail or hang.
 </Callout>
 
 <Callout type="info">
