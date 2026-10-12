@@ -153,7 +153,10 @@ Catryna ships **two separate binaries** — do not conflate them:
 | `catryna-mcp` | `src/index.ts` | The MCP stdio server (what Claude Code launches) |
 | `catryna` | `src/cli.ts` | The human/CI CLI: `doctor`, `drift`, `verify`, `repair`, `consume` |
 
-The plugin's `scripts/run-server.sh` runs the **MCP** entry. Both resolve
+The plugin runs the **MCP** entry through `scripts/run-server.ts`, launched with
+`bun` directly, never through a shell: on Windows a bare `bash` can resolve to
+the WSL launcher and the server never starts. `scripts/run-server.sh` is a
+thin shim over it for manual configs. Both entries resolve
 `.docs/` from the current working directory, so the server's cwd must stay the
 user's project.
 

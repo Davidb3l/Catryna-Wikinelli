@@ -102,7 +102,7 @@ export function buildEvent(
  * Append one event to the spine. Best-effort: any failure is logged to stderr
  * and swallowed, so a failed emit never breaks the doc write that triggered it.
  * `cwd` is injectable for testing; production uses the process's cwd (which the
- * MCP server keeps pinned to the user's project root — see run-server.sh).
+ * MCP server keeps pinned to the user's project root — see scripts/run-server.ts).
  */
 export async function emitEvent(
   type: CatrynaEventType,

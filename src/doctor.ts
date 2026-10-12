@@ -218,8 +218,8 @@ export async function collectReport(env: DoctorEnv): Promise<DoctorReport> {
     gating: true,
   });
 
-  // The MCP entry must resolve inside the install, or `run-server.sh` (which
-  // execs src/index.ts) is broken and the MCP server can't start.
+  // The MCP entry must resolve inside the install, or `run-server.ts` (which
+  // imports src/index.ts) is broken and the MCP server can't start.
   const mcpOk = existsSync(env.mcpEntryPath);
   checks.push({
     name: "mcp_entry",
