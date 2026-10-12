@@ -57,7 +57,7 @@ The server registers six tool modules — 15 tools in total:
 
 ## Launching
 
-The plugin starts the server with `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/run-server.ts` (`.claude-plugin/plugin.json`). The launcher resolves the install root, self-heals a missing `node_modules` with `bun install` (its output goes to stderr, because stdout is the MCP channel), then imports `src/index.ts`.
+The plugin starts the server with `bun run ${CLAUDE_PLUGIN_ROOT}/scripts/run-server.ts` (`.claude-plugin/plugin.json`). The launcher resolves the install root, self-heals missing dependencies with `bun install` (its output goes to stderr, because stdout is the MCP channel). It checks for each `package.json` dependency, not just a `node_modules/` folder, so a first install interrupted partway (for example by the client's startup timeout) is repaired on the next launch, then imports `src/index.ts`.
 
 <Callout type="warning">
 The plugin command is `bun` itself, never a shell. Claude Code spawns an MCP server's command without a shell, and on Windows a bare `bash` resolves to the `bash.exe` in `System32`, the WSL launcher, so a `bash run-server.sh` command never started the server there. `scripts/run-server.sh` remains as a thin shim over the TypeScript launcher for manual POSIX configs.

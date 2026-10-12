@@ -13,18 +13,26 @@
  * storage resolves .docs/ from process.cwd(). So we install deps into the
  * plugin root if missing, but never chdir before loading the server.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const ROOT = join(import.meta.dir, "..");
 
-// Self-heal: first run after plugin install has no node_modules yet. stdout is
-// the MCP protocol channel, so the installer's output must go to stderr.
-if (!existsSync(join(ROOT, "node_modules"))) {
+// Self-heal: first run after plugin install has no dependencies yet. Check for
+// the packages themselves, not just node_modules/: an install interrupted on
+// first run (e.g. killed by the client's startup timeout) leaves a partial
+// node_modules/ that would otherwise never be repaired. stdout is the MCP
+// protocol channel, so the installer's output must go to stderr, and its stdin
+// must not consume the client's first messages.
+const DEPENDENCIES = Object.keys(
+  JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).dependencies ?? {},
+);
+if (DEPENDENCIES.some((d) => !existsSync(join(ROOT, "node_modules", d, "package.json")))) {
   console.error("[catryna] installing server dependencies (first run)...");
   const install = Bun.spawnSync([process.execPath, "install", "--silent"], {
     cwd: ROOT,
+    stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
   });
