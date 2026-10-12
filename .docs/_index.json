@@ -140,6 +140,7 @@
         "vite"
       ],
       "relatedFiles": [
+        "frontend/docs-api.ts",
         "frontend/App.tsx",
         "frontend/index.tsx",
         "frontend/vite.config.ts",
@@ -162,8 +163,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "b3e0c65239fcf7a5247a4344a65c83bc88e03247",
-      "verifiedAt": "2026-10-09T22:18:15.131Z",
+      "verifiedCommit": "5c1db2df417d9151740e04836806235bbb53d1fc",
+      "verifiedAt": "2026-10-12T01:02:45.696Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -425,5 +426,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1791765514216
+  "lastUpdated": 1791766965698
 }
