@@ -566,6 +566,32 @@ export async function lintDocs(cwd: string): Promise<LintReport> {
           hint: "Search and the sidebar read the index; the page reads the file. They will disagree.",
         });
       }
+      // The drift baseline. "The .mdx is the record" holds for what an author
+      // writes (anchors, prose); a baseline is written by `verify`, and drift
+      // reads it from the index — so here a stale frontmatter copy misleads a
+      // human reading the file rather than drift: a warning. verify writes both;
+      // they diverged when its .mdx write was silently skipped on CRLF checkouts.
+      // A MISSING key reads as "never verified", so an older doc whose key a
+      // skipped write could never add is caught too, while a doc unverified on
+      // both sides stays quiet. Only when parseMdx itself (what verify writes
+      // through) reads a block, using ITS rule: lint's own splitter also takes
+      // a closing `---` at EOF with no newline, which parseMdx and
+      // setFrontmatterScalars don't, and there "run verify" would succeed
+      // without changing the file. A doc with no block at all already has a
+      // `frontmatter` error, and verify refuses it.
+      const hasFrontmatter = /^---\n[\s\S]*?\n---\n/.test(raw.replace(/\r\n/g, "\n"));
+      const fmRaw = parsed.metadata?.verifiedCommit;
+      const fmCommit = typeof fmRaw === "string" ? fmRaw : "";
+      if (hasFrontmatter && fmCommit !== (doc.verifiedCommit ?? "")) {
+        const short = (c: string) => (c ? c.slice(0, 7) : "(none)");
+        issues.push({
+          path: doc.path,
+          rule: "index-mismatch",
+          severity: "warning",
+          message: `frontmatter verifiedCommit ${short(fmCommit)} does not match index verifiedCommit ${short(doc.verifiedCommit ?? "")}`,
+          hint: `Drift reads the index. Once the doc is accurate, \`catryna verify ${doc.path}\` writes the baseline to both.`,
+        });
+      }
     }
 
     issues.push(...(await lintAnchors(cwd, doc)));

@@ -1038,6 +1038,30 @@ describe('doc version history — review hardening', () => {
     expect(JSON.parse(byPrefix.body).hash).toBe(full);
 
     expect((await get(`/api/docs/version?path=guides/intro&hash=${full.slice(0, 6)}`, { timeoutMs: 30_000 })).status).toBe(400);
-    expect((await get(`/api/docs/version?path=guides/intro&hash=${full.slice(0, 10).toUpperCase()}`, { timeoutMs: 30_000 })).status).toBe(400);
+    expect((await get(`/api/docs/version?path=guides/intro&hash=${uppercasePrefix(full)}`, { timeoutMs: 30_000 })).status).toBe(400);
   }, 60_000);
+
+  test('the uppercase form always contains a letter, even for a digits-first hash', () => {
+    // `full.slice(0, 10).toUpperCase()` was the old form. When those 10 hex
+    // chars were all digits (~1% of fixture commits) it changed nothing, so it
+    // was a VALID lowercase prefix and the API correctly answered 200: a flake.
+    const digitsFirst = '0123456789' + 'abcdef0123456789abcdef0123456789';
+    const form = uppercasePrefix(digitsFirst);
+    expect(form).toMatch(/[A-F]/);
+    expect(form).not.toBe(form.toLowerCase()); // genuinely an uppercase form
+    expect(form.length).toBeGreaterThanOrEqual(7); // a length the API would otherwise accept
+    expect(digitsFirst.toUpperCase().startsWith(form)).toBe(true);
+  });
 });
+
+/**
+ * An uppercase PREFIX of `full` that is guaranteed to differ from lowercase:
+ * the shortest prefix (at least the 7 chars the API accepts) that reaches the
+ * hash's first letter. Throws on an all-digit hash, which has a ~7e-9 chance
+ * per commit and has no uppercase form at all.
+ */
+function uppercasePrefix(full: string): string {
+  const firstLetter = full.search(/[a-f]/);
+  if (firstLetter === -1) throw new Error(`all-digit hash has no uppercase form: ${full}`);
+  return full.slice(0, Math.max(7, firstLetter + 1)).toUpperCase();
+}

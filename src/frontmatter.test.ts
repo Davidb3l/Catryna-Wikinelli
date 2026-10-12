@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseMdx } from "./storage";
+import { parseMdx, setFrontmatterScalars } from "./storage";
 
 const STORAGE_PATH = fileURLToPath(new URL("./storage.ts", import.meta.url));
 
@@ -253,4 +253,30 @@ describe("updateDoc evidence/refs semantics", () => {
     expect(mdx).toContain(`evidence: ["sirius:receipt/2", "hayven:claim/abc"]`);
     expect(mdx).toContain(`refs: ["amt:decision/1"]`);
   });
+});
+
+describe("setFrontmatterScalars follows the file's line endings", () => {
+  // Every shape parseMdx can read (it normalizes CRLF first) must also be
+  // writable: a file the reader accepts but the writer skips is how verify and
+  // consume used to update _index.json and silently leave the .mdx behind.
+  const SHAPES: Record<string, { input: string; eol: string; body: string }> = {
+    "LF throughout": { input: '---\nid: x\nverifiedCommit: ""\n---\nbody\n', eol: "\n", body: "body\n" },
+    "CRLF throughout": { input: '---\r\nid: x\r\nverifiedCommit: ""\r\n---\r\nbody\r\n', eol: "\r\n", body: "body\r\n" },
+    "CRLF block, LF closing delimiter": { input: '---\r\nid: x\r\nverifiedCommit: ""\r\n---\nbody\n', eol: "\r\n", body: "body\n" },
+    "LF opening line, CRLF after it": { input: '---\nid: x\r\nverifiedCommit: ""\r\n---\r\nbody\r\n', eol: "\n", body: "body\r\n" },
+    "CRLF block, LF body": { input: '---\r\nid: x\r\nverifiedCommit: ""\r\n---\r\nbody\n\nmore\n', eol: "\r\n", body: "body\n\nmore\n" },
+  };
+
+  for (const [name, { input, eol, body }] of Object.entries(SHAPES)) {
+    test(name, () => {
+      expect(parseMdx(input).metadata.verifiedCommit).toBe(""); // the reader accepts it
+      const out = setFrontmatterScalars(input, { verifiedCommit: "abc", verifiedAt: "t" });
+      expect(out).not.toBe(input); // ...so the writer must not skip it
+      expect(parseMdx(out).metadata).toMatchObject({ verifiedCommit: "abc", verifiedAt: "t" });
+      expect(out).toContain(`verifiedCommit: "abc"${eol}`);
+      expect(out).toContain(`verifiedAt: "t"`); // appended key
+      expect(out.endsWith(body)).toBe(true); // body byte-for-byte
+      expect(out.slice(out.length - body.length)).toBe(body);
+    });
+  }
 });
