@@ -6,7 +6,8 @@
  * MCP tools are only needed for CREATE/UPDATE/DELETE operations.
  */
 
-import { readFile, writeFile, mkdir, rename, unlink, readdir, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename, unlink, readdir, stat, access } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { emitEvent, docUri } from "./events";
 import { retokenizeBlocks } from "./tokens";
@@ -252,6 +253,38 @@ const LOCK_TIMEOUT_MS = 30_000;
 const LOCK_POLL_MS = 15;
 
 /**
+ * Errors from the lock create that mean "someone else has it", not "this
+ * directory can't hold a lock". Windows reports a file another process is in
+ * the middle of deleting (or has open) as EPERM / EACCES / EBUSY rather than
+ * EEXIST, so a releasing holder and an arriving waiter collide on exactly these.
+ */
+const LOCK_CONTENTION_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+
+const createLockFileDefault = (path: string, token: string): Promise<void> =>
+  writeFile(path, token, { flag: "wx" });
+/** Atomic create-if-absent of the lock file. A variable only for the test seam below. */
+let createLockFile = createLockFileDefault;
+
+/**
+ * TEST SEAM: replace the lock-file create, so tests can inject the error codes
+ * Windows raises under contention without relying on its timing. `null`
+ * restores the real create.
+ */
+export function __setIndexLockCreateForTesting(fn: typeof createLockFileDefault | null): void {
+  createLockFile = fn ?? createLockFileDefault;
+}
+
+/** Whether this process can create files in `.docs/` at all. */
+async function docsDirWritable(): Promise<boolean> {
+  try {
+    await access(DOCS_ROOT, fsConstants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Acquire the cross-PROCESS advisory lock on `_index.json`, returning its
  * release function.
  *
@@ -307,10 +340,20 @@ async function acquireIndexFileLock(): Promise<() => Promise<void>> {
 
   for (;;) {
     try {
-      await writeFile(LOCK_FILE, token, { flag: "wx" });
+      await createLockFile(LOCK_FILE, token);
       return releaseOwned;
     } catch (err) {
-      if ((err as NodeJS.ErrnoException)?.code !== "EEXIST") return noop;
+      const code = (err as NodeJS.ErrnoException)?.code ?? "";
+      // EEXIST is plainly "held". EPERM/EACCES/EBUSY are held TOO on Windows
+      // (see LOCK_CONTENTION_CODES): proceeding unlocked on them let concurrent
+      // verifies lose each other's baselines. They mean "held" only while the
+      // directory is writable; a read-only .docs/ (POSIX EACCES/EPERM) can never
+      // hold a lock, and waiting 30s on every write there would be a new
+      // failure mode, so it keeps the unlocked fallback. So does any other code
+      // (EROFS, ENOSPC, …): the lock is an optimization, never a new way for a
+      // write to fail.
+      const held = code === "EEXIST" || (LOCK_CONTENTION_CODES.has(code) && (await docsDirWritable()));
+      if (!held) return noop;
     }
 
     // Held by someone else. Break it only if it is genuinely STALE — a holder
