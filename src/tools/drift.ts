@@ -31,6 +31,7 @@ import {
   runGit,
   type CliRun,
 } from "../drift";
+import { resolveDocFile } from "../storage";
 
 // ---------------------------------------------------------------------------
 // Repair context — the "close the loop" bundle.
@@ -97,7 +98,7 @@ export interface RepairContextResult {
 /** Read a doc's raw .mdx verbatim from `cwd`; "" if missing/unreadable. */
 async function readDocRaw(cwd: string, path: string): Promise<string> {
   try {
-    return await readFile(join(cwd, ".docs", `${path}.mdx`), "utf-8");
+    return await readFile(await resolveDocFile(join(cwd, ".docs"), path), "utf-8");
   } catch {
     return "";
   }

@@ -50,6 +50,9 @@
  * - `orphan-file`     — a `.mdx` on disk that no index entry names is invisible
  *                       to search, drift and coverage.
  * - `missing-file`    — an index entry with no `.mdx` behind it 404s in the viewer.
+ * - `invalid-path`    — an index entry whose path doesn't name a file inside
+ *                       `.docs/` (`..`, absolute, a link out, a Windows device
+ *                       name). Every tool refuses it; lint says why.
  *
  * ## What this deliberately does NOT do
  *
@@ -59,7 +62,14 @@
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { normalizeAnchorPath, parseMdx, readIndexAt, type DocMetadata } from "./storage";
+import {
+  InvalidDocPathError,
+  normalizeAnchorPath,
+  parseMdx,
+  readIndexAt,
+  resolveDocFile,
+  type DocMetadata,
+} from "./storage";
 // The COMPUTED-FACT TOKEN grammar (CAT-2) lives in `./tokens` — the evaluator
 // owns it. Lint imports the SAME regex so the form `volatile-fact` stays silent
 // on is exactly the form the viewer/`get_doc` evaluate; they cannot drift.
@@ -84,11 +94,15 @@ export interface LintIssue {
  * surfaces it as a `brokenAnchors` warning while still recording the baseline.
  * Blocking there would overrule an existing product decision and make
  * re-verifying after a rename impossible.
+ *
+ * `invalid-path` IS included: a doc whose path escapes `.docs/` has no file
+ * verify may read or write, so it is refused with a message, not a throw.
  */
 export const STRUCTURAL_RULES = new Set<LintRule>([
   "frontmatter",
   "unclosed-callout",
   "unclosed-fence",
+  "invalid-path",
 ]);
 
 export type LintRule =
@@ -101,7 +115,8 @@ export type LintRule =
   | "windows-anchor"
   | "index-mismatch"
   | "orphan-file"
-  | "missing-file";
+  | "missing-file"
+  | "invalid-path";
 
 export interface LintReport {
   issues: LintIssue[];
@@ -504,7 +519,14 @@ export async function lintDocs(cwd: string): Promise<LintReport> {
   const indexed = new Set(docs.map((d) => d.path));
 
   for (const doc of docs) {
-    const file = join(docsRoot, `${doc.path}.mdx`);
+    let file: string;
+    try {
+      file = await resolveDocFile(docsRoot, doc.path);
+    } catch (e) {
+      if (!(e instanceof InvalidDocPathError)) throw e;
+      issues.push(invalidPathIssue(doc.path, e));
+      continue;
+    }
     let raw: string | null = null;
     try {
       raw = await readFile(file, "utf-8");
@@ -646,13 +668,29 @@ export async function runLint(opts: { json: boolean; cwd: string }): Promise<{
   return { stdout: renderLintHuman(report), stderr: "", code: report.errors > 0 ? 3 : 0 };
 }
 
+function invalidPathIssue(path: string, e: InvalidDocPathError): LintIssue {
+  return {
+    path,
+    rule: "invalid-path",
+    severity: "error",
+    message: e.message,
+    hint: "Doc paths are relative, '/'-separated and stay inside .docs/. Rename the doc or remove the index entry.",
+  };
+}
+
 /**
  * Lint ONE doc by path — content plus anchors. Used by `catryna verify` to
  * refuse a baseline on a malformed doc, so nothing structurally broken can ever
  * claim to be verified.
  */
 export async function lintDocFile(cwd: string, path: string): Promise<LintIssue[]> {
-  const file = join(cwd, ".docs", `${path}.mdx`);
+  let file: string;
+  try {
+    file = await resolveDocFile(join(cwd, ".docs"), path);
+  } catch (e) {
+    if (!(e instanceof InvalidDocPathError)) throw e;
+    return [invalidPathIssue(path, e)];
+  }
   let raw: string;
   try {
     raw = await readFile(file, "utf-8");
