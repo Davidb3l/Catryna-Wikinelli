@@ -344,8 +344,10 @@ describe("the explicit-cwd callers (lint, consume, repair) share the guard", () 
 });
 
 describe("over MCP", () => {
-  test("create_doc with ../../escaped refuses, and writes no file", async () => {
+  test("create/get/update/delete_doc refuse an invalid path with success:false, and write nothing", async () => {
     const l = await layout();
+    // A hand-edited index entry, so get/update/delete would find a doc to act on.
+    await seedIndex(l, ["../canary"]);
     const proc = Bun.spawn([process.execPath, "run", INDEX_PATH], {
       cwd: l.proj,
       stdin: "pipe",
@@ -360,42 +362,47 @@ describe("over MCP", () => {
       params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
     });
     send({ jsonrpc: "2.0", method: "notifications/initialized" });
-    send({
-      jsonrpc: "2.0",
-      id: 2,
-      method: "tools/call",
-      params: {
-        name: "create_doc",
-        arguments: { path: "../../escaped", title: "x", content: [{ type: "text", data: { content: "overwritten" } }] },
-      },
-    });
+    const calls: [number, string, Record<string, unknown>][] = [
+      [2, "create_doc", { path: "../../escaped", title: "x", content: [{ type: "text", data: { content: "overwritten" } }] }],
+      [3, "get_doc", { path: "../canary" }],
+      [4, "update_doc", { path: "../canary", title: "overwritten" }],
+      [5, "delete_doc", { path: "../canary" }],
+      [6, "create_diagram", { path: "../../diagram", nodes: [], edges: [] }],
+    ];
+    for (const [id, name, args] of calls) {
+      send({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
+    }
 
-    let reply: any = null;
+    const replies = new Map<number, any>();
     const reader = proc.stdout.getReader();
     const decoder = new TextDecoder();
     let buf = "";
     const deadline = Date.now() + 20_000;
-    while (!reply && Date.now() < deadline) {
+    while (replies.size < calls.length + 1 && Date.now() < deadline) {
       const { value, done } = await Promise.race([
         reader.read(),
         Bun.sleep(deadline - Date.now()).then(() => ({ value: undefined, done: true })),
       ]);
       if (done) break;
       buf += decoder.decode(value, { stream: true });
-      for (const line of buf.split("\n").slice(0, -1)) {
-        const msg = JSON.parse(line);
-        if (msg.id === 2) reply = msg;
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const msg = JSON.parse(buf.slice(0, nl));
+        buf = buf.slice(nl + 1);
+        if (typeof msg.id === "number") replies.set(msg.id, msg);
       }
-      buf = buf.slice(buf.lastIndexOf("\n") + 1);
     }
     proc.stdin.end();
     proc.kill();
     await proc.exited;
 
-    const payload = JSON.parse(reply.result.content[0].text);
-    expect(payload.success).toBe(false);
-    expect(payload.error).toContain("Invalid doc path");
+    for (const [id, name] of calls) {
+      const payload = JSON.parse(replies.get(id)?.result?.content?.[0]?.text ?? "null");
+      expect({ tool: name, success: payload?.success }).toEqual({ tool: name, success: false });
+      expect(payload.error).toContain("Invalid doc path");
+    }
     expect(existsSync(join(l.base, "escaped.mdx"))).toBe(false);
-    expect(existsSync(join(l.proj, "escaped.mdx"))).toBe(false);
+    expect(existsSync(join(l.base, "diagram.mdx"))).toBe(false);
+    expect(await readFile(join(l.proj, "canary.mdx"), "utf8")).toBe(CANARY);
   }, 30_000);
 });

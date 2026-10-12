@@ -23,6 +23,8 @@ Complete reference for all 15 MCP tools available in Catryna Wikinelli, register
 
 Creates a new documentation page. Fails (without overwriting) if a doc already exists at `path`.
 
+`path` must be a valid doc path: relative, `/`-separated, portable, and resolving inside `.docs/` (see the storage doc's **Doc paths**). Every doc tool (`create_doc`, `get_doc`, `update_doc`, `delete_doc` and the diagram tools) returns `success: false` with an `Invalid doc path` error for one that isn't.
+
 ```typescript
 // Parameters
 {
