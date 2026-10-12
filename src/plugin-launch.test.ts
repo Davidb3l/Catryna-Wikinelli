@@ -190,4 +190,37 @@ describe("plugin MCP launch", () => {
       expect(existsSync(join(pluginRoot, "node_modules", ".catryna-install-ok"))).toBe(true);
     }, 120_000);
   }
+
+  test("a failed reinstall leaves no stale 'installed' marker behind", async () => {
+    // A reinstall (here: a dependency the marker's install predates) that dies
+    // partway must not leave the OLD marker vouching for a half-written tree.
+    // A `file:` dependency that doesn't exist fails `bun install` with no network.
+    const pluginRoot = join(await tempDir("catryna-plugin-root-"), "plugin root");
+    for (const entry of ["package.json", "bun.lock", "src", "scripts"]) {
+      cpSync(join(ROOT, entry), join(pluginRoot, entry), { recursive: true });
+    }
+    const pkg = JSON.parse(readFileSync(join(pluginRoot, "package.json"), "utf8"));
+    pkg.dependencies["catryna-missing-dep"] = "file:./does-not-exist";
+    writeFileSync(join(pluginRoot, "package.json"), JSON.stringify(pkg));
+    mkdirSync(join(pluginRoot, "node_modules"));
+    writeFileSync(join(pluginRoot, "node_modules", ".catryna-install-ok"), "");
+    const cfg = pluginServer();
+
+    const proc = Bun.spawn([cfg.command, ...substituted(cfg, pluginRoot)], {
+      cwd: await tempDir("catryna-plugin-launch-"),
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+
+    expect(code).not.toBe(0);
+    expect(stderr).toContain("bun install failed");
+    expect(stdout).toBe(""); // the MCP channel stays clean even on failure
+    expect(existsSync(join(pluginRoot, "node_modules", ".catryna-install-ok"))).toBe(false);
+  }, 120_000);
 });

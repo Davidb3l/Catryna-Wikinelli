@@ -13,7 +13,7 @@
  * storage resolves .docs/ from process.cwd(). So we install deps into the
  * plugin root if missing, but never chdir before loading the server.
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -36,6 +36,9 @@ const installed =
   DEPENDENCIES.every((d) => existsSync(join(ROOT, "node_modules", d, "package.json")));
 if (!installed) {
   console.error("[catryna] installing server dependencies...");
+  // Drop any old marker FIRST: a reinstall killed partway (say, after a plugin
+  // update added a dependency) must not leave a stale "installed" behind.
+  rmSync(INSTALLED_MARKER, { force: true });
   const install = Bun.spawnSync([process.execPath, "install", "--silent"], {
     cwd: ROOT,
     stdin: "ignore",
@@ -48,7 +51,12 @@ if (!installed) {
     console.error(`[catryna] bun install failed (exit ${install.exitCode}) in ${ROOT}`);
     process.exit(1);
   }
-  writeFileSync(INSTALLED_MARKER, "");
+  try {
+    writeFileSync(INSTALLED_MARKER, "");
+  } catch {
+    // A read-only plugin dir: the install worked, so start anyway. The cost is
+    // a reinstall check on every launch, not a server that won't start.
+  }
 }
 
 await import(pathToFileURL(join(ROOT, "src", "index.ts")).href);
