@@ -118,7 +118,7 @@ describe("evaluateToken — security containment (a doc is untrusted data)", () 
 /**
  * REGRESSIONS from the adversarial review. Every one of these was a real,
  * reproduced defect — the security pair especially: a doc is untrusted data,
- * `.docs/` is git-shared, and the viewer binds 0.0.0.0.
+ * `.docs/` is git-shared, and the viewer can be exposed to the network.
  */
 describe("evaluateToken — review regressions", () => {
   test("a SYMLINK cannot walk out of the project root", async () => {

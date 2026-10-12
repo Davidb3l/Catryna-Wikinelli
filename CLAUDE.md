@@ -132,6 +132,7 @@ bun run start
 # Start frontend viewer (for humans) - in another terminal
 cd frontend && bun install && bun run dev
 # Opens http://localhost:1307  (override with CATRYNA_VIEWER_PORT)
+# Binds 127.0.0.1 only; CATRYNA_VIEWER_HOST=0.0.0.0 exposes it (no auth!)
 
 # CLI (no MCP needed) - run from any repo with a .docs/ folder
 catryna doctor          # health + suite discovery handshake

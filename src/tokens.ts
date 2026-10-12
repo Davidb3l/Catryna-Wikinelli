@@ -105,7 +105,8 @@ function compileGlob(arg: string): { base: string; re: RegExp } | null {
   // stars backtrack exponentially: an arg of `d/` + `**/`×14 + `zzz` took ~6s to
   // match, ×24 never finished, and because matching is synchronous JS it wedged
   // the whole event loop — starving every other request on the viewer, which is
-  // reachable on 0.0.0.0. The caps below make that unreachable:
+  // network-reachable when CATRYNA_VIEWER_HOST exposes it. The caps below make
+  // that unreachable:
   //   1. collapse runs of `**/` to one (semantically identical — "any depth"
   //      twice is still "any depth") which removes the nesting entirely;
   //   2. bound the argument length and the wildcard count outright.
@@ -156,7 +157,7 @@ function compileGlob(arg: string): { base: string; re: RegExp } | null {
  * (`resolve` + prefix) rejects `..` and absolute paths, but `path.resolve` does
  * NOT resolve symlinks, so a committed symlink (`vendor -> /`) plus one `.mdx`
  * walked straight out of the root and `{{version: vendor/etc/…}}` leaked file
- * CONTENT off the machine — over the network, since the viewer binds 0.0.0.0.
+ * CONTENT off the machine — over the network, whenever the viewer is exposed.
  * `.docs/` is git-shared and git stores symlinks, so that was a one-PR exploit.
  *
  * So the real containment is done on REALPATHS. A path that does not exist yet

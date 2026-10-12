@@ -14,7 +14,7 @@
  * pre-fix code, not merely to pass against the current code:
  *
  *   1. `GET /api/docs/:path` served any `.mdx` on the machine (`path.join`
- *      happily collapses `../`), on an interface bound to 0.0.0.0.
+ *      happily collapses `../`), on an interface then bound to 0.0.0.0.
  *   2. `POST /api/projects/select` accepted any path on disk, and since it
  *      JSON-parses regardless of Content-Type it is a CORS-*simple* request —
  *      no preflight, so any page in the developer's browser could repoint the
@@ -31,11 +31,13 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { linkSync, readFileSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 
-import { createDocsApi, findProjects, parseMdx, type Project } from './docs-api';
+import { createDocsApi, findProjects, parseMdx, viewerHost, type Project } from './docs-api';
+import { canSymlinkFiles, symlinkDir, symlinkFile } from '../src/test-symlink';
 
 const dirs: string[] = [];
 const servers: http.Server[] = [];
@@ -432,6 +434,78 @@ describe('GET /api/docs/:path containment', () => {
     const res = await get('/api/docs/backend/nonexistent');
     expect(res.status).toBe(404);
     expect(JSON.parse(res.body).error).toBe('Doc not found');
+  });
+});
+
+describe('links under the docs root cannot serve files from elsewhere', () => {
+  // The text check above sees `linked/outside-secret` as inside the root; only
+  // resolving the real path shows it leads to alpha/outside-secret.mdx.
+  test('a directory link (symlink, or a junction on unprivileged Windows) is refused', async () => {
+    const fx = await makeFixture();
+    await symlinkDir(fx.alpha, join(fx.alpha, '.docs', 'linked'));
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    const res = await get('/api/docs/linked/outside-secret');
+    expect(res.status).toBe(403);
+    expect(res.body).not.toContain(CANARY);
+  });
+
+  test.skipIf(!canSymlinkFiles)('a .mdx that is a symlink to a file outside is refused', async () => {
+    const fx = await makeFixture();
+    await symlinkFile(join(fx.alpha, 'outside-secret.mdx'), join(fx.alpha, '.docs', 'leak.mdx'));
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    const res = await get('/api/docs/leak');
+    expect(res.status).toBe(403);
+    expect(res.body).not.toContain(CANARY);
+  });
+
+  test.skipIf(!canSymlinkFiles)('a symlinked _index.json is never read or served', async () => {
+    // GET /api/docs returns the parsed index whole, so a linked index served
+    // any JSON file the process could read.
+    const fx = await makeFixture();
+    const outsideJson = join(fx.alpha, 'outside.json');
+    await writeFile(outsideJson, JSON.stringify({ docs: [{ path: 'x', title: CANARY }] }));
+    const index = join(fx.alpha, '.docs', '_index.json');
+    await rm(index);
+    await symlinkFile(outsideJson, index);
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    for (const url of ['/api/docs', `/api/docs/search?q=${CANARY.slice(0, 6)}`, '/api/docs/guides/intro']) {
+      expect((await get(url)).body).not.toContain(CANARY);
+    }
+  });
+
+  test('a hard-linked .mdx is refused (realpath cannot tell its names apart)', async () => {
+    const fx = await makeFixture();
+    linkSync(join(fx.alpha, 'outside-secret.mdx'), join(fx.alpha, '.docs', 'hl.mdx'));
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    const res = await get('/api/docs/hl');
+    expect(res.status).toBe(403);
+    expect(res.body).not.toContain(CANARY);
+  });
+
+  test('an ordinary doc still serves (the guard rejects by location, not by kind)', async () => {
+    const fx = await makeFixture();
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+    expect((await get('/api/docs/backend/coverage')).status).toBe(200);
+  });
+});
+
+describe('the dev server binds loopback unless told otherwise', () => {
+  test('viewerHost(): IPv4 loopback by default, CATRYNA_VIEWER_HOST opts in', () => {
+    expect(viewerHost({})).toBe('127.0.0.1');
+    expect(viewerHost({ CATRYNA_VIEWER_HOST: '' })).toBe('127.0.0.1');
+    expect(viewerHost({ CATRYNA_VIEWER_HOST: '   ' })).toBe('127.0.0.1');
+    expect(viewerHost({ CATRYNA_VIEWER_HOST: '0.0.0.0' })).toBe('0.0.0.0');
+    expect(viewerHost({ CATRYNA_VIEWER_HOST: ' 192.168.1.5 ' })).toBe('192.168.1.5');
+  });
+
+  test('vite.config.ts binds through viewerHost(), not a hard-coded interface', () => {
+    const config = readFileSync(join(import.meta.dir, 'vite.config.ts'), 'utf-8');
+    expect(config).toMatch(/host:\s*viewerHost\(\)/);
+    expect(config).not.toMatch(/host:\s*['"]0\.0\.0\.0['"]/);
   });
 });
 

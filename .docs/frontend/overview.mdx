@@ -382,7 +382,7 @@ than a font-plumbing fix.
 
 ## Dev Server Port
 
-The port is **not** hardcoded. `vite.config.ts` reads **`CATRYNA_VIEWER_PORT`** and falls back to **1307** when it is unset, non-numeric, or outside 1..65535 — the same rule as `viewerPort()` in `src/doctor.ts`.
+The port is **not** hardcoded. `vite.config.ts` reads **`CATRYNA_VIEWER_PORT`** and falls back to **1307** when it is unset, non-numeric, or outside 1..65535 — the same rule as `viewerPort()` in `src/doctor.ts`. It binds **`127.0.0.1`** unless **`CATRYNA_VIEWER_HOST`** says otherwise (`viewerHost()` in `docs-api.ts`): the API is unauthenticated, so exposing it to the network is an explicit opt-in. IPv4 loopback rather than `localhost`, because on Windows `localhost` made Vite bind `[::1]` only, refusing clients that dial 127.0.0.1; the advertised `http://localhost:<port>` still resolves to it. Vite's own `server.allowedHosts` check still rejects requests whose `Host` header names an unknown domain, which blocks DNS rebinding even when exposed.
 
 It also sets **`strictPort: true`**, so a taken port is a hard startup failure instead of a silent bump to 1308. That is deliberate: `catryna doctor` advertises `http://localhost:<that port>` as the suite hub's `ui` URL, so a viewer that drifted to another port would make the advertised URL a lie. Keep the two parsers in lockstep.
 
@@ -693,7 +693,7 @@ The endpoints read the `.docs/` folder off disk:
 Any other `/api/projects/*` URL returns 404. Falling through without `next()` or `res.end()` previously left the socket open forever — a `GET` to `/api/projects/select` hung until timeout, and a handful exhausted the browser's per-origin connection pool.
 
 <Callout type="warning">
-**Security, both found in adversarial review and verified exploitable against a running dev server.** These matter more than "it's only a dev server" suggests, because `server.host` is `0.0.0.0` — every device on the same network can reach it unauthenticated.
+**Security, both found in adversarial review and verified exploitable against a running dev server.** These matter more than "it's only a dev server" suggests: the viewer listened on `0.0.0.0` at the time, and `CATRYNA_VIEWER_HOST` can still expose it, at which point every device on the network reaches it unauthenticated. It binds `127.0.0.1` by default (`viewerHost()`), and `GET /api/docs/:path` and every `_index.json` read also check containment on **resolved real paths** (`realFileInside()`), so a committed `.docs/` symlink or junction can't serve a file from elsewhere.
 
 - `GET /api/docs/:path` joined the request path onto `docsRoot` with no containment check, serving **any `.mdx` file on the machine** with its body in `raw`. It now strips query/fragment, decodes percent-escapes *before* checking (so `%2e%2e` cannot smuggle a traversal), resolves, and requires the result to stay inside `docsRoot`.
 - `POST /api/projects/select` accepted **any path on disk**, and because the handler `JSON.parse`s regardless of `Content-Type` it is a CORS *simple* request with no preflight — any page the developer visited could silently repoint the viewer with a `no-cors` fetch. `docsRoot` also becomes the cwd for git subprocesses. Selection is now restricted to the set `findProjects()` discovered.

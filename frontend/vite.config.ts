@@ -6,7 +6,7 @@ import react from '@vitejs/plugin-react';
 // to load from cdn.tailwindcss.com. See index.css for the CSS-first theme.
 import tailwindcss from '@tailwindcss/vite';
 
-import { createDocsApi, defaultScanRoots, findProjects } from './docs-api';
+import { createDocsApi, defaultScanRoots, findProjects, viewerHost } from './docs-api';
 
 // Plugin to serve .docs folder as API.
 // Set DOCS_ROOT env var to point to a different project's .docs folder.
@@ -62,7 +62,9 @@ export default defineConfig(() => {
       // strictPort: fail loudly if the advertised port is taken, rather than
       // silently moving off the address doctor told the hub to frame.
       strictPort: true,
-      host: '0.0.0.0',
+      // Loopback unless CATRYNA_VIEWER_HOST opts in: the docs API has no
+      // authentication. See viewerHost() in docs-api.ts.
+      host: viewerHost(),
     },
     plugins: [
       tailwindcss(),
