@@ -6,8 +6,8 @@
  * MCP tools are only needed for CREATE/UPDATE/DELETE operations.
  */
 
-import { readFile, writeFile, mkdir, rename, unlink, readdir, stat } from "node:fs/promises";
-import { join, dirname, basename } from "node:path";
+import { readFile, writeFile, mkdir, rename, unlink, readdir, stat, realpath, lstat } from "node:fs/promises";
+import { join, dirname, basename, relative, isAbsolute, sep } from "node:path";
 import { emitEvent, docUri } from "./events";
 import { retokenizeBlocks } from "./tokens";
 
@@ -380,12 +380,149 @@ function withIndexLock<T>(mutate: () => Promise<T>): Promise<T> {
   return result;
 }
 
+/** A doc path that does not name a file inside `.docs/`. */
+export class InvalidDocPathError extends Error {
+  constructor(docPath: unknown, reason: string) {
+    super(`Invalid doc path ${JSON.stringify(docPath)}: ${reason}`);
+    this.name = "InvalidDocPathError";
+  }
+}
+
+// Windows device names: `CON`, `nul.txt`, `COM1.mdx`, `CON .txt` … open the
+// device, not a file, whatever the extension. Superscript digits count too.
+const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|conout\$)\s*(\.|$)/i;
+
 /**
- * Convert doc path to file path
- * e.g., "modules/auth" -> ".docs/modules/auth.mdx"
+ * Reject a doc path by its TEXT: the forms that can name something outside
+ * `.docs/`, or that some supported OS can't store as a file name.
+ *
+ * Applied on every OS, not just the one that interprets the form: `.docs/` is
+ * git-shared, so a doc only Linux can write still breaks a Windows checkout.
+ * Doc paths are `/`-separated, relative, and plain:
+ *   - no NUL / control characters, no backslash (`..\x`, UNC `\\server\share`,
+ *     device `\\?\` and `\\.\` paths all need one);
+ *   - no `:` (drive letters `C:/x` and drive-relative `C:x`, NTFS streams);
+ *   - none of `<>"|?*`, which Windows forbids in file names;
+ *   - not absolute, no empty / `.` / `..` segment;
+ *   - no segment ending in a dot or a space (Windows strips them, so two
+ *     different paths would alias one file) and no reserved device name.
  */
-function docPathToFilePath(docPath: string): string {
-  return join(DOCS_ROOT, `${docPath}.mdx`);
+export function validateDocPath(docPath: string): void {
+  const bad = (reason: string): never => {
+    throw new InvalidDocPathError(docPath, reason);
+  };
+  if (typeof docPath !== "string" || docPath.length === 0) bad("it is empty");
+  if (/[\x00-\x1f\x7f]/.test(docPath)) bad("it contains NUL or a control character");
+  if (docPath.includes("\\")) bad("it contains a backslash (doc paths use '/')");
+  if (docPath.includes(":")) bad("it contains ':' (drive letter, device or stream syntax)");
+  if (/[<>"|?*]/.test(docPath)) bad("it contains a character Windows can't store in a file name");
+  if (docPath.startsWith("/")) bad("it is absolute");
+  for (const seg of docPath.split("/")) {
+    if (seg === "") bad("it has an empty segment");
+    if (seg === "." || seg === "..") bad(`it has a '${seg}' segment`);
+    if (/[. ]$/.test(seg)) bad("a segment ends in a dot or a space");
+    if (WINDOWS_RESERVED_NAME.test(seg)) bad(`'${seg}' is a reserved device name on Windows`);
+  }
+}
+
+/** realpath, or null when the path can't be resolved (missing, dangling, looped). */
+async function realpathOrNull(p: string): Promise<string | null> {
+  try {
+    return await realpath(p);
+  } catch {
+    return null;
+  }
+}
+
+/** How many hard links name the file at `p` (1 for an ordinary file; 0 if it vanished). */
+async function hardLinkCount(p: string): Promise<number> {
+  try {
+    return (await stat(p)).nlink;
+  } catch {
+    return 0;
+  }
+}
+
+/** What sits at `p` without following it: a link (junctions count), something else, or nothing. */
+async function entryKind(p: string): Promise<"link" | "other" | "none"> {
+  try {
+    return (await lstat(p)).isSymbolicLink() ? "link" : "other";
+  } catch {
+    return "none";
+  }
+}
+
+/**
+ * Convert doc path to file path under `docsRoot`, e.g. "modules/auth" ->
+ * "<docsRoot>/modules/auth.mdx".
+ *
+ * The ONE place a doc path becomes a filesystem path, so it is the one place
+ * containment is enforced: every read, write and unlink of a doc goes through
+ * here (storage via `docPathToFilePath`; lint, consume and repair, which take
+ * an explicit cwd, call it directly). Doc paths reach it from MCP tool
+ * arguments AND from `_index.json`, which is a git-shared cache.
+ *
+ * Throws `InvalidDocPathError` unless the result is inside `.docs/` both
+ * textually (`validateDocPath`) and on RESOLVED real paths — a symlink or
+ * junction under `.docs/` that points elsewhere is refused, as is a dangling
+ * link, which realpath can't see through but `writeFile` would follow. An
+ * existing doc file with more than one hard link is refused too: realpath
+ * can't tell which name is the "real" one, so a write could land elsewhere.
+ *
+ * The check and the caller's file operation are two steps, so a process that
+ * can already write inside `.docs/` could swap a folder for a link between
+ * them. Callers narrow that window by resolving again immediately before each
+ * write or unlink; closing it fully would need `openat`-style APIs Node lacks.
+ */
+export async function resolveDocFile(docsRoot: string, docPath: string): Promise<string> {
+  validateDocPath(docPath);
+  const filePath = join(docsRoot, `${docPath}.mdx`);
+  const rel = relative(docsRoot, filePath);
+  // `..` as a whole leading segment, not a prefix: `..notes` is a legal name.
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new InvalidDocPathError(docPath, "it resolves outside .docs/");
+  }
+
+  // A realpath can fail because the entry is a dangling or looping LINK
+  // (refuse: writeFile would follow it out), or because it did not exist yet and
+  // a concurrent write created it a moment later (a sibling createDoc's mkdir):
+  // that one is simply re-resolved. The retry bound only guards a pathological
+  // create/delete flicker; it never fires in normal use.
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const rootReal = await realpathOrNull(docsRoot);
+    if (rootReal === null) {
+      const kind = await entryKind(docsRoot);
+      if (kind === "link") throw new InvalidDocPathError(docPath, ".docs/ is a dangling link");
+      if (kind === "none") return filePath; // no .docs/ yet: mkdir creates every level fresh
+      continue; // .docs/ appeared mid-check — resolve again
+    }
+    // Realpath the deepest existing ancestor (usually the file or its folder).
+    // Leaves the inner loop only when an entry raced into existence.
+    for (let probe = filePath; ; probe = dirname(probe)) {
+      const real = await realpathOrNull(probe);
+      if (real !== null) {
+        if (real !== rootReal && !real.startsWith(rootReal + sep)) {
+          throw new InvalidDocPathError(docPath, "it resolves outside .docs/ through a link");
+        }
+        if (probe === filePath && (await hardLinkCount(real)) > 1) {
+          throw new InvalidDocPathError(docPath, "the doc file has more than one hard link");
+        }
+        return filePath;
+      }
+      const kind = await entryKind(probe);
+      if (kind === "link") {
+        throw new InvalidDocPathError(docPath, "it passes through a dangling or looping link");
+      }
+      if (kind === "other") break; // created between the realpath and the lstat
+      if (dirname(probe) === probe) throw new InvalidDocPathError(docPath, "it resolves outside .docs/");
+    }
+  }
+  throw new InvalidDocPathError(docPath, "it kept changing while being resolved");
+}
+
+/** `resolveDocFile` against this process's `.docs/`. */
+function docPathToFilePath(docPath: string): Promise<string> {
+  return resolveDocFile(DOCS_ROOT, docPath);
 }
 
 /**
@@ -1069,12 +1206,13 @@ export async function createDoc(
   };
 
   // Create directory if needed
-  const filePath = docPathToFilePath(path);
+  const filePath = await docPathToFilePath(path);
   await mkdir(dirname(filePath), { recursive: true });
 
-  // Write MDX file
+  // Write MDX file. Resolve again right before writing: it narrows the
+  // check-to-write window (see resolveDocFile) to the minimum.
   const mdxContent = blocksToMdx(metadata, blocks);
-  await writeFile(filePath, mdxContent);
+  await writeFile(await docPathToFilePath(path), mdxContent);
 
   // Update index under the serialization lock so a concurrent write can't
   // clobber this entry (the .mdx write above is per-path, so it stays outside).
@@ -1103,6 +1241,8 @@ export async function createDoc(
  * Get a document by path
  */
 export async function getDoc(path: string): Promise<Doc | null> {
+  // Outside the try below: an invalid path is an error, not "not found".
+  const filePath = await docPathToFilePath(path);
   const index = await loadIndex();
   const meta = index.docs.find(d => d.path === path);
 
@@ -1111,7 +1251,6 @@ export async function getDoc(path: string): Promise<Doc | null> {
   }
 
   try {
-    const filePath = docPathToFilePath(path);
     const content = await readFile(filePath, "utf-8");
     const { blocks } = parseMdx(content);
 
@@ -1162,6 +1301,8 @@ export async function updateDoc(
     refs?: string[];
   }
 ): Promise<DocMetadata | null> {
+  // Resolved up front, outside every try: the reads below swallow errors.
+  const filePath = await docPathToFilePath(path);
   // Serialize the whole read-modify-write: the file's frontmatter embeds `meta`
   // (which comes from the freshly-loaded index), so the .mdx write belongs
   // inside the lock too. Loading INSIDE the lock guarantees we see the latest
@@ -1203,7 +1344,7 @@ export async function updateDoc(
       // isn't sure about, leaves the caller's text exactly as supplied. Writing
       // the literal is a regression; corrupting prose would be worse.
       try {
-        const existing = await readFile(docPathToFilePath(path), "utf-8");
+        const existing = await readFile(filePath, "utf-8");
         if (existing.includes("{{")) {
           const oldBlocks = parseMdx(existing).blocks;
           blocks = (await retokenizeBlocks(blocks, oldBlocks, process.cwd())) as Block[];
@@ -1213,15 +1354,17 @@ export async function updateDoc(
       }
     } else {
       try {
-        const existing = await readFile(docPathToFilePath(path), "utf-8");
+        const existing = await readFile(filePath, "utf-8");
         blocks = parseMdx(existing).blocks;
       } catch {
         blocks = [];
       }
     }
 
-    // Write updated file, then the index entry, then persist the index.
-    await writeFile(docPathToFilePath(path), blocksToMdx(m, blocks));
+    // Write updated file, then the index entry, then persist the index. The
+    // path is resolved again here, inside the lock and right before the write,
+    // to narrow the check-to-write window (see resolveDocFile).
+    await writeFile(await docPathToFilePath(path), blocksToMdx(m, blocks));
     index.docs[metaIndex] = m;
     await saveIndex(index);
 
@@ -1274,6 +1417,9 @@ export async function recordVerification(
   commit: string,
   verifiedAt: string,
 ): Promise<RecordVerificationResult> {
+  // Resolved up front: the .mdx read and write below are best-effort and
+  // swallow errors, so an invalid path must fail here, loudly.
+  const filePath = await docPathToFilePath(path);
   const unreadableAnchorFields: string[] = [];
   const meta = await withIndexLock<DocMetadata | null>(async () => {
     const index = await loadIndex();
@@ -1308,7 +1454,7 @@ export async function recordVerification(
     // in between.
     let raw: string | null = null;
     try {
-      raw = await readFile(docPathToFilePath(path), "utf-8");
+      raw = await readFile(filePath, "utf-8");
     } catch {
       // Missing/unreadable .mdx — keep the index's existing anchors. The
       // baseline write below still happens; the index carries these fields.
@@ -1335,9 +1481,11 @@ export async function recordVerification(
     // the file: the index is the source of truth for these fields, so a
     // missing/unreadable .mdx still records the baseline in the index.
     if (raw !== null) {
+      // Resolved again, outside the best-effort try: see resolveDocFile.
+      const target = await docPathToFilePath(path);
       try {
         await writeFile(
-          docPathToFilePath(path),
+          target,
           setFrontmatterScalars(raw, {
             verifiedCommit: commit,
             verifiedAt,
@@ -1371,6 +1519,8 @@ export async function recordVerification(
  * Delete a document
  */
 export async function deleteDoc(path: string): Promise<boolean> {
+  // Resolved up front: the unlink below swallows errors.
+  const filePath = await docPathToFilePath(path);
   // Serialized read-modify-write, so a concurrent create/update can't resurrect
   // this entry or lose its own by racing on the shared index.
   return withIndexLock(async () => {
@@ -1381,9 +1531,11 @@ export async function deleteDoc(path: string): Promise<boolean> {
       return false;
     }
 
-    // Delete file
+    // Delete file. Resolved again, inside the lock and outside the try, right
+    // before the unlink (see resolveDocFile).
+    const target = await docPathToFilePath(path);
     try {
-      await unlink(docPathToFilePath(path));
+      await unlink(target);
     } catch {
       // File might not exist
     }
@@ -1424,7 +1576,7 @@ export async function searchDocs(query: string, limit = 10): Promise<Array<DocMe
 
     // Also search file content
     try {
-      const filePath = docPathToFilePath(meta.path);
+      const filePath = await docPathToFilePath(meta.path);
       const content = await readFile(filePath, "utf-8");
       const contentLower = content.toLowerCase();
 

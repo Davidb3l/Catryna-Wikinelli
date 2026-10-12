@@ -484,7 +484,7 @@ describe("the verify guard scope", () => {
   test("STRUCTURAL_RULES covers malformed content and excludes anchor resolution", () => {
     // Anchors are drift's question. Blocking verify on them would make
     // re-verifying a doc after a rename impossible.
-    expect([...STRUCTURAL_RULES].sort()).toEqual(["frontmatter", "unclosed-callout", "unclosed-fence"]);
+    expect([...STRUCTURAL_RULES].sort()).toEqual(["frontmatter", "invalid-path", "unclosed-callout", "unclosed-fence"]);
     expect(STRUCTURAL_RULES.has("missing-anchor" as any)).toBe(false);
     expect(STRUCTURAL_RULES.has("orphan-file" as any)).toBe(false);
   });

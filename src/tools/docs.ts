@@ -72,7 +72,15 @@ export function registerDocTools(server: McpServer): void {
       path: z.string().describe("Path of the document to retrieve"),
     },
     async ({ path }) => {
-      const doc = await getDoc(path);
+      let doc: Awaited<ReturnType<typeof getDoc>>;
+      try {
+        doc = await getDoc(path);
+      } catch (error) {
+        // An invalid doc path: same shape as every other tool's failure.
+        return {
+          content: [{ type: "text", text: JSON.stringify({ success: false, error: String(error) }) }],
+        };
+      }
 
       if (!doc) {
         return {

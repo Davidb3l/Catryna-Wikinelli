@@ -7,8 +7,8 @@ relatedFiles: ["src/storage.ts"]
 createdAt: 1767321315890
 updatedAt: 1767321660905
 createdBy: "claude-code"
-verifiedCommit: "e8150dda4b91b8a0a4f2fa51e77d189a0e71fece"
-verifiedAt: "2026-08-05T19:15:35.376Z"
+verifiedCommit: "872eb43b543d7b39617ff2c5f77e91a4ddf5a8d1"
+verifiedAt: "2026-10-12T01:19:42.317Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -26,6 +26,18 @@ The storage layer (`src/storage.ts`) provides file-based persistence for documen
 └── modules/
     └── auth.mdx         # Nested doc
 ```
+
+### Doc paths
+
+A doc path such as `modules/auth` becomes a file only through `resolveDocFile(docsRoot, docPath)`. Storage calls it as `docPathToFilePath`, and `lint`, `consume` and `repair` call it directly with their own cwd. Every doc read, write and unlink goes through it, whether the path came from an MCP tool argument or from `_index.json`. It throws `InvalidDocPathError` unless:
+
+- the path is relative and `/`-separated, with no empty, `.` or `..` segment;
+- it has no backslash, `:`, control character, or any of `<>"|?*`;
+- no segment ends in a dot or a space, or is a Windows device name (`CON`, `nul.txt`, `COM1`, …);
+- the file sits inside `.docs/` on **resolved real paths**, so a symlink or junction under `.docs/` that points elsewhere is refused, and so is a dangling one (realpath can't follow it, but `writeFile` would);
+- an existing doc file has a single hard link (realpath can't tell which of two hard-linked names is the "real" one).
+
+`..` is refused only as a whole segment, so a name like `..notes` is fine. The text rules apply on every OS, not just the one that interprets a form, because `.docs/` is shared through git: a name only Linux can write would still break a Windows checkout. `getDoc`, `updateDoc`, `deleteDoc` and `recordVerification` resolve the path up front, outside their best-effort `try` blocks, so an invalid path fails loudly instead of degrading to "not found". Every write and unlink also resolves the path again immediately before acting (inside the index lock where there is one), which keeps the gap between check and use as small as Node allows.
 
 ## MDX File Format
 
