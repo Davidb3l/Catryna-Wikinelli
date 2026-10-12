@@ -13,7 +13,7 @@
  *   - a partial first install (node_modules/ present, packages missing) heals.
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { cpSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -151,28 +151,43 @@ describe("plugin MCP launch", () => {
     expect(existsSync(join(ROOT, ".docs", "launch", "probe.mdx"))).toBe(false);
   }, 30_000);
 
-  test("an interrupted first install (node_modules/ present, packages missing) heals", async () => {
-    // A first install killed partway (e.g. by the client's startup timeout)
-    // leaves node_modules/ behind. Checking only for the folder skipped the
-    // install forever after, and every launch then failed to import the SDK.
-    const pluginRoot = join(await tempDir("catryna-plugin-root-"), "plugin root");
-    for (const entry of ["package.json", "bun.lock", "src", "scripts"]) {
-      cpSync(join(ROOT, entry), join(pluginRoot, entry), { recursive: true });
-    }
-    mkdirSync(join(pluginRoot, "node_modules"));
-    const project = await tempDir("catryna-plugin-launch-");
-    const cfg = pluginServer();
+  // A first install killed partway (e.g. by the client's startup timeout)
+  // leaves a node_modules/ that looks installed. Checking only for the folder —
+  // or only for the direct dependencies — skipped the install forever after,
+  // and every launch then died importing a missing package.
+  const PARTIAL_INSTALLS: Record<string, (nodeModules: string) => void> = {
+    "an empty node_modules/": () => {},
+    "direct dependencies present, transitive ones missing": (nodeModules) => {
+      const deps = Object.keys(JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).dependencies);
+      for (const d of deps) {
+        mkdirSync(join(nodeModules, d), { recursive: true });
+        writeFileSync(join(nodeModules, d, "package.json"), JSON.stringify({ name: d, version: "0.0.0" }));
+      }
+    },
+  };
 
-    const { replies, stderr } = await mcpSession(
-      [cfg.command, ...substituted(cfg, pluginRoot)],
-      project,
-      INITIALIZE,
-      [1],
-      90_000,
-    );
+  for (const [name, arrange] of Object.entries(PARTIAL_INSTALLS)) {
+    test(`an interrupted first install heals: ${name}`, async () => {
+      const pluginRoot = join(await tempDir("catryna-plugin-root-"), "plugin root");
+      for (const entry of ["package.json", "bun.lock", "src", "scripts"]) {
+        cpSync(join(ROOT, entry), join(pluginRoot, entry), { recursive: true });
+      }
+      mkdirSync(join(pluginRoot, "node_modules"));
+      arrange(join(pluginRoot, "node_modules"));
+      const project = await tempDir("catryna-plugin-launch-");
+      const cfg = pluginServer();
 
-    expect(stderr).toContain("installing server dependencies");
-    expect(replies.get(1)?.result?.serverInfo).toBeDefined();
-    expect(existsSync(join(pluginRoot, "node_modules", "@modelcontextprotocol", "sdk", "package.json"))).toBe(true);
-  }, 120_000);
+      const { replies, stderr } = await mcpSession(
+        [cfg.command, ...substituted(cfg, pluginRoot)],
+        project,
+        INITIALIZE,
+        [1],
+        90_000,
+      );
+
+      expect(stderr).toContain("installing server dependencies");
+      expect(replies.get(1)?.result?.serverInfo).toBeDefined();
+      expect(existsSync(join(pluginRoot, "node_modules", ".catryna-install-ok"))).toBe(true);
+    }, 120_000);
+  }
 });

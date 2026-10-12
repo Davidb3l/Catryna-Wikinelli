@@ -13,23 +13,29 @@
  * storage resolves .docs/ from process.cwd(). So we install deps into the
  * plugin root if missing, but never chdir before loading the server.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const ROOT = join(import.meta.dir, "..");
 
-// Self-heal: first run after plugin install has no dependencies yet. Check for
-// the packages themselves, not just node_modules/: an install interrupted on
-// first run (e.g. killed by the client's startup timeout) leaves a partial
-// node_modules/ that would otherwise never be repaired. stdout is the MCP
+// Self-heal: first run after plugin install has no dependencies yet, and an
+// install interrupted partway (e.g. killed by the client's startup timeout)
+// leaves a node_modules/ that LOOKS installed — the direct dependencies can be
+// present while a transitive one is missing, and the server then dies on every
+// launch. So a completed install drops a marker, and anything short of "marker
+// present and every direct dependency present" reinstalls. stdout is the MCP
 // protocol channel, so the installer's output must go to stderr, and its stdin
 // must not consume the client's first messages.
+const INSTALLED_MARKER = join(ROOT, "node_modules", ".catryna-install-ok");
 const DEPENDENCIES = Object.keys(
   JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).dependencies ?? {},
 );
-if (DEPENDENCIES.some((d) => !existsSync(join(ROOT, "node_modules", d, "package.json")))) {
-  console.error("[catryna] installing server dependencies (first run)...");
+const installed =
+  existsSync(INSTALLED_MARKER) &&
+  DEPENDENCIES.every((d) => existsSync(join(ROOT, "node_modules", d, "package.json")));
+if (!installed) {
+  console.error("[catryna] installing server dependencies...");
   const install = Bun.spawnSync([process.execPath, "install", "--silent"], {
     cwd: ROOT,
     stdin: "ignore",
@@ -42,6 +48,7 @@ if (DEPENDENCIES.some((d) => !existsSync(join(ROOT, "node_modules", d, "package.
     console.error(`[catryna] bun install failed (exit ${install.exitCode}) in ${ROOT}`);
     process.exit(1);
   }
+  writeFileSync(INSTALLED_MARKER, "");
 }
 
 await import(pathToFileURL(join(ROOT, "src", "index.ts")).href);
