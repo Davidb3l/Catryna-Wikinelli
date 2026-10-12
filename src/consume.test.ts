@@ -404,6 +404,26 @@ describe("drainSpine + cursor (§2)", () => {
 });
 
 describe("runConsume — end-to-end marking (in-process, cwd-injected)", () => {
+  test("on a CRLF checkout the .mdx is marked too: CRLF kept, body byte-identical", async () => {
+    // The frontmatter rewrite only matched "\n", so on a Windows checkout
+    // consume marked the index and silently skipped the .mdx.
+    const dir = await tempDir();
+    await writeSpine(dir, "2026-07-11", [codeChanged(["src/a.ts"])]);
+    await seedDocs(dir, [{ path: "modules/a", relatedFiles: ["src/a.ts"] }]);
+    const mdxFile = join(dir, ".docs", "modules", "a.mdx");
+    await writeFile(mdxFile, (await readFile(mdxFile, "utf-8")).replace(/\n/g, "\r\n"));
+    const before = await readMdx(dir, "modules/a");
+    const bodyBefore = before.slice(before.indexOf("\r\n---\r\n") + 7);
+
+    const report = await runConsume({ cwd: dir, now: () => "2026-07-11T19:00:00.000Z" });
+    expect(report.marked.map((m) => m.path)).toEqual(["modules/a"]);
+
+    const after = await readMdx(dir, "modules/a");
+    expect(after).toContain(`driftSuspectSince: "2026-07-11T19:00:00.000Z"\r\n`);
+    expect(after.replace(/\r\n/g, "")).not.toContain("\n");
+    expect(after.slice(after.indexOf("\r\n---\r\n") + 7)).toBe(bodyBefore);
+  });
+
   test("marks the anchored doc in index + frontmatter, advances the cursor, second run is a no-op", async () => {
     const dir = await tempDir();
     const day = "2026-07-11";

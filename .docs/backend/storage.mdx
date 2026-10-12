@@ -7,8 +7,8 @@ relatedFiles: ["src/storage.ts"]
 createdAt: 1767321315890
 updatedAt: 1767321660905
 createdBy: "claude-code"
-verifiedCommit: "a1edb51159f8dc500d48fd7dcbab79b6c4951581"
-verifiedAt: "2026-10-12T02:27:51.032Z"
+verifiedCommit: "699092cfbb036ecfc8e47ec89fed253bdbc7b4af"
+verifiedAt: "2026-10-12T03:14:19.828Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -168,7 +168,7 @@ yields a captured value of `""` → `[]` → the sync would have **deleted** bot
 </Callout>
 
 <Callout type="info">
-**Surgical frontmatter writes**: `recordVerification` (and the consumer's suspect marking) use `setFrontmatterScalars`, which rewrites only the requested `key: value` lines and leaves every body byte alone — so recording a baseline never risks the lossy block round-trip.
+**Surgical frontmatter writes**: `recordVerification` (and the consumer's suspect marking) use `setFrontmatterScalars`, which rewrites only the requested `key: value` lines and leaves every body byte alone — so recording a baseline never risks the lossy block round-trip. It follows the file's line endings, detected from the opening `---` line. It used to match LF only, so on a Windows (CRLF) checkout it silently returned the file unchanged: `verify` and `consume` updated `_index.json` but not the `.mdx`, and the two diverged with no error. `catryna lint` now warns when a doc's frontmatter `verifiedCommit` disagrees with the index.
 </Callout>
 
 <Callout type="info">
