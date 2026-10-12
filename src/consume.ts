@@ -40,7 +40,14 @@ import {
   type SpineEvent,
   type SuiteCursor,
 } from "./events";
-import { effectiveAnchors, readIndexAt, setFrontmatterScalars, type DocIndex, type DocMetadata } from "./storage";
+import {
+  effectiveAnchors,
+  readIndexAt,
+  resolveDocFile,
+  setFrontmatterScalars,
+  type DocIndex,
+  type DocMetadata,
+} from "./storage";
 
 /** One doc newly flagged drift-suspect by a `code.changed` event. */
 export interface SuspectMark {
@@ -242,8 +249,9 @@ async function applyMarks(cwd: string, marks: SuspectMark[], since: string): Pro
     doc.driftSuspectReason = reason;
     wrote = true;
 
-    const mdxPath = join(docsDir, `${doc.path}.mdx`);
     try {
+      // Inside the try: an index entry whose path escapes .docs/ is skipped.
+      const mdxPath = await resolveDocFile(docsDir, doc.path);
       const raw = await readFile(mdxPath, "utf-8");
       await writeFile(
         mdxPath,
