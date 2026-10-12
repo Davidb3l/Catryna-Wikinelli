@@ -8,7 +8,7 @@
  * the index write UNLOCKED, so concurrent `catryna verify` processes lost each
  * other's baselines (seen as a flaky drift-lifecycle failure on windows-latest).
  *
- * These tests inject the error codes through `__setIndexLockCreateForTesting`
+ * These tests inject the error codes through `__setIndexLockFsForTesting`
  * rather than relying on Windows timing, so they are deterministic on every OS.
  * Storage resolves `.docs/` from `process.cwd()` at module load, so each
  * scenario runs in a subprocess whose cwd is a fresh temp project.
@@ -33,7 +33,7 @@ async function scenario(body: string): Promise<any> {
   const fixture = join(dir, "fixture.ts");
   await writeFile(
     fixture,
-    `import { __setIndexLockCreateForTesting, createDoc } from ${JSON.stringify(STORAGE_PATH)};
+    `import { __setIndexLockFsForTesting, createDoc } from ${JSON.stringify(STORAGE_PATH)};
 import { existsSync } from "node:fs";
 import { unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -55,14 +55,20 @@ ${body}
 
 describe("index lock under Windows contention errors", () => {
   for (const code of ["EPERM", "EACCES", "EBUSY"]) {
-    test(`${code} from the lock create means "held": retry, then write UNDER the lock`, async () => {
+    test(`${code} from the lock create means "held": retry, then acquire`, async () => {
       const r = await scenario(`
         let calls = 0;
-        let lockHeldWhileCreated = false;
-        __setIndexLockCreateForTesting(async (path, token) => {
-          calls++;
-          if (calls <= 3) throw fail(${JSON.stringify(code)});
-          await writeFile(path, token, { flag: "wx" });
+        __setIndexLockFsForTesting({
+          create: async (path, token) => {
+            calls++;
+            // While "held", a lock file is present, as it is on Windows mid-delete.
+            if (calls <= 3) {
+              await writeFile(LOCK, "someone else");
+              throw fail(${JSON.stringify(code)});
+            }
+            await unlink(LOCK).catch(() => {});
+            await writeFile(path, token, { flag: "wx" });
+          },
         });
         await createDoc("m/a", "A", [{ type: "text", data: { content: "x" } }]);
         console.log(JSON.stringify({ calls, lockGoneAfter: !existsSync(LOCK) }));
@@ -79,9 +85,11 @@ describe("index lock under Windows contention errors", () => {
     const r = await scenario(`
       await createDoc("m/seed", "Seed", [{ type: "text", data: { content: "x" } }]);
       await writeFile(LOCK, "someone else");
-      __setIndexLockCreateForTesting(async (path, token) => {
-        if (existsSync(path)) throw fail("EPERM");
-        await writeFile(path, token, { flag: "wx" });
+      __setIndexLockFsForTesting({
+        create: async (path, token) => {
+          if (existsSync(path)) throw fail("EPERM");
+          await writeFile(path, token, { flag: "wx" });
+        },
       });
       setTimeout(() => unlink(LOCK), 400);
       const t0 = Date.now();
@@ -92,14 +100,35 @@ describe("index lock under Windows contention errors", () => {
     expect(r.waitedMs).toBeGreaterThanOrEqual(350);
   }, 30_000);
 
-  test("any other error keeps the unlocked fallback: the write still succeeds, at once", async () => {
-    // EROFS / ENOSPC mean the directory can't hold a lock at all. Waiting 30s on
-    // every write there would turn the lock into a new failure mode.
+  test("EPERM with NO lock file present (e.g. a Windows ACL deny) falls back after a short grace, not 30s", async () => {
+    // Nobody holds a lock that isn't there: a lasting EPERM then means the
+    // directory refuses the create, which access(W_OK) can't see on Windows.
     const r = await scenario(`
       let calls = 0;
-      __setIndexLockCreateForTesting(async () => {
-        calls++;
-        throw fail("EROFS");
+      __setIndexLockFsForTesting({
+        create: async () => {
+          calls++;
+          throw fail("EPERM");
+        },
+      });
+      const t0 = Date.now();
+      const meta = await createDoc("m/a", "A", [{ type: "text", data: { content: "x" } }]);
+      console.log(JSON.stringify({ calls, ms: Date.now() - t0, created: meta.path }));
+    `);
+    expect(r.created).toBe("m/a");
+    expect(r.calls).toBeGreaterThan(1); // a transient still gets retried
+    expect(r.ms).toBeLessThan(5_000); // the 30s deadline is not what ends it
+  }, 40_000);
+
+  test("any other error keeps the unlocked fallback: the write still succeeds, at once", async () => {
+    // EROFS / ENOSPC mean the directory can't hold a lock at all.
+    const r = await scenario(`
+      let calls = 0;
+      __setIndexLockFsForTesting({
+        create: async () => {
+          calls++;
+          throw fail("EROFS");
+        },
       });
       const t0 = Date.now();
       const meta = await createDoc("m/a", "A", [{ type: "text", data: { content: "x" } }]);
@@ -108,5 +137,22 @@ describe("index lock under Windows contention errors", () => {
     expect(r.calls).toBe(1);
     expect(r.created).toBe("m/a");
     expect(r.ms).toBeLessThan(5_000);
+  }, 30_000);
+
+  test("a release that hits EBUSY is retried, so the lock doesn't linger for the stale-break", async () => {
+    const r = await scenario(`
+      let unlinks = 0;
+      __setIndexLockFsForTesting({
+        unlink: async (path) => {
+          unlinks++;
+          if (unlinks <= 2) throw fail("EBUSY");
+          await unlink(path);
+        },
+      });
+      await createDoc("m/a", "A", [{ type: "text", data: { content: "x" } }]);
+      console.log(JSON.stringify({ unlinks, lockGoneAfter: !existsSync(LOCK) }));
+    `);
+    expect(r.unlinks).toBe(3);
+    expect(r.lockGoneAfter).toBe(true);
   }, 30_000);
 });

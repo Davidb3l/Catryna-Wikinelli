@@ -6,7 +6,7 @@
  * MCP tools are only needed for CREATE/UPDATE/DELETE operations.
  */
 
-import { readFile, writeFile, mkdir, rename, unlink, readdir, stat, access } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename, unlink, readdir, stat, access, lstat } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { emitEvent, docUri } from "./events";
@@ -260,27 +260,56 @@ const LOCK_POLL_MS = 15;
  */
 const LOCK_CONTENTION_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
 
-const createLockFileDefault = (path: string, token: string): Promise<void> =>
-  writeFile(path, token, { flag: "wx" });
-/** Atomic create-if-absent of the lock file. A variable only for the test seam below. */
-let createLockFile = createLockFileDefault;
+/**
+ * How long a contention-code failure may persist while NO lock file exists
+ * before the directory is treated as unable to hold a lock. Nobody holds a lock
+ * that isn't there, so a lasting EPERM then means a directory that refuses the
+ * create — a Windows ACL deny looks exactly like this, and `access(W_OK)` can't
+ * see it there (it only checks the read-only attribute). Short, because every
+ * write on such a directory pays it.
+ */
+const LOCK_UNHELD_GRACE_MS = 1_000;
+/** Attempts at removing our own lock file before leaving it to the stale-break. */
+const LOCK_RELEASE_ATTEMPTS = 5;
+
+interface LockFs {
+  /** Atomic create-if-absent of the lock file. */
+  create(path: string, token: string): Promise<void>;
+  unlink(path: string): Promise<void>;
+}
+const realLockFs: LockFs = {
+  create: (path, token) => writeFile(path, token, { flag: "wx" }),
+  unlink: (path) => unlink(path),
+};
+/** The lock's file operations. A variable only for the test seam below. */
+let lockFs: LockFs = realLockFs;
 
 /**
- * TEST SEAM: replace the lock-file create, so tests can inject the error codes
- * Windows raises under contention without relying on its timing. `null`
- * restores the real create.
+ * TEST SEAM: replace the lock file's create and/or unlink, so tests can inject
+ * the error codes Windows raises under contention without relying on its
+ * timing. `null` restores the real operations.
  */
-export function __setIndexLockCreateForTesting(fn: typeof createLockFileDefault | null): void {
-  createLockFile = fn ?? createLockFileDefault;
+export function __setIndexLockFsForTesting(fs: Partial<LockFs> | null): void {
+  lockFs = { ...realLockFs, ...fs };
 }
 
-/** Whether this process can create files in `.docs/` at all. */
+/** Whether this process can create files in `.docs/` (POSIX-accurate; Windows only sees read-only). */
 async function docsDirWritable(): Promise<boolean> {
   try {
     await access(DOCS_ROOT, fsConstants.W_OK);
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Whether anything sits at the lock path. A delete-pending file can fail lstat with EPERM: that counts. */
+async function lockFilePresent(): Promise<boolean> {
+  try {
+    await lstat(LOCK_FILE);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException)?.code !== "ENOENT";
   }
 }
 
@@ -328,32 +357,53 @@ async function acquireIndexFileLock(): Promise<() => Promise<void>> {
   // read and the failure it forecloses is total loss of mutual exclusion.
   const token = `${process.pid} ${Date.now()} ${Math.random().toString(36).slice(2)}`;
   const releaseOwned = async () => {
-    try {
-      if ((await readFile(LOCK_FILE, "utf-8")).trim() !== token) return; // not ours
-      await unlink(LOCK_FILE);
-    } catch {
-      // Gone, or unreadable — either way there is nothing of ours to remove.
+    // Retried on the contention codes: on Windows a waiter's stat or an
+    // antivirus scan can hold the file open for a moment, and a swallowed
+    // failure here leaves every waiter stalled until the 15s stale-break.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        if ((await readFile(LOCK_FILE, "utf-8")).trim() !== token) return; // not ours
+        await lockFs.unlink(LOCK_FILE);
+        return;
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException)?.code ?? "";
+        // Gone, unreadable for good, or out of attempts: nothing more to do here.
+        if (!LOCK_CONTENTION_CODES.has(code) || attempt >= LOCK_RELEASE_ATTEMPTS) return;
+        await new Promise((r) => setTimeout(r, LOCK_POLL_MS * attempt));
+      }
     }
   };
 
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  // When a contention-code failure was first seen with no lock file present.
+  let unheldSince: number | null = null;
 
   for (;;) {
     try {
-      await createLockFile(LOCK_FILE, token);
+      await lockFs.create(LOCK_FILE, token);
       return releaseOwned;
     } catch (err) {
       const code = (err as NodeJS.ErrnoException)?.code ?? "";
       // EEXIST is plainly "held". EPERM/EACCES/EBUSY are held TOO on Windows
       // (see LOCK_CONTENTION_CODES): proceeding unlocked on them let concurrent
-      // verifies lose each other's baselines. They mean "held" only while the
-      // directory is writable; a read-only .docs/ (POSIX EACCES/EPERM) can never
-      // hold a lock, and waiting 30s on every write there would be a new
-      // failure mode, so it keeps the unlocked fallback. So does any other code
-      // (EROFS, ENOSPC, …): the lock is an optimization, never a new way for a
-      // write to fail.
-      const held = code === "EEXIST" || (LOCK_CONTENTION_CODES.has(code) && (await docsDirWritable()));
-      if (!held) return noop;
+      // verifies lose each other's baselines. But they also mean "this
+      // directory refuses the create", and waiting 30s on every write there
+      // would be a new failure mode. So:
+      //   - any other code (EROFS, ENOSPC, …), or a directory POSIX reports as
+      //     unwritable, falls back to unlocked at once;
+      //   - with a lock file present, it's held: wait like EEXIST;
+      //   - with NO lock file, nobody holds it: allow LOCK_UNHELD_GRACE_MS for
+      //     a transient, then fall back (the Windows ACL-deny case).
+      // The lock is an optimization, never a new way for a write to fail.
+      if (code !== "EEXIST") {
+        if (!LOCK_CONTENTION_CODES.has(code) || !(await docsDirWritable())) return noop;
+        if (await lockFilePresent()) {
+          unheldSince = null;
+        } else {
+          unheldSince ??= Date.now();
+          if (Date.now() - unheldSince > LOCK_UNHELD_GRACE_MS) return noop;
+        }
+      }
     }
 
     // Held by someone else. Break it only if it is genuinely STALE — a holder
