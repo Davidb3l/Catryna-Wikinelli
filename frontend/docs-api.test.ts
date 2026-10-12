@@ -35,7 +35,7 @@ import http from 'node:http';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 
-import { createDocsApi, findProjects, type Project } from './docs-api';
+import { createDocsApi, findProjects, parseMdx, type Project } from './docs-api';
 
 const dirs: string[] = [];
 const servers: http.Server[] = [];
@@ -455,6 +455,13 @@ describe('CRLF checkouts', () => {
     expect(text).not.toContain('\r');
     expect(blocks[0]).toMatchObject({ type: 'heading-1', content: 'Windows Doc' });
     expect(text).toContain('Body text.');
+  });
+
+  test('parseMdx reads CRLF frontmatter as metadata (the version-history path uses it too)', () => {
+    const crlf = '---\ntitle: "Windows Doc"\ntags: ["a", "b"]\n---\n\n# Windows Doc\n'.replace(/\n/g, '\r\n');
+    const parsed = parseMdx(crlf);
+    expect(parsed.metadata).toMatchObject({ title: 'Windows Doc', tags: ['a', 'b'] });
+    expect(parsed.blocks).toEqual([expect.objectContaining({ type: 'heading-1', content: 'Windows Doc' })]);
   });
 });
 

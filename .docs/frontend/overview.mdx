@@ -3,7 +3,7 @@ id: 8ba895db-7586-4187-92fb-7da033094537
 title: "Frontend Application"
 path: "frontend/overview"
 tags: ["frontend", "react", "vite"]
-relatedFiles: ["frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts", "frontend/hooks/useSystemTheme.ts", "frontend/index.css", "frontend/styles/vendor-reactflow.css", "frontend/styles/vendor-excalidraw.css", "frontend/styles/fonts.css"]
+relatedFiles: ["frontend/docs-api.ts", "frontend/App.tsx", "frontend/index.tsx", "frontend/vite.config.ts", "frontend/index.html", "frontend/package.json", "frontend/components/Trust.tsx", "frontend/components/MermaidDiagram.tsx", "frontend/components/FlowDiagram.tsx", "frontend/components/WhiteboardCanvas.tsx", "frontend/components/LazyCanvas.tsx", "frontend/code-splitting.test.ts", "frontend/hooks/useSystemTheme.ts", "frontend/index.css", "frontend/styles/vendor-reactflow.css", "frontend/styles/vendor-excalidraw.css", "frontend/styles/fonts.css"]
 createdAt: 1767321379263
 updatedAt: 1767321691220
 createdBy: "claude-code"
@@ -708,5 +708,5 @@ Because the Vite plugin imports the drift engine, `src/drift.ts` runs in a modul
 Because it hangs off `configureServer`, the API exists **only in `vite dev`** — a `vite build` bundle has no backend. The docs root defaults to `../.docs` and can be overridden with `DOCS_ROOT`; project scanning honours `PROJECTS_ROOT` before falling back to sibling and common dev directories.
 
 <Callout type="info">
-`parseMdx()` here is a second, independent parser — separate from `src/storage.ts`. It keeps only the `blocks` it produces; the frontmatter it parses is discarded, and the metadata the viewer shows comes from `_index.json`. Frontmatter arrays are written as JSON (so values containing commas or quotes round-trip), and this parser `JSON.parse`s any value starting with `[` — after a legacy `'` → `"` substitution that can corrupt an apostrophe inside an otherwise valid JSON string.
+`parseMdx()` here is a second, independent parser — separate from `src/storage.ts`. Like storage's, it normalizes CRLF to LF before anything else: on a Windows checkout (`core.autocrlf=true`) every `.docs/*.mdx` is CRLF, and a frontmatter regex anchored on a bare LF once rendered each doc's whole YAML block as its opening paragraphs. It keeps only the `blocks` it produces; the frontmatter it parses is discarded, and the metadata the viewer shows comes from `_index.json`. Frontmatter arrays are written as JSON (so values containing commas or quotes round-trip), and this parser `JSON.parse`s any value starting with `[` — after a legacy `'` → `"` substitution that can corrupt an apostrophe inside an otherwise valid JSON string.
 </Callout>
