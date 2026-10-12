@@ -48,8 +48,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "056e52af39d17309bc6c1d167fee3d5f934ea36d",
-      "verifiedAt": "2026-10-12T02:40:18.215Z",
+      "verifiedCommit": "d822aedbbb1ef3b0611d6121b58b2ee7014f83a2",
+      "verifiedAt": "2026-10-12T03:00:55.122Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -165,8 +165,8 @@
       "createdBy": "claude-code",
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "056e52af39d17309bc6c1d167fee3d5f934ea36d",
-      "verifiedAt": "2026-10-12T02:40:18.261Z",
+      "verifiedCommit": "d822aedbbb1ef3b0611d6121b58b2ee7014f83a2",
+      "verifiedAt": "2026-10-12T03:00:55.167Z",
       "anchors": [],
       "driftSuspectSince": "",
       "driftSuspectReason": ""
@@ -291,8 +291,8 @@
       "anchors": [],
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "7767c0284274299a2fe26f7017e05944c27a7101",
-      "verifiedAt": "2026-10-12T01:47:49.212Z",
+      "verifiedCommit": "d822aedbbb1ef3b0611d6121b58b2ee7014f83a2",
+      "verifiedAt": "2026-10-12T03:00:55.210Z",
       "driftSuspectSince": "",
       "driftSuspectReason": "",
       "createdAt": 1785609420180,
@@ -419,8 +419,8 @@
       "anchors": [],
       "evidence": [],
       "refs": [],
-      "verifiedCommit": "056e52af39d17309bc6c1d167fee3d5f934ea36d",
-      "verifiedAt": "2026-10-12T02:40:18.305Z",
+      "verifiedCommit": "d822aedbbb1ef3b0611d6121b58b2ee7014f83a2",
+      "verifiedAt": "2026-10-12T03:00:55.252Z",
       "driftSuspectSince": "",
       "driftSuspectReason": "",
       "createdAt": 1785928800000,
@@ -428,5 +428,5 @@
       "createdBy": "claude-code"
     }
   ],
-  "lastUpdated": 1791772818306
+  "lastUpdated": 1791774055254
 }
