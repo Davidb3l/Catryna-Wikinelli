@@ -674,11 +674,11 @@ The endpoints read the `.docs/` folder off disk:
 
 - `GET /api/docs` - returns `_index.json` verbatim, provided it resolves inside the docs root (`loadIndexJson()`). `/api/drift` checks that same loaded index rather than reading it again, and a doc that resolves elsewhere answers 404, like a missing one
 
-- `GET /api/docs/search?q=` - substring match over title, tags, and path; capped at 20 results
+- `GET /api/docs/search?q=` - substring match over title, tags, and path; capped at 20 results. A missing field contributes nothing, so an untitled doc no longer matches the text "undefined", and the command palette falls back to the doc's path name for it
 
 - `GET /api/docs/:path` - reads `{path}.mdx`, runs the config's own `parseMdx()`, and returns `{ ...indexMetadata, path, blocks, raw }`
 
-- `GET /api/projects` / `POST /api/projects/select` - project discovery and switching
+- `GET /api/projects` / `POST /api/projects/select` - project discovery and switching. Routing uses the pathname only (`/api/projects?x=1` is the list), and the one state-changing endpoint is guarded by `checkStateChangingRequest()` (see below)
 
 - `GET /api/docs/history?path=` - the doc's git history via `gitDocHistory()`: `git log --follow` from the project root, unit/record-separator framed, `--name-only` so each commit carries the file's path *at that commit*. Not a repo → `{ gitRepo: false, commits: [] }`, still 200
 
@@ -697,6 +697,7 @@ Any other `/api/projects/*` URL returns 404. Falling through without `next()` or
 
 - `GET /api/docs/:path` joined the request path onto `docsRoot` with no containment check, serving **any `.mdx` file on the machine** with its body in `raw`. It now strips query/fragment, decodes percent-escapes *before* checking (so `%2e%2e` cannot smuggle a traversal), resolves, and requires the result to stay inside `docsRoot`.
 - `POST /api/projects/select` accepted **any path on disk**, and because the handler `JSON.parse`s regardless of `Content-Type` it is a CORS *simple* request with no preflight — any page the developer visited could silently repoint the viewer with a `no-cors` fetch. `docsRoot` also becomes the cwd for git subprocesses. Selection is now restricted to the set `findProjects()` discovered.
+- The same endpoint was also open to **cross-site requests** with no preflight. `checkStateChangingRequest()` now requires `Content-Type: application/json` (415 otherwise; a cross-origin page can only send text/plain, form or multipart bodies without a preflight this server never approves) and refuses a request whose `Origin` header is present but is not the viewer's own loopback origin (403): a loopback hostname whose host and port are the ones the request was addressed to, or the operator's configured `CATRYNA_VIEWER_HOST`. A DNS-rebinding page fails the loopback test even though its Origin matches its own Host. Requests with no `Origin` (curl, the CLI) pass. Any future state-changing endpoint must call the same guard.
 </Callout>
 
 The last three (coverage, drift, trend) compute against the **project root** (the parent of the docs root), not the dev server's cwd — which is `frontend/`. They read `docsRoot` per request rather than capturing it, because `POST /api/projects/select` switches it at runtime. `/api/drift` passes `emit: false`: rendering a badge must not write to the suite event spine.

@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/check-catryna.sh\" 2>&1 || true"
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/check-catryna.ts\""
           }
         ]
       }
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/drift-check.sh\" 2>&1 || true"
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/hooks/drift-check.ts\""
           }
         ]
       }

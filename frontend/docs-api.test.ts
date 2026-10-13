@@ -36,7 +36,7 @@ import http from 'node:http';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 
-import { createDocsApi, findProjects, parseMdx, viewerHost, type Project } from './docs-api';
+import { checkStateChangingRequest, createDocsApi, findProjects, parseMdx, viewerHost, type Project } from './docs-api';
 import { canSymlinkFiles, symlinkDir, symlinkFile } from '../src/test-symlink';
 
 const dirs: string[] = [];
@@ -578,7 +578,9 @@ describe('POST /api/projects/select allowlist', () => {
       req('/api/projects/select', {
         method: 'POST',
         body: JSON.stringify({ path: projectPath }),
-        headers,
+        // The viewer always sends JSON; individual tests override this to
+        // exercise the CSRF guard.
+        headers: { 'Content-Type': 'application/json', ...headers },
       });
     const servedTitles = async () => {
       const res = await req('/api/docs');
@@ -586,7 +588,7 @@ describe('POST /api/projects/select allowlist', () => {
       return JSON.parse(res.body).docs.map((d: { title: string }) => d.title) as string[];
     };
 
-    return { fx, api, req, select, servedTitles };
+    return { fx, api, port, req, select, servedTitles };
   }
 
   test('a discovered project can be selected', async () => {
@@ -630,21 +632,87 @@ describe('POST /api/projects/select allowlist', () => {
   });
 
   test('refuses regardless of Content-Type — the CORS-simple case', async () => {
-    // The handler JSON.parses the body whatever the Content-Type says, which is
-    // precisely what made this reachable with a no-preflight cross-origin
-    // fetch. The allowlist must therefore hold on the text/plain path too, not
-    // only on the well-behaved application/json one the frontend sends.
+    // The handler used to JSON.parse the body whatever the Content-Type said,
+    // which is precisely what made this reachable with a no-preflight
+    // cross-origin fetch. An undiscovered project is refused on the
+    // text/plain path too, not only on the application/json one the frontend
+    // sends (here by the Content-Type guard; the allowlist is the backstop).
     const { fx, select, servedTitles } = await setup();
 
     for (const headers of [
       { 'Content-Type': 'text/plain' },
       { 'Content-Type': 'application/x-www-form-urlencoded' },
-      {} as Record<string, string>,
     ]) {
       const res = await select(fx.evil, headers);
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(415);
       expect(await servedTitles()).toContain('Alpha Coverage Doc');
     }
+  });
+
+  test('CSRF: a text/plain body (the no-preflight form) cannot even switch to a DISCOVERED project', async () => {
+    // The allowlist alone would let a hostile page flip the viewer between
+    // legitimate projects. The Content-Type guard refuses it before the body
+    // is read, and the root does not move.
+    const { fx, api, port, select, servedTitles } = await setup();
+    const before = api.getDocsRoot();
+
+    for (const headers of [
+      { 'Content-Type': 'text/plain;charset=UTF-8' },
+      { 'Content-Type': 'multipart/form-data; boundary=x' },
+      { 'Content-Type': '' },
+    ]) {
+      const res = await select(fx.beta, headers);
+      expect(res.status).toBe(415);
+    }
+    // No Content-Type header at all.
+    const bare = await rawRequest(port, '/api/projects/select', {
+      method: 'POST',
+      body: JSON.stringify({ path: fx.beta }),
+    });
+    expect(bare.status).toBe(415);
+
+    expect(api.getDocsRoot()).toBe(before);
+    expect(await servedTitles()).toContain('Alpha Coverage Doc');
+  });
+
+  test('CSRF: a request whose Origin is not the viewer own loopback origin is refused', async () => {
+    const { fx, api, select, servedTitles } = await setup();
+    const before = api.getDocsRoot();
+
+    for (const origin of [
+      'https://evil.example',
+      'http://evil.example:1307',
+      'http://127.0.0.1.evil.example', // loopback-looking prefix
+      'http://localhost:1307',         // loopback, but not the host this request was addressed to
+      'null',                          // sandboxed iframe / opaque origin
+      'not a url',
+    ]) {
+      const res = await select(fx.beta, { Origin: origin });
+      expect(res.status).toBe(403);
+      expect(JSON.parse(res.body).error).toBe('Cross-origin request refused');
+    }
+    expect(api.getDocsRoot()).toBe(before);
+    expect(await servedTitles()).toContain('Alpha Coverage Doc');
+  });
+
+  test('CSRF: the viewer own origin, and a request with no Origin at all, are accepted', async () => {
+    const { fx, select, servedTitles } = await setup();
+
+    // The test client addresses the server as `Host: 127.0.0.1`, so that is its own origin.
+    const same = await select(fx.beta, { Origin: 'http://127.0.0.1' });
+    expect(same.status).toBe(200);
+    expect(await servedTitles()).toEqual(['Beta Only Doc']);
+
+    // curl / the CLI send no Origin: not browser-driven, so not CSRF.
+    const noOrigin = await select(fx.alpha);
+    expect(noOrigin.status).toBe(200);
+    expect(await servedTitles()).toContain('Alpha Coverage Doc');
+  });
+
+  test('application/json with a charset parameter and odd casing is accepted', async () => {
+    const { fx, select } = await setup();
+    const res = await select(fx.beta, { 'Content-Type': 'Application/JSON; charset=utf-8' });
+    expect(res.status).toBe(200);
   });
 
   test('a traversal-shaped path cannot smuggle an undiscovered project past the allowlist', async () => {
@@ -674,7 +742,11 @@ describe('POST /api/projects/select allowlist', () => {
     const { api, req, servedTitles } = await setup();
     const before = api.getDocsRoot();
 
-    const res = await req('/api/projects/select', { method: 'POST', body: '{not json' });
+    const res = await req('/api/projects/select', {
+      method: 'POST',
+      body: '{not json',
+      headers: { 'Content-Type': 'application/json' },
+    });
     expect(res.status).toBe(400);
     expect(api.getDocsRoot()).toBe(before);
     expect(await servedTitles()).toContain('Alpha Coverage Doc');
@@ -697,6 +769,27 @@ describe('POST /api/projects/select allowlist', () => {
     expect((await req('/api/docs/backend/coverage')).status).toBe(404);
   });
 
+  test('GET /api/projects ignores a query string (B6)', async () => {
+    const { req } = await setup();
+    for (const target of ['/api/projects?x=1', '/api/projects/?x=1', '/api/projects?']) {
+      const res = await req(target);
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body).projects.length).toBe(2);
+    }
+  });
+
+  test('POST /api/projects/select?x=1 is the select endpoint, guard included', async () => {
+    const { fx, req } = await setup();
+    const bad = await req('/api/projects/select?x=1', { method: 'POST', body: JSON.stringify({ path: fx.beta }) });
+    expect(bad.status).toBe(415);
+    const ok = await req('/api/projects/select?x=1', {
+      method: 'POST',
+      body: JSON.stringify({ path: fx.beta }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(ok.status).toBe(200);
+  });
+
   test('GET /api/projects lists exactly the discovered set', async () => {
     const { req } = await setup();
     const res = await req('/api/projects');
@@ -704,6 +797,34 @@ describe('POST /api/projects/select allowlist', () => {
 
     const names = JSON.parse(res.body).projects.map((p: Project) => p.name).sort();
     expect(names).toEqual(['alpha', 'beta']); // `evil` is outside the scan root
+  });
+});
+
+describe('checkStateChangingRequest', () => {
+  const json = { 'content-type': 'application/json' };
+
+  test('loopback origins must match the Host the request was addressed to', () => {
+    const ok = (origin: string, host: string) =>
+      checkStateChangingRequest({ headers: { ...json, origin, host } }, {});
+    expect(ok('http://localhost:1307', 'localhost:1307')).toBeNull();
+    expect(ok('http://127.0.0.1:1307', '127.0.0.1:1307')).toBeNull();
+    expect(ok('http://[::1]:1307', '[::1]:1307')).toBeNull();
+    expect(ok('http://localhost:1307', 'localhost:9999')?.status).toBe(403); // another local port
+    expect(ok('http://evil.example:1307', 'evil.example:1307')?.status).toBe(403); // DNS rebinding
+  });
+
+  test('an operator-configured CATRYNA_VIEWER_HOST is the viewer own origin; wildcards are not', () => {
+    const req = { headers: { ...json, origin: 'http://192.168.1.5:1307', host: '192.168.1.5:1307' } };
+    expect(checkStateChangingRequest(req, { CATRYNA_VIEWER_HOST: '192.168.1.5' })).toBeNull();
+    expect(checkStateChangingRequest(req, {})?.status).toBe(403);
+    const wild = { headers: { ...json, origin: 'http://0.0.0.0:1307', host: '0.0.0.0:1307' } };
+    expect(checkStateChangingRequest(wild, { CATRYNA_VIEWER_HOST: '0.0.0.0' })?.status).toBe(403);
+  });
+
+  test('no Origin: only the Content-Type decides', () => {
+    expect(checkStateChangingRequest({ headers: json }, {})).toBeNull();
+    expect(checkStateChangingRequest({ headers: {} }, {})?.status).toBe(415);
+    expect(checkStateChangingRequest({ headers: { 'content-type': 'text/plain' } }, {})?.status).toBe(415);
   });
 });
 
@@ -775,6 +896,23 @@ describe('docs listing and search', () => {
     const body = JSON.parse(res.body);
     expect(body.query).toBe('intro');
     expect(body.results.map((d: { path: string }) => d.path)).toEqual(['guides/intro']);
+  });
+
+  test('search does not match the text "undefined" for an untitled doc (B6)', async () => {
+    const fx = await makeFixture();
+    const untitled = { ...docMeta('notes/untitled-thing', 'x'), title: undefined, tags: undefined };
+    await writeFile(join(fx.alpha, '.docs', '_index.json'), JSON.stringify({
+      version: 1, lastUpdated: 0, docs: [untitled, docMeta('guides/intro', 'Alpha Intro Guide')],
+    }));
+    const { get } = await mount({ docsRoot: join(fx.alpha, '.docs'), projects: () => [] });
+
+    // Pre-fix the searchable text was "undefined  notes/untitled-thing".
+    const none = JSON.parse((await get('/api/docs/search?q=undefined')).body);
+    expect(none.results).toEqual([]);
+
+    // The untitled doc is still findable by its path.
+    const byPath = JSON.parse((await get('/api/docs/search?q=untitled-thing')).body);
+    expect(byPath.results.map((d: { path: string }) => d.path)).toEqual(['notes/untitled-thing']);
   });
 
   test('a malformed _index.json produces an error response, not a hang or crash', async () => {

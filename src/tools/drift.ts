@@ -29,6 +29,7 @@ import {
   buildDriftJson,
   buildVerifyJson,
   runGit,
+  DIFF_FLAGS,
   type CliRun,
 } from "../drift";
 import { resolveDocFile } from "../storage";
@@ -165,7 +166,13 @@ export async function buildRepairContext(
     for (const file of d.changedFiles) {
       // Defensive: consume computeDrift's per-doc baseline; if git rejects the
       // range (baseline gone), record the error rather than throwing.
-      const r = await runGit(cwd, ["diff", `${d.verifiedCommit}..HEAD`, "--", file]);
+      const r = await runGit(cwd, [
+        "diff",
+        ...DIFF_FLAGS,
+        `${d.verifiedCommit}..HEAD`,
+        "--",
+        file,
+      ]);
       diffs.push(
         r.ok ? { file, diff: r.stdout } : { file, diff: "", diffError: r.stderr.trim() },
       );

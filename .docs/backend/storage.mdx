@@ -125,11 +125,11 @@ Every anchor path goes through `normalizeAnchorPath`: backslashes become `/`, du
 | `deleteDoc()` | Removes MDX file and index entry |
 | `searchDocs()` | Full-text search across content |
 | `recordVerification()` | Records the drift baseline, reconciles frontmatter anchors into the index, clears drift-suspect, emits `doc.verified` |
-| `readIndexAt(cwd)` | Read-only index read that never creates the store (used by doctor/drift) |
-| `loadIndex()` | Index read for write paths; creates an empty index on a miss |
+| `readIndexAt(cwd)` | Read-only index read that never creates the store (used by doctor/drift/lint). Retries a transient `EBUSY`/`EPERM`/`EACCES` and a failed parse (a possible torn read) briefly, then throws `IndexUnreadableError`, which names the file and says so when it holds merge-conflict markers. A missing file rejects with the raw `ENOENT` |
+| `loadIndex()` | Index read for write paths. Creates an empty index **only when the file is absent** (create-if-absent, so a concurrent writer's real index wins); an index that exists but is unusable throws `IndexUnreadableError` and is never overwritten |
 | `effectiveAnchors()` | Merges `anchors` with file-level `relatedFiles` for drift |
 | `readFrontmatterAnchorFields()` | Reads `relatedFiles` / `anchors` as authored in a raw `.mdx`. Three distinct outcomes: absent, decodable (possibly a deliberate `[]`), or present-but-unreadable — the last is reported in `unreadable`, never mistaken for empty |
-| `setFrontmatterScalars()` | Surgically rewrites frontmatter keys, body byte-for-byte untouched |
+| `setFrontmatterScalars()` | Surgically rewrites frontmatter keys, body byte-for-byte untouched. Handles an empty `---`/`---` block and a closing `---` that is the file's last line |
 | `parseMdx()` | Parses an .mdx back into metadata + blocks |
 
 ## Write safety
@@ -143,7 +143,7 @@ Every anchor path goes through `normalizeAnchorPath`: backslashes become `/`, du
 
 Three properties keep the lock from ever wedging or corrupting the store:
 
-- **Stale-break.** A lock untouched for 15s is assumed abandoned (its holder crashed) and removed.
+- **Stale-break.** A lock untouched for 15s is assumed abandoned (its holder crashed) and broken, race-safely (`breakStaleLock`). A plain stat-then-unlink let waiter A judge a lock stale, waiter B break it and a third process take a fresh one, and then A's unlink delete that live lock, leaving two holders. The break is a `rename` to a unique tombstone name: atomic, and of N waiters exactly one wins. The winner verifies it moved the lock it judged stale (same token, still old) and, if a live lock slipped in underneath, puts it back with `link` (which will not clobber a newer one). Only a regular file is ever broken; a directory at the path is left for the bounded wait.
 - **Ownership-checked release** *(defensive, untested)*. The lock file holds a token unique to each acquisition, and release unlinks only if that token is still there. Without it, a holder whose lock was broken as stale would delete its *successor's* live lock on the way out — and that cascades into no mutual exclusion at all until the queue drains, far worse than the single lost update the stale-break was trading for. Reaching the mismatch branch requires our own lock to be broken while we still hold it, against a millisecond-long critical section and a 15s stale threshold; removing the check leaves the whole suite green. Same standing as the atomic write below: kept for cost-versus-consequence, not claimed as verified.
 - **Bounded wait.** After 30s of contention a waiter gives up and proceeds **unlocked**, rather than looping. Never `continue` past the sleep and the deadline: an earlier version swallowed a failed `unlink` with a bare `continue`, and a lock that could not be removed (a directory at the path, an immutable flag, a Windows `EPERM`) then busy-looped forever at 100% CPU — hanging the CLI *and* the MCP server, since `withIndexLock` wraps every doc mutation.
 
@@ -152,8 +152,12 @@ Three properties keep the lock from ever wedging or corrupting the store:
 If the lock file cannot be created at all (a read-only `.docs/`, which raises the same `EACCES`/`EPERM` on POSIX, or `EROFS`, `ENOSPC`, …), the mutation proceeds unlocked. The lock is an optimization, never a new way for a write to fail or hang.
 </Callout>
 
+<Callout type="warning">
+**A corrupt index is an error, never a fresh start.** `_index.json` is the only record of every doc's metadata, drift baseline and anchors. `loadIndex` used to treat *any* failure as "no index yet" and write an empty one, so a single bad merge (conflict markers in the JSON) was silently turned into the loss of the whole corpus's metadata at the next write tool call. Now only `ENOENT` creates an index. A file that exists but does not parse (or has no `docs` array) throws `IndexUnreadableError`, which names the file, says when it contains `<<<<<<<` markers, and leaves the file byte-for-byte untouched; the write tools surface that message and `computeDrift` returns it as the report's `error`. A failed parse is re-read a few times first, because it can be a torn read of a file mid-write, and `EBUSY`/`EPERM`/`EACCES` reads (Windows sharing violations) are retried briefly (`retryTransientFs`). `src/index-integrity.test.ts` pins each case.
+</Callout>
+
 <Callout type="info">
-**Atomic index writes — defensive, not a fix for an observed failure.** `saveIndex` writes a pid-suffixed temp file and renames it over `_index.json`. Readers are deliberately unlocked and `loadIndex`'s miss path *saves an empty index*, so a reader catching a truncated file would persist an empty store over the corpus. An attempt to reproduce that (3000 concurrent 640 KB writes against a tight reader loop, on APFS) produced zero torn reads, so no test here asserts it and none is claimed. The rename costs nothing and the failure it forecloses is total; that is the whole argument.
+**Atomic index writes — defensive, not a fix for an observed failure.** `saveIndex` writes a pid-suffixed temp file and renames it over `_index.json`. Readers are deliberately unlocked; a reader that caught a truncated file used to treat it as a miss and *save an empty index* over the corpus. `loadIndex` no longer overwrites anything on a parse failure (see the next callout), but the rename still stops the torn read from happening. An attempt to reproduce one (3000 concurrent 640 KB writes against a tight reader loop, on APFS) produced zero torn reads, so no test here asserts it and none is claimed. The rename costs nothing; that is the whole argument.
 </Callout>
 
 <Callout type="info">
@@ -168,7 +172,7 @@ yields a captured value of `""` → `[]` → the sync would have **deleted** bot
 </Callout>
 
 <Callout type="info">
-**Surgical frontmatter writes**: `recordVerification` (and the consumer's suspect marking) use `setFrontmatterScalars`, which rewrites only the requested `key: value` lines and leaves every body byte alone — so recording a baseline never risks the lossy block round-trip. It follows the file's line endings, detected from the opening `---` line. It used to match LF only, so on a Windows (CRLF) checkout it silently returned the file unchanged: `verify` and `consume` updated `_index.json` but not the `.mdx`, and the two diverged with no error. `catryna lint` now warns when a doc's frontmatter `verifiedCommit` disagrees with the index.
+**Surgical frontmatter writes**: `recordVerification` (and the consumer's suspect marking) use `setFrontmatterScalars`, which rewrites only the requested `key: value` lines and leaves every body byte alone — so recording a baseline never risks the lossy block round-trip. The block may be empty (`---` straight into `---`, tried first so a later horizontal rule in the body is never taken for the closing delimiter), and its closing `---` may be the file's last line; both used to be skipped silently. It follows the file's line endings, detected from the opening `---` line. It used to match LF only, so on a Windows (CRLF) checkout it silently returned the file unchanged: `verify` and `consume` updated `_index.json` but not the `.mdx`, and the two diverged with no error. `catryna lint` now warns when a doc's frontmatter `verifiedCommit` disagrees with the index.
 </Callout>
 
 <Callout type="info">

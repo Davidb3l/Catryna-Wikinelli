@@ -232,6 +232,72 @@ export async function gitDocHistory(projectRoot: string, pathspec: string): Prom
   return { ok: true, commits };
 }
 
+/**
+ * Hostnames that mean "this machine" in an Origin header. URL parsing keeps the
+ * brackets on an IPv6 host.
+ */
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/** Why a state-changing request was refused, with the HTTP status to answer. */
+export interface RequestRefusal {
+  status: number;
+  error: string;
+}
+
+/**
+ * CSRF guard for every STATE-CHANGING endpoint (today: `POST /api/projects/select`).
+ *
+ * The API is unauthenticated and the viewer runs on a predictable loopback port,
+ * so any web page the developer has open can aim a request at it. Two checks,
+ * both cheap, close that:
+ *
+ *   1. `Content-Type: application/json`. A cross-origin page can only send
+ *      text/plain, form-encoded or multipart bodies without a CORS preflight, so
+ *      requiring JSON forces a preflight that this server never approves. (The
+ *      handler used to JSON.parse whatever it was sent.)
+ *   2. An `Origin` header, when present, must be the viewer's own origin: a
+ *      loopback hostname (localhost, 127.0.0.1, [::1]) whose host:port is the
+ *      one the request was addressed to. Browsers attach Origin to every
+ *      cross-origin POST and to same-origin ones, so a hostile page's Origin is
+ *      always present and never passes; a DNS-rebinding page fails the loopback
+ *      test even though its Origin matches its own Host. Requests with NO Origin
+ *      (curl, the CLI, server-to-server) are not browser-driven CSRF and pass.
+ *
+ * When the operator deliberately exposes the viewer (`CATRYNA_VIEWER_HOST`),
+ * that configured hostname is accepted as the viewer's own origin too.
+ *
+ * Returns null when the request may proceed.
+ */
+export function checkStateChangingRequest(
+  req: Pick<IncomingMessage, 'headers'>,
+  env: Record<string, string | undefined> = process.env,
+): RequestRefusal | null {
+  const origin = req.headers.origin;
+  if (origin !== undefined) {
+    let ok = false;
+    try {
+      const o = new URL(String(origin));
+      const configured = env.CATRYNA_VIEWER_HOST?.trim().toLowerCase();
+      const trustedHost =
+        LOOPBACK_HOSTNAMES.has(o.hostname) ||
+        (!!configured && configured !== '0.0.0.0' && configured !== '::' && o.hostname === configured);
+      const hostHeader = String(req.headers.host ?? '').toLowerCase();
+      ok = (o.protocol === 'http:' || o.protocol === 'https:') && trustedHost && o.host === hostHeader;
+    } catch {
+      ok = false; // includes the literal Origin "null" sent by sandboxed/opaque contexts
+    }
+    if (!ok) {
+      return { status: 403, error: 'Cross-origin request refused' };
+    }
+  }
+
+  const contentType = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+  if (contentType !== 'application/json') {
+    return { status: 415, error: 'Content-Type must be application/json' };
+  }
+  return null;
+}
+
 export interface DocsApi {
   /** Register these on `server.middlewares`, in order. */
   middlewares: Middleware[];
@@ -253,9 +319,12 @@ export function createDocsApi(opts: {
 
     res.setHeader('Content-Type', 'application/json');
 
+    // Route on the pathname only: `/api/projects?x=1` is the list, not a 404.
+    const pathname = req.url.split('?')[0].split('#')[0];
+
     try {
       // GET /api/projects - List all projects with .docs
-      if (req.url === '/api/projects' || req.url === '/api/projects/') {
+      if (pathname === '/api/projects' || pathname === '/api/projects/') {
         const projects = discoverProjects();
         const currentProject = projects.find(p => p.docsPath === docsRoot);
         res.end(JSON.stringify({
@@ -266,7 +335,16 @@ export function createDocsApi(opts: {
       }
 
       // POST /api/projects/select - Switch to a different project
-      if (req.url === '/api/projects/select' && req.method === 'POST') {
+      if (pathname === '/api/projects/select' && req.method === 'POST') {
+        // CSRF guard first: nothing below may run for a request a hostile page
+        // could have sent. See checkStateChangingRequest.
+        const refusal = checkStateChangingRequest(req);
+        if (refusal) {
+          res.statusCode = refusal.status;
+          res.end(JSON.stringify({ error: refusal.error }));
+          return;
+        }
+
         let body = '';
         req.on('data', chunk => body += chunk);
         req.on('end', () => {
@@ -274,9 +352,11 @@ export function createDocsApi(opts: {
             const { path: projectPath } = JSON.parse(body);
 
             // SECURITY: this used to accept ANY path on disk, and because the
-            // handler JSON.parses regardless of Content-Type it is a CORS
+            // handler JSON.parsed regardless of Content-Type it was a CORS
             // *simple* request — no preflight — so any page the developer
             // visited could silently repoint the viewer with a no-cors fetch.
+            // (The Content-Type / Origin guard above now closes that too; the
+            // allowlist stays as defence in depth.)
             // `docsRoot` also becomes the cwd for git subprocesses via
             // `projectRoot`, so this was not merely a display concern.
             //
@@ -346,8 +426,11 @@ export function createDocsApi(opts: {
         const index = readIndexFile(docsRoot);
         const results = index.docs
           .filter((doc: any) => {
-            // Search in title, tags, path
-            const searchable = `${doc.title} ${doc.tags?.join(' ') || ''} ${doc.path}`.toLowerCase();
+            // Search in title, tags, path. An untitled doc has no title: it must
+            // not contribute the literal text "undefined" (which a query for
+            // "undefined" would then match), so every field defaults to ''.
+            const tags = Array.isArray(doc.tags) ? doc.tags.join(' ') : '';
+            const searchable = `${doc.title ?? ''} ${tags} ${doc.path ?? ''}`.toLowerCase();
             return query.split(' ').every((term: string) => searchable.includes(term));
           })
           .slice(0, 20);

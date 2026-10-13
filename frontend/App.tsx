@@ -127,7 +127,7 @@ const CommandPalette: React.FC<{ isOpen: boolean; onClose: () => void; onSelect:
             </div>
           ) : displayDocs.map(doc => (
             <div key={doc.id || doc.path} onClick={() => { onSelect(doc.path); onClose(); setQuery(''); }} className="catryna-result flex items-center justify-between px-2.5 sm:px-3 py-2 sm:py-2.5 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer text-xs sm:text-sm group">
-              <div className="flex items-center gap-2 sm:gap-3 min-w-0"><FileText size={14} className="text-zinc-400 shrink-0 sm:w-4 sm:h-4" /><span className="truncate">{doc.title}</span></div>
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0"><FileText size={14} className="text-zinc-400 shrink-0 sm:w-4 sm:h-4" /><span className="truncate">{doc.title || doc.path.split('/').pop() || doc.path}</span></div>
               <span className="text-[9px] sm:text-[10px] text-zinc-400 uppercase opacity-0 group-hover:opacity-100 shrink-0 ml-2">{doc.path.split('/')[0]}</span>
             </div>
           ))}

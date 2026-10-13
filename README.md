@@ -22,7 +22,7 @@ Every project accumulates knowledge that lives nowhere: why the auth flow works 
 
 ## Quickstart
 
-**Prerequisites:** [Bun](https://bun.sh) v1.0+ and Git.
+**Prerequisites:** [Bun](https://bun.sh) v1.2+ and Git. Bun 1.2 is the floor because the repo's lockfile is the text `bun.lock`, which became Bun's default lockfile format in 1.2; `package.json` declares it in `engines`.
 
 ### Claude Code plugin (recommended)
 
@@ -31,6 +31,13 @@ Inside Claude Code:
 ```
 /plugin marketplace add Davidb3l/Catryna-Wikinelli
 /plugin install catryna@catryna-wikinelli
+```
+
+Or, if you run the whole [Sothis suite](https://github.com/Davidb3l/Sothis), install it from the suite marketplace instead (the `catryna` plugin is the same):
+
+```
+/plugin marketplace add Davidb3l/Sothis
+/plugin install catryna@sothis
 ```
 
 This registers the MCP server (it installs its own dependencies on first run and stores docs in the `.docs/` folder of whichever project you're working in), an Agent Skill that teaches Claude to search `.docs/` before coding and update docs after changing code, and a `/catryna:viewer` command that starts the human viewer.
@@ -158,11 +165,14 @@ This repo documents itself with Catryna — browse [`.docs/`](.docs/) for real e
 
 ## Platform support
 
-Tested on **macOS and Windows**. `.docs/` travels between machines, so anchor
-paths always use forward slashes (git's format on every OS) and CRLF checkouts
-are handled on read. Linux is expected to work and is on the roadmap for
-official support and testing.
+CI runs the full gate (typecheck, tests, doc lint, drift) on **Ubuntu, macOS and
+Windows**. The plugin needs only Bun and Git on every OS: the MCP server and both
+hooks (SessionStart and Stop) run through `bun` directly, so no POSIX shell is
+required, including on Windows outside Git Bash. `.docs/` travels between
+machines, so anchor paths always use forward slashes (git's format on every OS)
+and CRLF checkouts are handled on read. The tests that need file symlinks are
+skipped on a Windows host without Developer Mode (they still run in CI).
 
 ## Status & license
 
-Early-stage (v1.3.0) and moving fast; issues and PRs welcome. MIT licensed.
+Early-stage (v1.3.1) and moving fast; issues and PRs welcome. MIT licensed.
