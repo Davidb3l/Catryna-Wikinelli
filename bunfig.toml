@@ -1,0 +1,4 @@
+[test]
+# Strip GIT_DIR & co. before any test runs: git exports them to hooks, and the
+# pre-push hook runs the suite. See src/test-preload.ts.
+preload = ["./src/test-preload.ts"]
