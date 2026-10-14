@@ -52,6 +52,7 @@ Usage:
                                    balance, anchors that resolve, index/file agreement.
                                    Exits 3 on errors, like drift. Warnings never gate.
   catryna consume [--json]         Consume code.changed → mark docs drift-suspect (spine tail)
+  catryna --version                Print the version
   catryna --help                   Show this help
 
 The MCP server is a separate entry (catryna-mcp / scripts/run-server.ts).`;
@@ -106,6 +107,15 @@ export async function main(argv: string[]): Promise<number> {
   const wantsHelp = args.includes("--help") || args.includes("-h");
   const positionals = args.filter((a) => !a.startsWith("-"));
   const sub = positionals[0];
+
+  // `--version` / `-V` / `version`: print `catryna <version>` and exit 0. The
+  // suite doctor probes every tool with `<cmd> --version`, and before this the
+  // flag fell through to the no-subcommand usage error (exit 2). A real
+  // subcommand wins over the bare flag (`catryna drift --version` is still drift's).
+  if ((!sub && (args.includes("--version") || args.includes("-V"))) || sub === "version") {
+    process.stdout.write(`catryna ${await readVersion()}\n`);
+    return 0;
+  }
 
   if (wantsHelp && !sub) {
     // §4 rule 1: never put non-JSON on stdout under --json. `--json --help`

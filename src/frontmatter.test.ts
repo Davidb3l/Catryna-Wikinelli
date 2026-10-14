@@ -280,3 +280,52 @@ describe("setFrontmatterScalars follows the file's line endings", () => {
     });
   }
 });
+
+describe("setFrontmatterScalars edge shapes (B6)", () => {
+  const FIELDS = { verifiedCommit: "abc", verifiedAt: "t" };
+
+  test("an EMPTY block (---/---) gains the fields instead of being skipped", () => {
+    const out = setFrontmatterScalars("---\n---\nbody\n", FIELDS);
+    expect(out).toBe('---\nverifiedCommit: "abc"\nverifiedAt: "t"\n---\nbody\n');
+    expect(parseMdx(out).metadata).toMatchObject(FIELDS);
+  });
+
+  test("an EMPTY block in a CRLF file keeps CRLF", () => {
+    const out = setFrontmatterScalars("---\r\n---\r\nbody\r\n", FIELDS);
+    expect(out).toBe('---\r\nverifiedCommit: "abc"\r\nverifiedAt: "t"\r\n---\r\nbody\r\n');
+  });
+
+  test("an empty block is closed by ITS delimiter, not a later horizontal rule in the body", () => {
+    const input = "---\n---\n\nintro\n\n---\n\nafter the rule\n";
+    const out = setFrontmatterScalars(input, FIELDS);
+    expect(out.endsWith("\n---\n\nintro\n\n---\n\nafter the rule\n")).toBe(true);
+    expect(out.startsWith('---\nverifiedCommit: "abc"\nverifiedAt: "t"\n---\n')).toBe(true);
+  });
+
+  test("an empty block that is the whole file (no trailing newline)", () => {
+    expect(setFrontmatterScalars("---\n---", FIELDS)).toBe('---\nverifiedCommit: "abc"\nverifiedAt: "t"\n---');
+  });
+
+  test("no trailing newline after the closing --- is still a frontmatter block", () => {
+    const input = '---\nid: x\nverifiedCommit: ""\n---';
+    const out = setFrontmatterScalars(input, FIELDS);
+    expect(out).toBe('---\nid: x\nverifiedCommit: "abc"\nverifiedAt: "t"\n---');
+    // Not adding a newline the file didn't have: the delimiter is kept as it was.
+    expect(out.endsWith("---")).toBe(true);
+  });
+
+  test("CRLF block with no trailing newline after the closing ---", () => {
+    const out = setFrontmatterScalars('---\r\nid: x\r\n---', FIELDS);
+    expect(out).toBe('---\r\nid: x\r\nverifiedCommit: "abc"\r\nverifiedAt: "t"\r\n---');
+  });
+
+  test("a closing line that merely STARTS with --- is not a delimiter", () => {
+    const input = "---\nid: x\n---not-a-delimiter\nmore\n";
+    expect(setFrontmatterScalars(input, FIELDS)).toBe(input);
+  });
+
+  test("no frontmatter at all is still returned unchanged", () => {
+    expect(setFrontmatterScalars("# Just a heading\n", FIELDS)).toBe("# Just a heading\n");
+    expect(setFrontmatterScalars("---\nid: x\nnever closed\n", FIELDS)).toBe("---\nid: x\nnever closed\n");
+  });
+});

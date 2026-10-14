@@ -6,7 +6,7 @@
  * MCP tools are only needed for CREATE/UPDATE/DELETE operations.
  */
 
-import { readFile, writeFile, mkdir, rename, unlink, readdir, stat, access, lstat, realpath } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename, unlink, readdir, stat, access, lstat, realpath, link } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { join, dirname, basename, relative, isAbsolute, sep } from "node:path";
 import { emitEvent, docUri } from "./events";
@@ -139,66 +139,162 @@ async function ensureDocsFolder(): Promise<void> {
 }
 
 /**
- * Read and parse the docs index for a given working directory WITHOUT creating
- * it. Throws on a missing or malformed `_index.json` (ENOENT / SyntaxError).
+ * `_index.json` exists but cannot be used: it does not parse (truncated, hand-
+ * mangled, or holding git merge-conflict markers) or is not an index at all.
  *
- * This is the read-only counterpart to `loadIndex()` (which creates an empty
- * index as a side effect on a miss). `catryna doctor` needs a read-only probe —
- * it must never write another repo's `.docs/` just to answer a health check —
- * so it goes through here. Parameterized by `cwd` so it can inspect any repo,
- * not just the one captured at module load.
+ * This is deliberately an ERROR, never a reason to start over. The index is the
+ * only record of every doc's metadata, drift baseline and anchors; the old
+ * behaviour (treat any failure as "no index yet" and write an empty one) turned
+ * one bad merge into the silent loss of the whole corpus's metadata.
  */
-export async function readIndexAt(cwd: string = process.cwd()): Promise<DocIndex> {
-  const indexFile = join(cwd, ".docs", "_index.json");
-  const content = await readFile(indexFile, "utf-8");
-  return JSON.parse(content) as DocIndex;
+export class IndexUnreadableError extends Error {
+  readonly code = "INDEX_UNREADABLE";
+  /** True when the file contains git merge-conflict markers. */
+  readonly conflictMarkers: boolean;
+  constructor(readonly file: string, reason: string, conflictMarkers: boolean) {
+    super(
+      conflictMarkers
+        ? `${file} contains git merge-conflict markers (<<<<<<<) and is not valid JSON (${reason}). ` +
+            `Resolve the conflict (or run \`git checkout --theirs|--ours -- .docs/_index.json\`), then retry. ` +
+            `The file was left untouched.`
+        : `${file} is not valid JSON (${reason}). It may be truncated, corrupt, or hold unresolved ` +
+            `merge-conflict markers. Restore it (e.g. \`git checkout -- .docs/_index.json\`) and retry. ` +
+            `The file was left untouched.`,
+    );
+    this.name = "IndexUnreadableError";
+    this.conflictMarkers = conflictMarkers;
+  }
+}
+
+/** Filesystem errors that mean "busy right now", not "gone / unreadable for good" (Windows). */
+const TRANSIENT_FS_CODES = new Set(["EBUSY", "EPERM", "EACCES"]);
+
+/**
+ * Run `op`, retrying briefly while it fails with a transient Windows sharing
+ * code (EBUSY / EPERM / EACCES: an antivirus scan, a writer mid-rename). Any
+ * other error, or exhausting `attempts`, rethrows the last error. Exported for
+ * tests; `sleep` is injectable so they don't wait.
+ */
+export async function retryTransientFs<T>(
+  op: () => Promise<T>,
+  attempts = 6,
+  sleep: (ms: number) => Promise<unknown> = (ms) => new Promise((r) => setTimeout(r, ms)),
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await op();
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException)?.code ?? "";
+      if (!TRANSIENT_FS_CODES.has(code) || attempt >= attempts) throw e;
+      await sleep(15 * attempt);
+    }
+  }
 }
 
 /**
- * Load the index file, creating an empty one if it doesn't exist yet. Used by
- * the MCP write tools, which legitimately materialize the store on first use.
+ * Read and parse the docs index for a given working directory WITHOUT creating
+ * it. A missing file rejects with the raw ENOENT; an unusable one with
+ * `IndexUnreadableError` (which names the file and flags merge-conflict markers).
+ *
+ * This is the read-only counterpart to `loadIndex()` (which creates an empty
+ * index when — and only when — the file is absent). `catryna doctor` needs a
+ * read-only probe — it must never write another repo's `.docs/` just to answer
+ * a health check — so it goes through here. Parameterized by `cwd` so it can
+ * inspect any repo, not just the one captured at module load.
+ *
+ * Two transient conditions are retried before anything is reported:
+ *   - EBUSY / EPERM / EACCES on read (Windows sharing violations);
+ *   - a parse failure, which can be a TORN read of a file another process is in
+ *     the middle of writing. `saveIndex` renames into place so readers should
+ *     never see one, but the fallback direct write can, and a re-read costs
+ *     nothing. Only a failure that survives the retries is reported.
+ */
+export async function readIndexAt(cwd: string = process.cwd()): Promise<DocIndex> {
+  const indexFile = join(cwd, ".docs", "_index.json");
+  const PARSE_ATTEMPTS = 3;
+  for (let attempt = 1; ; attempt++) {
+    const content = await retryTransientFs(() => readFile(indexFile, "utf-8"));
+    try {
+      const parsed = JSON.parse(content.charCodeAt(0) === 0xfeff ? content.slice(1) : content);
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new IndexUnreadableError(indexFile, "top level is not an object", false);
+      }
+      return parsed as DocIndex;
+    } catch (e) {
+      if (e instanceof IndexUnreadableError) throw e;
+      if (attempt < PARSE_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, 25 * attempt));
+        continue;
+      }
+      throw new IndexUnreadableError(
+        indexFile,
+        (e as Error).message,
+        /^<{7}( |$)/m.test(content) || /^>{7}( |$)/m.test(content),
+      );
+    }
+  }
+}
+
+/** Create the empty index, but never over a file that appeared meanwhile. */
+async function createEmptyIndex(): Promise<DocIndex> {
+  await ensureDocsFolder();
+  const emptyIndex: DocIndex = { version: 1, docs: [], lastUpdated: Date.now() };
+  try {
+    // `wx`: create-if-absent. A concurrent writer that created the real index
+    // between our ENOENT and now must win; we then read theirs instead.
+    await writeFile(INDEX_FILE, JSON.stringify(emptyIndex, null, 2), { flag: "wx" });
+    return emptyIndex;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code !== "EEXIST") throw e;
+    return await loadIndex();
+  }
+}
+
+/**
+ * Load the index file, creating an empty one ONLY if it doesn't exist yet. Used
+ * by the MCP write tools, which legitimately materialize the store on first use.
+ * An existing file that can't be parsed throws `IndexUnreadableError` and is
+ * never overwritten.
  */
 export async function loadIndex(): Promise<DocIndex> {
+  let index: DocIndex;
   try {
-    const index = await readIndexAt();
-    // Backward-compat: index entries written before the suite-URI fields
-    // existed lack `evidence`/`refs`. Normalize them to `[]` on read so every
-    // DocMetadata leaving this function carries the arrays — no downstream
-    // code has to guard against `undefined`. (§1: an old doc loads fine, never
-    // throws.)
-    for (const d of index.docs) {
-      if (!Array.isArray(d.evidence)) d.evidence = [];
-      if (!Array.isArray(d.refs)) d.refs = [];
-      // Drift baseline fields (Phase 1). A legacy index written before they
-      // existed lacks them; normalize to "" (= never verified) so every
-      // DocMetadata leaving here carries strings and `drift` can read the
-      // baseline without guarding against `undefined`.
-      if (typeof d.verifiedCommit !== "string") d.verifiedCommit = "";
-      if (typeof d.verifiedAt !== "string") d.verifiedAt = "";
-      // Validated anchors (Phase 1). A legacy index written before they existed
-      // lacks the field; normalize to [] and re-validate any present entries so
-      // a hand-edited/garbage anchor never reaches drift as a malformed object.
-      d.anchors = Array.isArray(d.anchors)
-        ? d.anchors.map(normalizeAnchor).filter((a): a is DocAnchor => a !== null)
-        : [];
-      // Drift-suspect marker (Phase 1 spine consumer). A legacy index written
-      // before it existed lacks these; normalize to "" (= not suspect) so every
-      // DocMetadata leaving here carries strings and consumers/readers never
-      // guard against `undefined`.
-      if (typeof d.driftSuspectSince !== "string") d.driftSuspectSince = "";
-      if (typeof d.driftSuspectReason !== "string") d.driftSuspectReason = "";
-    }
-    return index;
-  } catch {
-    // Index doesn't exist (or is unreadable), create empty
-    const emptyIndex: DocIndex = {
-      version: 1,
-      docs: [],
-      lastUpdated: null,
-    };
-    await saveIndex(emptyIndex);
-    return emptyIndex;
+    index = await readIndexAt();
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === "ENOENT") return await createEmptyIndex();
+    throw e;
   }
+  if (!Array.isArray(index.docs)) {
+    throw new IndexUnreadableError(INDEX_FILE, "it has no `docs` array", false);
+  }
+  // Backward-compat: index entries written before the suite-URI fields
+  // existed lack `evidence`/`refs`. Normalize them to `[]` on read so every
+  // DocMetadata leaving this function carries the arrays — no downstream
+  // code has to guard against `undefined`. (§1: an old doc loads fine, never
+  // throws.)
+  for (const d of index.docs) {
+    if (!Array.isArray(d.evidence)) d.evidence = [];
+    if (!Array.isArray(d.refs)) d.refs = [];
+    // Drift baseline fields (Phase 1). A legacy index written before they
+    // existed lacks them; normalize to "" (= never verified) so every
+    // DocMetadata leaving here carries strings and `drift` can read the
+    // baseline without guarding against `undefined`.
+    if (typeof d.verifiedCommit !== "string") d.verifiedCommit = "";
+    if (typeof d.verifiedAt !== "string") d.verifiedAt = "";
+    // Validated anchors (Phase 1). A legacy index written before they existed
+    // lacks the field; normalize to [] and re-validate any present entries so
+    // a hand-edited/garbage anchor never reaches drift as a malformed object.
+    d.anchors = Array.isArray(d.anchors)
+      ? d.anchors.map(normalizeAnchor).filter((a): a is DocAnchor => a !== null)
+      : [];
+    // Drift-suspect marker (Phase 1 spine consumer). A legacy index written
+    // before it existed lacks these; normalize to "" (= not suspect) so every
+    // DocMetadata leaving here carries strings and consumers/readers never
+    // guard against `undefined`.
+    if (typeof d.driftSuspectSince !== "string") d.driftSuspectSince = "";
+    if (typeof d.driftSuspectReason !== "string") d.driftSuspectReason = "";
+  }
+  return index;
 }
 
 /**
@@ -208,17 +304,17 @@ export async function loadIndex(): Promise<DocIndex> {
  * DEFENSIVE, not a fix for an observed failure — worth stating plainly. The
  * hazard it guards is real in principle: readers are deliberately UNLOCKED
  * (`getDoc`/`listDocs`/`searchDocs` call `loadIndex()` without the index lock),
- * and `loadIndex`'s miss path CREATES AND SAVES AN EMPTY INDEX — so a reader
- * that caught a truncated `_index.json` would parse-fail and then persist an
- * empty store over the whole corpus. But an attempt to reproduce it (3000
+ * and a reader that caught a truncated `_index.json` used to parse-fail and
+ * then persist an empty store over the whole corpus. That reader no longer
+ * overwrites anything (`loadIndex` only creates an index when the file is
+ * ABSENT, and re-reads a failed parse before reporting it), but the rename still
+ * keeps the torn read from happening at all. An attempt to reproduce one (3000
  * concurrent 640 KB `writeFile`s against a tight reader loop, on APFS) produced
  * zero torn reads, so there is no test here that can fail, and none is claimed.
- * The rename costs nothing and the failure it forecloses is catastrophic; that
- * is the whole argument for it.
+ * The rename costs nothing; that is the whole argument for it.
  *
  * The temp name carries the pid AND a per-call counter: the pid alone is unique
- * across processes but not within one, and `loadIndex`'s miss path calls this
- * from OUTSIDE the index lock, so an unlocked reader's miss-save can overlap a
+ * across processes but not within one, and unlocked callers can overlap a
  * locked mutation's save in the same process.
  */
 let saveIndexSeq = 0;
@@ -313,6 +409,74 @@ async function lockFilePresent(): Promise<boolean> {
   }
 }
 
+/** Test seam: runs after the stale verdict and before the break (see `breakStaleLock`). */
+let staleBreakHook: (() => Promise<void>) | null = null;
+export function __setStaleBreakHookForTesting(fn: (() => Promise<void>) | null): void {
+  staleBreakHook = fn;
+}
+
+let staleTombSeq = 0;
+
+/**
+ * Break the lock file iff it is STALE (untouched for `LOCK_STALE_MS`), safely
+ * against other waiters doing the same.
+ *
+ * The naive form is `stat` then `unlink`, and the gap between them is a race:
+ * waiter A sees a stale lock, waiter B breaks it and a third process C takes a
+ * fresh one, then A's `unlink` deletes C's LIVE lock. C and the next arrival
+ * then both believe they hold it, and the lost update the lock exists to
+ * prevent is back.
+ *
+ * So the break is a `rename` of the lock to a tombstone name unique to this
+ * attempt. Rename is atomic and moves exactly one file: of N waiters racing to
+ * break the same stale lock, one rename wins and the rest fail ENOENT. The
+ * winner then VERIFIES that what it moved is the lock it judged stale (same
+ * token, still old) and, if a live lock slipped in underneath it, puts it back
+ * with `link` (which refuses to clobber a newer lock) before discarding the
+ * tombstone. Not a proof of mutual exclusion, but the window shrinks from
+ * "stat to unlink, with a live lock deleted for good" to "a live lock briefly
+ * renamed, then restored".
+ *
+ * Only a regular file is ever broken: a directory squatting on the lock path
+ * stays (the bounded wait then gives up on the lock instead). Every failure is
+ * swallowed — the caller sleeps and re-checks its deadline either way.
+ */
+export async function breakStaleLock(): Promise<void> {
+  let token: string;
+  try {
+    const st = await stat(LOCK_FILE);
+    if (!st.isFile() || Date.now() - st.mtimeMs <= LOCK_STALE_MS) return;
+    token = await readFile(LOCK_FILE, "utf-8");
+  } catch {
+    return; // vanished, or unreadable right now: retry politely
+  }
+  if (staleBreakHook) await staleBreakHook();
+
+  const tomb = `${LOCK_FILE}.stale.${process.pid}.${staleTombSeq++}`;
+  try {
+    await rename(LOCK_FILE, tomb);
+  } catch {
+    return; // another waiter broke it first (or it is unmovable)
+  }
+  try {
+    let stillTheStaleLock = true;
+    try {
+      const moved = await stat(tomb);
+      stillTheStaleLock =
+        (await readFile(tomb, "utf-8")) === token && Date.now() - moved.mtimeMs > LOCK_STALE_MS;
+    } catch {
+      /* can't tell: it was judged stale a moment ago, so discard it */
+    }
+    if (!stillTheStaleLock) {
+      // We moved a live lock: put it back. `link` fails if a newer lock already
+      // exists, in which case that one stands and ours is simply dropped.
+      await link(tomb, LOCK_FILE).catch(() => {});
+    }
+  } finally {
+    await unlink(tomb).catch(() => {});
+  }
+}
+
 /**
  * Acquire the cross-PROCESS advisory lock on `_index.json`, returning its
  * release function.
@@ -330,7 +494,8 @@ async function lockFilePresent(): Promise<boolean> {
  * Windows alike, which is all an advisory lock needs. Two escape hatches keep a
  * lock file from ever wedging the store permanently:
  *
- *   - STALE: a lock older than `LOCK_STALE_MS` is assumed abandoned and broken.
+ *   - STALE: a lock older than `LOCK_STALE_MS` is assumed abandoned and broken
+ *     (race-safely: see `breakStaleLock`).
  *   - TIMEOUT: after `LOCK_TIMEOUT_MS` of contention a waiter breaks the lock
  *     and proceeds. Liveness beats purity here — the operations under the lock
  *     are milliseconds long, so reaching this means something is already wrong.
@@ -420,12 +585,7 @@ async function acquireIndexFileLock(): Promise<() => Promise<void>> {
     // keeps failing (a directory at the lock path, an immutable flag, Windows
     // EPERM on a file another process holds open) then busy-loops forever at
     // 100% CPU with no escape — hanging the CLI and the whole MCP session.
-    try {
-      const st = await stat(LOCK_FILE);
-      if (Date.now() - st.mtimeMs > LOCK_STALE_MS) await unlink(LOCK_FILE);
-    } catch {
-      // Vanished, or unremovable. Retry politely either way.
-    }
+    await breakStaleLock();
 
     // Hard liveness guarantee: give up waiting and proceed UNLOCKED rather than
     // loop. This restores exactly the pre-lock behavior for a pathological case
@@ -818,8 +978,9 @@ export function effectiveAnchors(
  * physical line and round-trips through parseMdx / the frontend reader.
  *
  * A key already present is replaced in place; a missing key is appended to the
- * frontmatter block. If the file has no frontmatter block at all, the content is
- * returned unchanged (the index stays the queryable source of truth).
+ * frontmatter block (an empty `---`/`---` block gains its first fields). If the
+ * file has no frontmatter block at all, the content is returned unchanged (the
+ * index stays the queryable source of truth).
  *
  * Line endings follow the FILE: a Windows checkout (core.autocrlf) is CRLF, and
  * a pattern anchored on "\n" alone never matched it, so verify and consume
@@ -831,18 +992,26 @@ export function effectiveAnchors(
  * ending, and the body is never touched.
  */
 export function setFrontmatterScalars(content: string, fields: Record<string, string>): string {
-  const fmMatch = content.match(/^(---(\r?\n))([\s\S]*?)(\r?\n---\r?\n)/);
+  // Two shapes of block: EMPTY (`---` straight after the opening line) tried
+  // first, so a later `---` horizontal rule in the body can never be mistaken
+  // for the closing delimiter; otherwise a body up to a closing `---` line.
+  // The closing delimiter ends in a line ending OR the end of the file: a doc
+  // whose last line is the closing `---` (no trailing newline) is still a doc.
+  const fmMatch = content.match(/^(---(\r?\n))(?:(---)(\r?\n|$)|([\s\S]*?)(\r?\n)(---)(\r?\n|$))/);
   if (!fmMatch) return content;
-  const [, open, eol, body, close] = fmMatch;
+  const [whole, open, eol] = fmMatch;
+  const empty = fmMatch[3] !== undefined;
+  const close = empty ? `${eol}---${fmMatch[4]}` : `${fmMatch[6]}---${fmMatch[8]}`;
   // Split on either ending, so a stray LF line in a CRLF block still matches its key.
-  const lines = body.split(/\r?\n/);
+  const lines = empty ? [] : fmMatch[5].split(/\r?\n/);
+  if (empty && Object.keys(fields).length === 0) return content;
   for (const [key, value] of Object.entries(fields)) {
     const encoded = `${key}: ${serializeFmScalar(value)}`;
     const idx = lines.findIndex((l) => l === `${key}:` || l.startsWith(`${key}: `));
     if (idx === -1) lines.push(encoded);
     else lines[idx] = encoded;
   }
-  return open + lines.join(eol) + close + content.slice(fmMatch[0].length);
+  return open + lines.join(eol) + close + content.slice(whole.length);
 }
 
 /**

@@ -1,16 +1,19 @@
 /**
- * Tests for the Claude Code Stop hook (hooks/drift-check.sh) — the third
+ * Tests for the Claude Code Stop hook (hooks/drift-check.ts) — the third
  * consumption surface (PRODUCT_ROADMAP Phase 1): a session that touched anchored
  * files ends with a reminder to update the affected docs.
  *
  * Contract under test: INFORMATIONAL + NON-BLOCKING.
- *   - drift present  → concise reminder on STDERR, exit 0;
+ *   - drift present  → concise reminder on STDOUT (the shell version wrote
+ *                      stderr and hooks.json merged it with `2>&1`; the Bun
+ *                      port has no shell to merge, so it prints there), exit 0;
  *   - no drift       → SILENT, exit 0;
  *   - no .docs index → SILENT, exit 0;
  *   - not a git repo → SILENT, exit 0.
  *
- * The hook shells out to the real `catryna drift --json` (bun) with
- * CLAUDE_PLUGIN_ROOT pointed at the repo root, cwd = a temp git fixture.
+ * The hook runs the real `catryna drift --json` (bun) with CLAUDE_PLUGIN_ROOT
+ * pointed at the repo root, cwd = a temp git fixture. The pure pieces (message
+ * wording, JSON parsing) are unit-tested in hooks.test.ts.
  */
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
@@ -18,7 +21,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Each test runs the hook through `sh`, which spawns `bun` three times
+// Each test runs the hook through `bun`, which spawns `bun` three times
 // (consume, drift, lint) plus git. That's ~0.5s locally, but a loaded
 // windows-latest runner pushed single tests past Bun's 5s default, and the
 // killed hook (exit 143) failed CI on unrelated PRs. The other subprocess-heavy
@@ -26,7 +29,7 @@ import { fileURLToPath } from "node:url";
 setDefaultTimeout(30_000);
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const HOOK = join(ROOT, "hooks", "drift-check.sh");
+const HOOK = join(ROOT, "hooks", "drift-check.ts");
 
 const dirs: string[] = [];
 afterAll(async () => {
@@ -106,9 +109,9 @@ interface HookOut {
   stderr: string;
   code: number;
 }
-/** Run the Stop hook with cwd=`dir` and CLAUDE_PLUGIN_ROOT=repo root. */
+/** Run the Stop hook exactly as hooks.json does (`bun <script>`), cwd=`dir`, CLAUDE_PLUGIN_ROOT=repo root. */
 async function runHook(dir: string): Promise<HookOut> {
-  const proc = Bun.spawn(["sh", HOOK], {
+  const proc = Bun.spawn([process.execPath, HOOK], {
     cwd: dir,
     stdout: "pipe",
     stderr: "pipe",
@@ -144,22 +147,22 @@ async function driftedRepo(count: number): Promise<string> {
 
 // ---------------------------------------------------------------------------
 
-describe("Stop hook (drift-check.sh) — informational + non-blocking", () => {
-  test("drift present → reminder on STDERR, exit 0", async () => {
+describe("Stop hook (drift-check.ts) — informational + non-blocking", () => {
+  test("drift present → reminder on STDOUT, exit 0", async () => {
     const dir = await driftedRepo(1);
     const { stdout, stderr, code } = await runHook(dir);
     expect(code).toBe(0); // never blocks the session
-    expect(stderr).toContain("catryna:");
-    expect(stderr).toContain("1 doc no longer matches");
-    expect(stderr).toContain("catryna repair");
-    expect(stdout).toBe(""); // reminder goes to stderr, not stdout
+    expect(stdout).toContain("catryna:");
+    expect(stdout).toContain("1 doc no longer matches");
+    expect(stdout).toContain("catryna repair");
+    expect(stderr).toBe(""); // what hooks.json's old `2>&1` produced: one stream, nothing on stderr
   });
 
-  test("multiple drifted docs → pluralized count on stderr, exit 0", async () => {
+  test("multiple drifted docs → pluralized count on stdout, exit 0", async () => {
     const dir = await driftedRepo(2);
-    const { stderr, code } = await runHook(dir);
+    const { stdout, code } = await runHook(dir);
     expect(code).toBe(0);
-    expect(stderr).toContain("2 docs no longer match");
+    expect(stdout).toContain("2 docs no longer match");
   });
 
   test("broken anchor (deleted file) → hook nags (not silent), exit 0", async () => {
@@ -170,10 +173,10 @@ describe("Stop hook (drift-check.sh) — informational + non-blocking", () => {
     await rm(join(dir, "src", "f0.ts"), { force: true });
     await git(dir, ["add", "-A"]);
     await git(dir, ["commit", "-qm", "rm anchored file"]);
-    const { stderr, code } = await runHook(dir);
+    const { stdout, code } = await runHook(dir);
     expect(code).toBe(0);
-    expect(stderr).toContain("catryna:");
-    expect(stderr).toContain("no longer match");
+    expect(stdout).toContain("catryna:");
+    expect(stdout).toContain("no longer match");
   });
 
   test("no drift (all verified at HEAD) → SILENT, exit 0", async () => {
@@ -185,6 +188,20 @@ describe("Stop hook (drift-check.sh) — informational + non-blocking", () => {
     expect(code).toBe(0);
     expect(stderr).toBe("");
     expect(stdout).toBe("");
+  });
+
+  test("a malformed doc (unclosed fence) → lint reminder on stdout, exit 0", async () => {
+    const dir = await initRepo({ "src/a.ts": ["export const a = 1;", ""].join("\n") });
+    const head = await git(dir, ["rev-parse", "HEAD"]);
+    await seedDocs(dir, [{ path: "modules/a", relatedFiles: ["src/a.ts"], verifiedCommit: head }]);
+    const file = join(dir, ".docs", "modules", "a.mdx");
+    const unclosedFence = ["", "```ts", "const never = 'closed';", ""].join("\n");
+    await writeFile(file, (await Bun.file(file).text()) + unclosedFence);
+
+    const { stdout, stderr, code } = await runHook(dir);
+    expect(code).toBe(0); // lint exits 3 on errors; the hook must still exit 0
+    expect(stdout).toContain("1 doc is malformed");
+    expect(stderr).toBe("");
   });
 
   test("no .docs index → SILENT, exit 0 (never nags unrelated repos)", async () => {

@@ -165,6 +165,33 @@ export async function runGitViaNode(cwd: string, args: string[]): Promise<GitRes
   });
 }
 
+/**
+ * Flags that make `git diff` output machine-parseable no matter what the user's
+ * git config says. `color.diff=always` injects ANSI escapes into `@@` lines,
+ * `diff.noprefix=true` drops the `a/` `b/` prefixes, `diff.external` replaces
+ * the diff with another tool's output, and a textconv driver rewrites content.
+ * Every diff this module parses (or hands to an agent) goes through these.
+ */
+export const DIFF_FLAGS = [
+  "--no-color",
+  "--no-ext-diff",
+  "--no-textconv",
+  "--src-prefix=a/",
+  "--dst-prefix=b/",
+] as const;
+
+/**
+ * Split NUL-terminated (`-z`) git output into its non-empty fields. `-z` is the
+ * only form that is exact for every filename: with the default
+ * `core.quotePath=true` git wraps non-ASCII names in quotes and octal escapes
+ * (a quoted "src/caf" + octal-escape form), which never equals the real path,
+ * so a lookup of `src/café.ts` silently missed and a changed anchor read as
+ * clean.
+ */
+export function splitNul(out: string): string[] {
+  return out.split("\0").filter((f) => f.length > 0);
+}
+
 /** True iff `cwd` is inside a git work tree. */
 export async function isGitRepo(cwd: string): Promise<boolean> {
   const r = await runGit(cwd, ["rev-parse", "--is-inside-work-tree"]);
@@ -196,9 +223,17 @@ async function changedFilesSince(
   commit: string,
   paths: string[],
 ): Promise<ChangedResult> {
-  const r = await runGit(cwd, ["diff", "--name-only", `${commit}..HEAD`, "--", ...paths]);
+  const r = await runGit(cwd, [
+    "diff",
+    "--name-only",
+    "-z",
+    "--no-ext-diff",
+    `${commit}..HEAD`,
+    "--",
+    ...paths,
+  ]);
   if (!r.ok) return { ok: false, files: [], stderr: r.stderr.trim() };
-  const files = r.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+  const files = splitNul(r.stdout);
   return { ok: true, files, stderr: "" };
 }
 
@@ -238,15 +273,21 @@ function isSuiteArtifact(path: string): boolean {
  * Returns 0 when git can't answer — a failed probe must never invent a warning.
  */
 export async function countDirtyFiles(cwd: string): Promise<number> {
-  const r = await runGit(cwd, ["status", "--porcelain"]);
+  // `-z`: entries are NUL-terminated and paths are never quoted, so a non-ASCII
+  // name can't hide a `.suite/` artifact behind quotes. A rename/copy entry
+  // (`R  new`, then `old`) carries its origin path as a SEPARATE next field.
+  const r = await runGit(cwd, ["status", "--porcelain", "-z"]);
   if (!r.ok) return 0;
-  return r.stdout
-    .split("\n")
-    .filter((l) => l.trim().length > 0)
-    // Porcelain v1 is `XY <path>`: two status columns, a space, then the path
-    // (quoted when it needs escaping; a rename is `old -> new`).
-    .map((l) => l.slice(3).trim().replace(/^"(.*)"$/, "$1"))
-    .filter((p) => p.length > 0 && !isSuiteArtifact(p)).length;
+  const fields = splitNul(r.stdout);
+  let count = 0;
+  for (let i = 0; i < fields.length; i++) {
+    // Porcelain v1 is `XY <path>`: two status columns, a space, then the path.
+    const xy = fields[i].slice(0, 2);
+    const path = fields[i].slice(3);
+    if (xy.includes("R") || xy.includes("C")) i++; // skip the origin-path field
+    if (path.length > 0 && !isSuiteArtifact(path)) count++;
+  }
+  return count;
 }
 
 /** True iff `rel` exists in `cwd`'s working tree (used for broken-anchor detection). */
@@ -272,14 +313,23 @@ async function renamedTo(cwd: string, commit: string, file: string): Promise<str
   const r = await runGit(cwd, [
     "diff",
     "--name-status",
+    "-z",
+    "--no-ext-diff",
     "--find-renames",
     `${commit}..HEAD`,
   ]);
   if (!r.ok) return null;
-  for (const line of r.stdout.split("\n")) {
-    // `R<score>\t<old>\t<new>` — a rename FROM `file`.
-    const m = line.match(/^R\d*\t(.+?)\t(.+)$/);
-    if (m && m[1] === file) return m[2];
+  // `-z` name-status is a flat NUL-separated stream: `<status>`, `<path>` — and
+  // for a rename/copy `R<score>`, `<old>`, `<new>`. Find a rename FROM `file`.
+  const f = splitNul(r.stdout);
+  for (let i = 0; i < f.length; ) {
+    const status = f[i];
+    if (status.startsWith("R") || status.startsWith("C")) {
+      if (status.startsWith("R") && f[i + 1] === file) return f[i + 2] ?? null;
+      i += 3;
+    } else {
+      i += 2;
+    }
   }
   return null;
 }
@@ -308,7 +358,14 @@ interface FileHunks {
  * collapses to a point range at the boundary line so overlap tests stay total.
  */
 async function changedHunks(cwd: string, commit: string, file: string): Promise<FileHunks> {
-  const r = await runGit(cwd, ["diff", "--unified=0", `${commit}..HEAD`, "--", file]);
+  const r = await runGit(cwd, [
+    "diff",
+    "--unified=0",
+    ...DIFF_FLAGS,
+    `${commit}..HEAD`,
+    "--",
+    file,
+  ]);
   if (!r.ok) return { ok: false, oldRanges: [], newRanges: [], raw: "", stderr: r.stderr.trim() };
   const oldRanges: Range[] = [];
   const newRanges: Range[] = [];
@@ -789,14 +846,20 @@ export async function resolveRev(cwd: string, rev: string): Promise<string | nul
   return asDate.ok && dsha ? dsha : null;
 }
 
-/** Read the doc index read-only; an absent/broken `.docs/` yields no docs. */
+/**
+ * Read the doc index read-only. An ABSENT `.docs/` yields no docs (nothing to
+ * check, not an error). An index that exists but is unreadable (corrupt, or
+ * holding merge-conflict markers) throws, so the caller can report it: treating
+ * it as "no docs" would print a clean bill of health for a store drift never
+ * looked at.
+ */
 async function readDocs(cwd: string): Promise<DocMetadata[]> {
   try {
     const index = await readIndexAt(cwd);
     return Array.isArray(index.docs) ? index.docs : [];
-  } catch {
-    // No .docs/ (or unreadable index) — nothing to check, not an error here.
-    return [];
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === "ENOENT") return [];
+    throw e;
   }
 }
 
@@ -877,7 +940,22 @@ export async function computeDrift(
   const baselineFor = (doc: DocMetadata): string =>
     baselineOverride ?? (typeof doc.verifiedCommit === "string" ? doc.verifiedCommit : "");
 
-  const allDocs = opts.docs ?? (await readDocs(cwd));
+  let allDocs: DocMetadata[];
+  try {
+    allDocs = opts.docs ?? (await readDocs(cwd));
+  } catch (e) {
+    return {
+      gitRepo: true,
+      head,
+      drifted: [],
+      unverified: [],
+      clean: [],
+      broken: [],
+      hayven: false,
+      dirtyFiles,
+      error: (e as Error).message,
+    };
+  }
   const only = opts.only ? new Set(opts.only) : null;
   const docs = only ? allDocs.filter((d) => only.has(d.path)) : allDocs;
 
@@ -950,11 +1028,10 @@ export async function computeDrift(
     const baseline = baselineFor(doc);
     if (!baseline || changesByBaseline.has(baseline)) continue;
     // No pathspec: the whole change set for the range, intersected per doc below.
-    const r = await runGit(cwd, ["diff", "--name-only", `${baseline}..HEAD`]);
-    changesByBaseline.set(
-      baseline,
-      r.ok ? new Set(r.stdout.split("\n").map((l) => l.trim()).filter(Boolean)) : null,
-    );
+    // `-z`: exact for non-ASCII names, which git's default quoting would turn
+    // into a quoted escape form that never matches an anchor (a false clean).
+    const r = await runGit(cwd, ["diff", "--name-only", "-z", "--no-ext-diff", `${baseline}..HEAD`]);
+    changesByBaseline.set(baseline, r.ok ? new Set(splitNul(r.stdout)) : null);
   }
 
   /** This doc's changed anchors, from the shared per-baseline set. */

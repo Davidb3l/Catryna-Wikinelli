@@ -3,12 +3,12 @@ id: d37e0497-e75d-47d9-9d08-5ef7067ab81d
 title: "Architecture Overview"
 path: "architecture/overview"
 tags: ["architecture", "overview", "core"]
-relatedFiles: ["src/index.ts", "src/cli.ts", "src/storage.ts", "src/drift.ts", "src/events.ts", "src/consume.ts", "src/doctor.ts", "src/lint.ts", "src/tokens.ts", "src/lang.ts", ".github/workflows/ci.yml"]
+relatedFiles: ["src/index.ts", "src/cli.ts", "src/storage.ts", "src/drift.ts", "src/events.ts", "src/consume.ts", "src/doctor.ts", "src/hooks.ts", "src/lint.ts", "src/tokens.ts", "src/lang.ts", ".github/workflows/ci.yml"]
 createdAt: 1767321236003
 updatedAt: 1767321656661
 createdBy: "claude-code"
-verifiedCommit: "beb486a217f28552e68b57fb8022fcaff84ac958"
-verifiedAt: "2026-10-12T03:22:59.907Z"
+verifiedCommit: "4c3982c3be10f86285b2e98cc99982b01e3a9bbd"
+verifiedAt: "2026-10-13T17:24:56.096Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -25,9 +25,9 @@ The system has five parts:
 
 1. **MCP Server** (`src/index.ts`, bin `catryna-mcp`) - A Bun-run server using the Model Context Protocol SDK that exposes 15 tools for documentation management. Runs on stdio for Claude Code integration.
 
-2. **CLI** (`src/cli.ts`, bin `catryna`) - A SEPARATE entry point from the MCP server, with hand-rolled arg parsing and six subcommands: `doctor`, `drift`, `lint`, `verify`, `repair`, `consume`. This is what CI, the Stop hook, and peer suite tools invoke.
+2. **CLI** (`src/cli.ts`, bin `catryna`) - A SEPARATE entry point from the MCP server, with hand-rolled arg parsing and six subcommands: `doctor`, `drift`, `lint`, `verify`, `repair`, `consume` (plus `--version`, which prints `catryna <version>`; the suite doctor probes every tool with it). This is what CI, the Stop hook, and peer suite tools invoke.
 
-3. **Drift engine** (`src/drift.ts`) - Classifies every anchored doc against git as `broken`, `drifted`, `unverified`, or `clean`, using each doc's `verifiedCommit` baseline. Optional Hayvenhurst symbol precision; git-diff fallback always works with zero dependencies. Symbol anchors resolve **file-qualified** (`resolveAnchoredSymbol`): it lists the nodes with that exact name (up to 200 `hayven query` hits), resolves each by id, and accepts the first one defined in the anchored file. Otherwise the anchor falls back to git-diff. A bare-name lookup picks whichever same-named node ranks first, so a change to another file's `router` used to drift a doc anchored to this one (CAT-5). Dependency drift checks language families (`src/lang.ts`), because Hayvenhurst links calls by bare name and Rust `migrate` can appear to call a TS `close`. A callee in an incompatible family is left out of the symbol universe, and an anchored symbol drifts only from a changed node whose family is compatible with its own. Compatibility is checked between those two ends, not edge by edge. Unknown extensions are compatible with everything, and C, Rust, Swift and Go form one C-ABI group. Both costs last until upstream HAYV-18 is fixed: real bindings outside that group (PyO3, napi, JNI, …) are dropped, and a bogus same-name edge inside it (Swift `close()` ↔ Rust `fn close`) still drifts a doc (CAT-10). Change sets are computed **once per distinct baseline** and intersected per doc, rather than one `git diff` per doc — 300 docs dropped from ~2,230ms to ~38ms. An additive `only` filter narrows a run to named docs — which docs are evaluated, never how one is judged (the hayven symbol universe is built from the **full** corpus for exactly this reason; deriving it from the filtered set let a filtered read report `clean` for a doc the full run called `drifted`) — so a single-doc read costs one doc's git work instead of a corpus scan. Runs under Bun **or** Node (`runGit` / `runHayven` feature-detect), because the viewer's Vite plugin imports this engine in a context with no `Bun` global. The dispatch is an exported seam (`selectGitRunner` / `hasBunSpawn` / `runGitViaBun` / `runGitViaNode`) precisely so it is testable: `Bun` is a non-configurable global a test cannot hide, and testing the fallback in isolation proved it worked while a Bun-only revert stayed green.
+3. **Drift engine** (`src/drift.ts`) - Classifies every anchored doc against git as `broken`, `drifted`, `unverified`, or `clean`, using each doc's `verifiedCommit` baseline. Optional Hayvenhurst symbol precision; git-diff fallback always works with zero dependencies. Symbol anchors resolve **file-qualified** (`resolveAnchoredSymbol`): it lists the nodes with that exact name (up to 200 `hayven query` hits), resolves each by id, and accepts the first one defined in the anchored file. Otherwise the anchor falls back to git-diff. A bare-name lookup picks whichever same-named node ranks first, so a change to another file's `router` used to drift a doc anchored to this one (CAT-5). Dependency drift checks language families (`src/lang.ts`), because Hayvenhurst links calls by bare name and Rust `migrate` can appear to call a TS `close`. A callee in an incompatible family is left out of the symbol universe, and an anchored symbol drifts only from a changed node whose family is compatible with its own. Compatibility is checked between those two ends, not edge by edge. Unknown extensions are compatible with everything, and C, Rust, Swift and Go form one C-ABI group. Both costs last until upstream HAYV-18 is fixed: real bindings outside that group (PyO3, napi, JNI, …) are dropped, and a bogus same-name edge inside it (Swift `close()` ↔ Rust `fn close`) still drifts a doc (CAT-10). Change sets are computed **once per distinct baseline** and intersected per doc, rather than one `git diff` per doc — 300 docs dropped from ~2,230ms to ~38ms. An additive `only` filter narrows a run to named docs — which docs are evaluated, never how one is judged (the hayven symbol universe is built from the **full** corpus for exactly this reason; deriving it from the filtered set let a filtered read report `clean` for a doc the full run called `drifted`) — so a single-doc read costs one doc's git work instead of a corpus scan. Every file list it reads from git is NUL-delimited (`-z`): git's default quoting turns a non-ASCII path like `src/café.ts` into an escaped string that never equals the anchor, which used to read a changed file as clean. Every diff it parses (or hands to an agent) passes `DIFF_FLAGS` (`--no-color --no-ext-diff --no-textconv --src-prefix=a/ --dst-prefix=b/`), so a user's `color.diff`, `diff.noprefix` or external diff driver cannot change the hunk headers. An unreadable `_index.json` (corrupt, or holding merge-conflict markers) comes back as the report's `error`, never as an empty corpus. Runs under Bun **or** Node (`runGit` / `runHayven` feature-detect), because the viewer's Vite plugin imports this engine in a context with no `Bun` global. The dispatch is an exported seam (`selectGitRunner` / `hasBunSpawn` / `runGitViaBun` / `runGitViaNode`) precisely so it is testable: `Bun` is a non-configurable global a test cannot hide, and testing the fallback in isolation proved it worked while a Bun-only revert stayed green.
 
 4. **Suite spine** (`src/events.ts`, `src/consume.ts`) - Append-only JSONL event log at `.suite/events/<UTC-day>.jsonl`. Catryna EMITS `doc.created` / `doc.updated` / `doc.drifted` / `doc.verified`, and CONSUMES hayven `code.changed` events to mark docs drift-suspect between full drift runs.
 
@@ -70,7 +70,7 @@ Discovery across the suite goes through `src/doctor.ts`: `catryna doctor --json`
 
 - `catryna drift` is a CI gate: exit 3 when a doc drifted or an anchor broke, 1 on operational failure, else 0
 
-- The plugin's Stop hook (`hooks/drift-check.sh`) runs `consume` then `drift --json` and nudges the agent on stderr; it never blocks a session
+- The plugin's Stop hook (`hooks/drift-check.ts`, logic in `src/hooks.ts`) runs `consume` then `drift --json` and nudges the agent; it never blocks a session. The SessionStart check (`scripts/check-catryna.ts`) works the same way. Both are Bun TypeScript run as `bun <script>`, so neither needs a POSIX shell (a bare `sh` is absent outside Git Bash on Windows), and they print on stdout, where the old shell versions' `2>&1` put their stderr
 
 - `catryna repair` prints the repair context (doc content + anchor diffs) for the agent to act on
 
@@ -117,8 +117,8 @@ catryna-wikinelli/
 │       ├── coverage.ts       # Documentation coverage
 │       ├── lint.ts           # lint_docs — structural doc health
 │       └── drift.ts          # check_drift / verify_doc / propose_doc_repair
-├── hooks/                    # SessionStart + Stop (drift) hooks
-├── scripts/                  # run-server.ts (+ .sh shim), check-catryna.sh
+├── hooks/                    # hooks.json + drift-check.ts (Stop), run via bun
+├── scripts/                  # run-server.ts (+ .sh shim), check-catryna.ts (SessionStart)
 └── frontend/                 # Vite viewer (port 1307)
 ```
 
