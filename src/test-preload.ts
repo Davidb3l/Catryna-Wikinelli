@@ -34,14 +34,20 @@ for (const name of Object.keys(process.env)) {
 // Bun.spawnSync called WITHOUT an `env` option hand the child the process's
 // ORIGINAL environment, ignoring those deletions (node:child_process does
 // honor them). Default `env` to the cleaned process.env; an explicit `env`
-// still wins.
+// still wins. An explicit `env: undefined` counts as "not given" (Bun treats
+// it the same as omitting it), so it gets the cleaned environment too.
 type SpawnArgs = [cmdOrOptions: unknown, options?: Record<string, unknown>];
 function withCleanEnv(args: SpawnArgs): SpawnArgs {
+  const clean = (o: Record<string, unknown>): Record<string, unknown> => {
+    const merged = { ...o };
+    if (merged.env === undefined) merged.env = process.env;
+    return merged;
+  };
   const [first, options] = args;
   if (first !== null && typeof first === "object" && !Array.isArray(first)) {
-    return [{ env: process.env, ...(first as Record<string, unknown>) }];
+    return [clean(first as Record<string, unknown>)];
   }
-  return [first, { env: process.env, ...(options ?? {}) }];
+  return [first, clean(options ?? {})];
 }
 const spawn = Bun.spawn;
 const spawnSync = Bun.spawnSync;

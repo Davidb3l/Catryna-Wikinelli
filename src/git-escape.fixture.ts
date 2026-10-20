@@ -22,3 +22,23 @@ test("fixture: a throwaway repo is configured and committed", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// A call that passes `env` explicitly but as `undefined` (e.g. forwarding an
+// optional `opts.env`) must not get Bun's ORIGINAL environment back.
+const PROBE = "console.log(process.env.GIT_DIR ?? 'unset')";
+
+test("fixture: spawnSync with `env: undefined` gets the cleaned environment", () => {
+  for (const spawn of [
+    () => Bun.spawnSync([process.execPath, "-e", PROBE], { env: undefined, stdout: "pipe" }),
+    () => Bun.spawnSync({ cmd: [process.execPath, "-e", PROBE], env: undefined, stdout: "pipe" }),
+  ]) {
+    expect(spawn().stdout.toString().trim()).toBe("unset");
+  }
+});
+
+test("fixture: spawn with `env: undefined` gets the cleaned environment", async () => {
+  const run = async (proc: ReturnType<typeof Bun.spawn>) =>
+    (await new Response(proc.stdout as ReadableStream).text()).trim();
+  expect(await run(Bun.spawn([process.execPath, "-e", PROBE], { env: undefined, stdout: "pipe" }))).toBe("unset");
+  expect(await run(Bun.spawn({ cmd: [process.execPath, "-e", PROBE], env: undefined, stdout: "pipe" }))).toBe("unset");
+});
