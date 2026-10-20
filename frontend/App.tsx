@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Search, Settings, HelpCircle, ChevronRight, ChevronDown, FileText,
-  Menu, X, Plus, Clock, Terminal, Activity, Github, Edit3,
+  Menu, X, Plus, Clock, Terminal, Activity, Edit3,
   MousePointer2, History, RotateCcw, Check, Monitor, Moon, Sun,
   Type as TypeIcon, Layout, Box, Share2, Layers, Folder, Copy, ExternalLink,
   Filter, Calendar, Tag, AlertCircle, Maximize2,

@@ -7,3 +7,10 @@
 
 /** The version from the repo root package.json, injected by vite.config.ts. */
 declare const __CATRYNA_VERSION__: string;
+
+/**
+ * Side-effect stylesheet imports (`import './index.css'`). TypeScript 6+ checks
+ * those specifiers (`noUncheckedSideEffectImports`), and nothing else declares
+ * plain `.css` modules here. Vite handles them at build time.
+ */
+declare module '*.css';

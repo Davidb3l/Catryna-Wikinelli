@@ -158,7 +158,7 @@ function rawRequest(
 
     socket.on('data', d => {
       if (settled) return;
-      chunks.push(d);
+      chunks.push(Buffer.from(d));
       const parsed = parseWhenComplete(Buffer.concat(chunks));
       if (parsed) settle(parsed);
     });
