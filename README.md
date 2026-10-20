@@ -175,4 +175,4 @@ skipped on a Windows host without Developer Mode (they still run in CI).
 
 ## Status & license
 
-Early-stage (v1.3.1) and moving fast; issues and PRs welcome. MIT licensed.
+Early-stage (v1.3.2) and moving fast; issues and PRs welcome. MIT licensed.
