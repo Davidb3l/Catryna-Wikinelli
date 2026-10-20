@@ -7,7 +7,7 @@ import { renderTokensInBlocks } from "../tokens";
 // Block schema for documents
 const BlockSchema = z.object({
   type: z.string(),
-  data: z.record(z.unknown()),
+  data: z.record(z.string(), z.unknown()),
 });
 
 // Validated anchor (Phase 1): a file, with an optional symbol and/or inclusive
