@@ -7,8 +7,8 @@ relatedFiles: ["src/index.ts", "src/cli.ts", "src/storage.ts", "src/drift.ts", "
 createdAt: 1767321236003
 updatedAt: 1767321656661
 createdBy: "claude-code"
-verifiedCommit: "4c3982c3be10f86285b2e98cc99982b01e3a9bbd"
-verifiedAt: "2026-10-13T17:24:56.096Z"
+verifiedCommit: "ff09fb4fed8f21cb07f158bc0df0c9e04bd5a6c7"
+verifiedAt: "2026-10-20T04:58:52.215Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -45,7 +45,7 @@ Two shared, root-parameterized modules sit between the engine and every consumer
 
 ### Enforcement
 
-The gates are only worth having if something runs them. `bun run check` is typecheck + tests + lint + drift behind one exit code (~14s), `scripts/install-hooks.sh` installs a **pre-push** hook that runs it, and the Stop hook reports drift *and* lint advisorily without ever blocking a session. CI (`.github/workflows/ci.yml`) runs the same gate, plus the backend `tsc` that `bun run typecheck` skips, on macOS, Ubuntu and Windows for every push and PR.
+The gates are only worth having if something runs them. `bun run check` is typecheck + tests + lint + drift behind one exit code (a few minutes, nearly all of it the test suite, which builds and spawns real git repos; slowest on Windows), `scripts/install-hooks.sh` installs a **pre-push** hook that runs it, and the Stop hook reports drift *and* lint advisorily without ever blocking a session. CI (`.github/workflows/ci.yml`) runs the same gate, plus the backend `tsc` that `bun run typecheck` skips, on macOS, Ubuntu and Windows for every push and PR.
 - **`src/trend.ts`** — coverage over time, computed from git history (each commit's file tree + its `.docs/_index.json`) rather than a persisted series. No new state, no write side-effect, and full retroactive history. Shares path classification with `src/coverage.ts` so the newest sample always equals live coverage at HEAD.
 
 Discovery across the suite goes through `src/doctor.ts`: `catryna doctor --json` emits the SUITE_CONTRACTS §3 handshake envelope (`{tool, version, schemaVersion, ok, capabilities, ui, checks, report}`), advertising the capabilities that exist today — `mcp`, `events.emit`, `events.consume`, `drift`, `verify`, `ui`.

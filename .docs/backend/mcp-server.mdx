@@ -7,8 +7,8 @@ relatedFiles: ["src/index.ts", "scripts/run-server.ts", "scripts/run-server.sh",
 createdAt: 1767321253064
 updatedAt: 1767321658640
 createdBy: "claude-code"
-verifiedCommit: "4c3982c3be10f86285b2e98cc99982b01e3a9bbd"
-verifiedAt: "2026-10-13T17:24:56.196Z"
+verifiedCommit: "b36a11aafcef1f41391fcd080c644c21d25b6132"
+verifiedAt: "2026-10-20T04:40:09.281Z"
 driftSuspectSince: ""
 driftSuspectReason: ""
 ---
@@ -27,7 +27,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 const server = new McpServer({
   name: "catryna-wikinelli",
-  version: "1.0.0",
+  version: await readVersion(), // read from the root package.json, not hardcoded
 });
 
 // Connect to stdio transport

@@ -9,7 +9,7 @@
  * and absent-fallback branches run deterministically without a live daemon —
  * the fake supplies symbol locations + impact, REAL git supplies changed hunks.
  */
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -27,6 +27,11 @@ import {
   parseMdx,
   type DocAnchor,
 } from "./storage";
+
+// Each test builds a real temp git repo and spawns git several times; a loaded
+// Windows CI runner blew past Bun's 5s default (same budget as the repo's other
+// subprocess-heavy suites).
+setDefaultTimeout(30_000);
 
 const dirs: string[] = [];
 afterAll(async () => {

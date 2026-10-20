@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.3.2 — 2026-10-20
+
+- Changed: **dependency refresh to the October 2026 latest.** MCP SDK 1.25 to 1.32.1; zod 3 to 4; TypeScript 5.9 and 5.8 to 7.0 (the native compiler, backend and viewer); `@types/bun` 1.4.3. Viewer: lucide-react 0.562 to 1.59, mermaid 11 to 12.2, reactflow 11.10.1 to 11.11.4, React and React DOM 19.3.1, Vite 8.3.4, `@vitejs/plugin-react` 6.1.2, happy-dom 21, `@types/node` 26. The migrations were small: `z.record` takes an explicit key schema, `.passthrough()` became `z.looseObject`, the viewer's dead `Github` icon import (brand icons left lucide in 1.0) is gone, `*.css` side-effect imports are declared for the TypeScript 7 checker, and a test's socket chunk is wrapped in `Buffer.from`. MCP tool input handling is unchanged (unknown keys are still stripped, diagram node `data` still keeps extra keys); the advertised JSON Schema no longer states `additionalProperties: false`, which zod 4 omits for input schemas. Mermaid flowchart and sequence diagrams and React Flow diagrams were checked rendering in the viewer.
+- Changed: CI uses `actions/checkout@v7` and pins Bun 1.4.3 (it floated on `latest`).
+- Fixed: a flaky CI timeout in the anchors test ("a 'callee' in a changed .ts file does NOT drift the Rust doc"). Each test builds a temp git repo and spawns git repeatedly, which a loaded Windows runner could stretch past Bun's 5s default; the file now sets a 30s budget like the repo's other subprocess-heavy suites.
+- Fixed: the test preload now also covers an explicit `env: undefined`. Bun treats it as "not given" and hands the child the process's original environment, so a caller forwarding an optional `env` could still leak `GIT_DIR` from a git hook into a fixture repo. The regression fixture covers `Bun.spawn` and `Bun.spawnSync`, in both call forms.
+
 ## 1.3.1 — 2026-10-12
 
 - Fixed: **the plugin's MCP server now starts on Windows.** Installed 1.3.0 copies launch it with a bare `"command": "bash"`, which on Windows outside Git Bash resolves to `C:\Windows\System32\bash.exe` (the WSL launcher) and dies, so Claude Code showed `catryna` as CONNECTION_CLOSED. The fix (`bun run ${CLAUDE_PLUGIN_ROOT}/scripts/run-server.ts`, no shell) was already on `main` but still carried version 1.3.0, and Claude Code's plugin updater is version-keyed, so installed copies never received it. This release bumps the version so `/plugin update` delivers it. `scripts/run-server.sh` remains as a thin shim over the same launcher. The first-run dependency install now also heals a partial `node_modules/` left by an interrupted install.

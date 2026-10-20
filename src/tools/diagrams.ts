@@ -5,9 +5,9 @@ import { createDoc, getDoc } from "../storage";
 // React Flow node schema
 const NodeSchema = z.object({
   id: z.string(),
-  data: z.object({
+  data: z.looseObject({
     label: z.string(),
-  }).passthrough(),
+  }),
   position: z.object({
     x: z.number(),
     y: z.number(),
@@ -148,7 +148,7 @@ export function registerDiagramTools(server: McpServer): void {
     {
       path: z.string().describe("Doc path for the whiteboard"),
       title: z.string().optional().describe("Whiteboard title"),
-      snapshot: z.record(z.unknown()).describe("whiteboard snapshot data"),
+      snapshot: z.record(z.string(), z.unknown()).describe("whiteboard snapshot data"),
     },
     async ({ path, title, snapshot }) => {
       try {
